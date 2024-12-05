@@ -1,6 +1,8 @@
 package httputil
 
-import "time"
+import (
+	"time"
+)
 
 type (
 	ServerOption func(so *serverOptions)

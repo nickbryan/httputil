@@ -70,53 +70,40 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.router.ServeHTTP(w, r)
 }
 
-func (s *Server) Serve(ctx context.Context) error {
-	errChan := make(chan error, 1)
+func (s *Server) Serve() error {
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
-	go func(errChan chan error) {
-		defer close(errChan)
+	listenAndServeErrorStream := make(chan error, 1)
+	go func(errStream chan error) {
+		defer close(errStream)
 
+		// Shutdown is called below when we receive a signal notification. This will cause
+		// ListenAndServe to stop accepting new connections. Once it has finished handling
+		// current connections it will return an ErrServerClosed. This causes the errStream
+		// to be closed through the defer call as ListenAndServe is no longer blocking the
+		// goroutine. This allows the shutdown to unblock below and return the SignalInterruptError.
 		if err := s.Listener.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errChan <- fmt.Errorf("listening for and serving HTTP requests: %w", err)
+			errStream <- fmt.Errorf("listening for and serving HTTP requests: %w", err)
 		}
-	}(errChan)
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	}(listenAndServeErrorStream)
 
 	select {
-	case <-ctx.Done():
-		if err := s.shutdownGracefully(context.Background()); err != nil {
-			return fmt.Errorf("ctx.Done: %w", err)
+	case err := <-listenAndServeErrorStream:
+		return err
+	case sig := <-shutdown:
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), s.shutdownTimeout)
+		defer cancel()
+
+		if err := s.Listener.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("shutting down the server: %w", err)
 		}
 
-		return nil
-	case sig, ok := <-sigChan:
-		if err := s.shutdownGracefully(context.Background()); err != nil {
-			return fmt.Errorf("signal received: %w", err)
-		}
-
-		if !ok {
-			return ErrSignalChannelClosed
-		}
+		// We wait for the error stream to close in the goroutine which means the first case in
+		// the select statement hasn't run and shutdown was successful. If we didn't wait here we
+		// would prevent ListenAndServe from having a chance to return an error.
+		<-listenAndServeErrorStream
 
 		return &SignalInterruptError{Signal: sig}
-	case err, ok := <-errChan:
-		if !ok {
-			return nil
-		}
-
-		return err
 	}
-}
-
-func (s *Server) shutdownGracefully(ctx context.Context) error {
-	shutdownCtx, cancel := context.WithTimeout(ctx, s.shutdownTimeout)
-	defer cancel()
-
-	if err := s.Listener.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("ctx.Done, shutting down the server: %w", err)
-	}
-
-	return nil
 }
