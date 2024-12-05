@@ -1,6 +1,7 @@
 package httputil
 
 import (
+	"container/list"
 	"context"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -70,40 +72,33 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.router.ServeHTTP(w, r)
 }
 
-func (s *Server) Serve() error {
+func (s *Server) Serve(ctx context.Context) {
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
-	listenAndServeErrorStream := make(chan error, 1)
-	go func(errStream chan error) {
+	errStream := make(chan error, 1)
+	go func() {
 		defer close(errStream)
 
-		// Shutdown is called below when we receive a signal notification. This will cause
-		// ListenAndServe to stop accepting new connections. Once it has finished handling
-		// current connections it will return an ErrServerClosed. This causes the errStream
-		// to be closed through the defer call as ListenAndServe is no longer blocking the
-		// goroutine. This allows the shutdown to unblock below and return the SignalInterruptError.
 		if err := s.Listener.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errStream <- fmt.Errorf("listening for and serving HTTP requests: %w", err)
 		}
-	}(listenAndServeErrorStream)
+	}()
 
 	select {
-	case err := <-listenAndServeErrorStream:
-		return err
+	case err := <-errStream:
+		s.logger.ErrorContext(ctx, "Server execution failed", slog.String("error", err.Error()))
+		return
 	case sig := <-shutdown:
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), s.shutdownTimeout)
 		defer cancel()
 
 		if err := s.Listener.Shutdown(shutdownCtx); err != nil {
-			return fmt.Errorf("shutting down the server: %w", err)
+			s.logger.ErrorContext(ctx, "Server shutdown failed", slog.String("error", err.Error()))
+			return
 		}
 
-		// We wait for the error stream to close in the goroutine which means the first case in
-		// the select statement hasn't run and shutdown was successful. If we didn't wait here we
-		// would prevent ListenAndServe from having a chance to return an error.
-		<-listenAndServeErrorStream
-
-		return &SignalInterruptError{Signal: sig}
+		<-errStream
+		s.logger.InfoContext(ctx, "Server shutdown completed", slog.String("string", sig.String()))
 	}
 }
