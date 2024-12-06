@@ -1,7 +1,6 @@
 package httputil
 
 import (
-	"container/list"
 	"context"
 	"errors"
 	"fmt"
@@ -33,6 +32,7 @@ type Server struct {
 	logger *slog.Logger
 	router *http.ServeMux
 
+	address         string
 	shutdownTimeout time.Duration
 }
 
@@ -44,11 +44,12 @@ func NewServer(logger *slog.Logger, address string, options ...ServerOption) *Se
 		logger:          logger,
 		router:          http.NewServeMux(),
 		shutdownTimeout: opts.shutdownTimeout,
+		address:         address,
 	}
 
 	// TODO: leave like this or don't be exhaustive?
 	server.Listener = &http.Server{
-		Addr:                         address,
+		Addr:                         server.address,
 		Handler:                      server,
 		DisableGeneralOptionsHandler: false,
 		TLSConfig:                    nil,
@@ -73,32 +74,26 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) Serve(ctx context.Context) {
-	shutdown := make(chan os.Signal, 1)
-	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-
-	errStream := make(chan error, 1)
+	awaitSignalCtx, cancelSignalCtx := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	go func() {
-		defer close(errStream)
+		defer cancelSignalCtx()
 
+		// When Listener.Shutdown is called http.ErrServerClosed is returned immediately unblocking this
+		// goroutine. Shutdown then blocks while it handles graceful shutdown.
 		if err := s.Listener.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errStream <- fmt.Errorf("listening for and serving HTTP requests: %w", err)
+			s.logger.ErrorContext(ctx, "Server failed to listen and serve", slog.String("error", err.Error()))
 		}
 	}()
 
-	select {
-	case err := <-errStream:
-		s.logger.ErrorContext(ctx, "Server execution failed", slog.String("error", err.Error()))
-		return
-	case sig := <-shutdown:
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), s.shutdownTimeout)
-		defer cancel()
+	s.logger.InfoContext(ctx, "Server started", slog.String("address", s.address))
+	<-awaitSignalCtx.Done()
 
-		if err := s.Listener.Shutdown(shutdownCtx); err != nil {
-			s.logger.ErrorContext(ctx, "Server shutdown failed", slog.String("error", err.Error()))
-			return
-		}
+	shutdownCtx, cancel := context.WithTimeout(ctx, s.shutdownTimeout)
+	defer cancel()
 
-		<-errStream
-		s.logger.InfoContext(ctx, "Server shutdown completed", slog.String("string", sig.String()))
+	if err := s.Listener.Shutdown(shutdownCtx); err != nil {
+		s.logger.ErrorContext(ctx, "Server failed to shutdown gracefully", slog.String("error", err.Error()))
 	}
+
+	s.logger.InfoContext(ctx, "Server shutdown completed")
 }
