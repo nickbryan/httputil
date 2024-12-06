@@ -74,26 +74,31 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) Serve(ctx context.Context) {
-	awaitSignalCtx, cancelSignalCtx := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	awaitConnsClosed := make(chan any)
 	go func() {
-		defer cancelSignalCtx()
+		awaitSignal := make(chan os.Signal, 1)
+		signal.Notify(awaitSignal, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
-		// When Listener.Shutdown is called http.ErrServerClosed is returned immediately unblocking this
-		// goroutine. Shutdown then blocks while it handles graceful shutdown.
-		if err := s.Listener.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			s.logger.ErrorContext(ctx, "Server failed to listen and serve", slog.String("error", err.Error()))
+		s.logger.InfoContext(ctx, "Server started", slog.String("address", s.address))
+		sig := <-awaitSignal
+		// TODO: select and handle ctx.Done?
+
+		s.logger.InfoContext(ctx, "Server shutting down due to signal interrupt", slog.String("signal", sig.String()))
+
+		shutdownCtx, cancel := context.WithTimeout(ctx, s.shutdownTimeout)
+		defer cancel()
+
+		if err := s.Listener.Shutdown(shutdownCtx); err != nil {
+			s.logger.ErrorContext(ctx, "Server failed to shutdown gracefully", slog.String("error", err.Error()))
 		}
+
+		close(awaitConnsClosed)
 	}()
 
-	s.logger.InfoContext(ctx, "Server started", slog.String("address", s.address))
-	<-awaitSignalCtx.Done()
-
-	shutdownCtx, cancel := context.WithTimeout(ctx, s.shutdownTimeout)
-	defer cancel()
-
-	if err := s.Listener.Shutdown(shutdownCtx); err != nil {
-		s.logger.ErrorContext(ctx, "Server failed to shutdown gracefully", slog.String("error", err.Error()))
+	if err := s.Listener.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		s.logger.ErrorContext(ctx, "Server failed to listen and serve", slog.String("error", err.Error()))
 	}
 
+	<-awaitConnsClosed
 	s.logger.InfoContext(ctx, "Server shutdown completed")
 }
