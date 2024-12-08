@@ -26,6 +26,7 @@ type Server struct {
 	shutdownTimeout time.Duration
 }
 
+// TODO: make address an option and set a default.
 // NewServer creates a new Server instance with the specified logger, address, and options.
 // The options parameter allows for customization of server settings such as timeouts.
 func NewServer(logger *slog.Logger, address string, options ...ServerOption) *Server {
@@ -39,6 +40,7 @@ func NewServer(logger *slog.Logger, address string, options ...ServerOption) *Se
 		address:         address,
 	}
 
+	//nolint:exhaustruct // Accept defaults for fields we do not set.
 	server.Listener = &http.Server{
 		Addr:              server.address,
 		Handler:           server,
@@ -68,7 +70,6 @@ func (s *Server) Serve(ctx context.Context) {
 	go func() {
 		defer cancelAwaitSignal()
 
-		// When Shutdown is called http.ErrServerClosed is returned immediately which unblocks this goroutine.
 		if err := s.Listener.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.logger.ErrorContext(ctx, "Server failed to listen and serve", slog.String("error", err.Error()))
 		}
@@ -77,11 +78,14 @@ func (s *Server) Serve(ctx context.Context) {
 	s.logger.InfoContext(ctx, "Server started", slog.String("address", s.address))
 	<-awaitSignalCtx.Done()
 
-	shutdownCtx, cancelShutdown := context.WithTimeout(ctx, s.shutdownTimeout)
+	// We use a new context here as inheriting from ctx would create an instant timeout
+	// if ctx was canceled. We want to ensure that we still attempt graceful shutdown if this happens.
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), s.shutdownTimeout)
 	defer cancelShutdown()
 
-	// Shutdown blocks while it handles graceful shutdown essentially taking over from ListenAndServe.
-	if err := s.Listener.Shutdown(shutdownCtx); err != nil {
+	// Calling Shutdown causes ListenAndServe to return ErrServerClosed immediately. Shutdown then
+	// takes over and handles graceful shutdown.
+	if err := s.Listener.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck // See comment on shutdownCtx.
 		s.logger.ErrorContext(ctx, "Server failed to shutdown gracefully", slog.String("error", err.Error()))
 	}
 

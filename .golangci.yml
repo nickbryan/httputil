@@ -117,6 +117,7 @@ linters-settings:
         list-mode: strict
         allow:
           - $gostd
+          - github.com/nickbryan/httputil
           - github.com/nickbryan/slogutil
           - github.com/google/go-cmp/cmp
   errcheck:
