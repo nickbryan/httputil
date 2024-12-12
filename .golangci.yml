@@ -119,6 +119,7 @@ linters-settings:
           - $gostd
           - github.com/nickbryan/httputil
           - github.com/nickbryan/slogutil
+          - github.com/go-playground/validator/v10
           - github.com/google/go-cmp/cmp
   errcheck:
     check-type-assertions: true

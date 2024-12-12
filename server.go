@@ -7,9 +7,22 @@ import (
 	"log/slog"
 	"net/http"
 	"os/signal"
+	"reflect"
+	"strings"
 	"syscall"
 	"time"
+
+	"github.com/go-playground/validator/v10"
 )
+
+// TODO: do we validate this?
+type Endpoint struct {
+	Method  string
+	Path    string
+	Handler http.Handler
+}
+
+type MiddlewareFunc func(next http.Handler) http.Handler
 
 // Server is an HTTP server with graceful shutdown capabilities.
 type Server struct {
@@ -57,14 +70,14 @@ func NewServer(logger *slog.Logger, address string, options ...ServerOption) *Se
 	return server
 }
 
-// ServeHTTP delegates the request handling to the underlying router. Exposing ServeHTTP
-// allows endpoints to be tested without a running server.
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.router.ServeHTTP(w, r)
+func (s *Server) Register(endpoints ...Endpoint) {
+	for _, endpoint := range endpoints {
+		s.router.Handle(endpoint.Method+" "+endpoint.Path, endpoint.Handler)
+	}
 }
 
 // Serve starts the HTTP server and listens for incoming requests.
-// It gracefully shuts down the server when it receives a SIGINT, SIGTERM, or SIGQUIT signal.
+// It gracefully shuts down the server when it receives an SIGINT, SIGTERM, or SIGQUIT signal.
 func (s *Server) Serve(ctx context.Context) {
 	awaitSignalCtx, cancelAwaitSignal := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	go func() {
@@ -85,9 +98,33 @@ func (s *Server) Serve(ctx context.Context) {
 
 	// Calling Shutdown causes ListenAndServe to return ErrServerClosed immediately. Shutdown then
 	// takes over and handles graceful shutdown.
-	if err := s.Listener.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck // See comment on shutdownCtx.
+	if err := s.Listener.Shutdown(shutdownCtx); err != nil {
 		s.logger.ErrorContext(ctx, "Server failed to shutdown gracefully", slog.String("error", err.Error()))
 	}
 
 	s.logger.InfoContext(ctx, "Server shutdown")
+}
+
+// ServeHTTP delegates the request handling to the underlying router. Exposing ServeHTTP
+// allows endpoints to be tested without a running server.
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.router.ServeHTTP(w, r)
+}
+
+// NewValidator returns a new validator.Validate that is configured for JSON tags.
+func NewValidator() *validator.Validate {
+	vld := validator.New()
+
+	vld.RegisterTagNameFunc(func(f reflect.StructField) string {
+		const tags = 2
+		name := strings.SplitN(f.Tag.Get("json"), ",", tags)[0]
+
+		if name == "-" {
+			return ""
+		}
+
+		return name
+	})
+
+	return vld
 }

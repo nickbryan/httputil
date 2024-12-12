@@ -119,19 +119,17 @@ func TestServerServe(t *testing.T) {
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			logger, logs := slogutil.NewInMemoryLogger(slog.LevelDebug)
-
 			const shutdownTimeout = 50 * time.Millisecond
-			// Connection close simulation finishes 25 milliseconds before shutdown timeout by default.
-			connCloseDuration := 25 * time.Millisecond
+
+			connCloseDuration := shutdownTimeout / 2
 			if testCase.simulateLongShutdown {
-				// When we want to test shutdown timeout we set the connection close simulation to longer than the timeout.
-				connCloseDuration = 100 * time.Millisecond
+				connCloseDuration = shutdownTimeout * 2
 			}
 
+			logger, logs := slogutil.NewInMemoryLogger(slog.LevelDebug)
 			server := httputil.NewServer(logger, testAddress, httputil.WithShutdownTimeout(shutdownTimeout))
 
-			server.Listener = &mockListener{
+			server.Listener = &fakeListener{
 				listenAndServeErr: testCase.listenAndServeErr,
 				shutdownErr:       testCase.shutdownErr,
 				connCloseDuration: connCloseDuration,
@@ -189,35 +187,35 @@ func sendFutureSignalNotification(ctx context.Context, t *testing.T, sig os.Sign
 	return returnErr
 }
 
-type mockListener struct {
+type fakeListener struct {
 	listenChan        chan any
 	connCloseDuration time.Duration
 	listenAndServeErr error
 	shutdownErr       error
 }
 
-func (ml *mockListener) ListenAndServe() error {
-	if ml.listenAndServeErr != nil {
-		return ml.listenAndServeErr
+func (fl *fakeListener) ListenAndServe() error {
+	if fl.listenAndServeErr != nil {
+		return fl.listenAndServeErr
 	}
 
 	// Simulate the server blocking to receive and handle connections.
-	<-ml.listenChan
+	<-fl.listenChan
 
 	// This is the behavior of net/http Server.ListenAndServe when Shutdown is called.
 	return http.ErrServerClosed
 }
 
-func (ml *mockListener) Shutdown(ctx context.Context) error {
+func (fl *fakeListener) Shutdown(ctx context.Context) error {
 	// Stop blocking ListenAndServe to allow the goroutine to exit.
-	close(ml.listenChan)
+	close(fl.listenChan)
 
-	simulateConnCloseCtx, cancelSimulateConnClose := context.WithTimeout(context.Background(), ml.connCloseDuration)
+	simulateConnCloseCtx, cancelSimulateConnClose := context.WithTimeout(context.Background(), fl.connCloseDuration)
 	defer cancelSimulateConnClose()
 
 	select {
 	case <-simulateConnCloseCtx.Done():
-		return ml.shutdownErr
+		return fl.shutdownErr
 	case <-ctx.Done():
 		return ctx.Err() //nolint:wrapcheck // We just want the underlying error here for the test.
 	}
