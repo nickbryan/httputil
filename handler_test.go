@@ -39,10 +39,10 @@ func TestNewJSONHandler(t *testing.T) {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
 				return httputil.NewJSONHandler(func(_ httputil.Request[struct{}]) (*httputil.Response[struct{}], error) {
-					return httputil.NewEmptyResponse(http.StatusOK), nil
+					return httputil.NewNoContentResponse(), nil
 				})
 			},
-			wantResponseStatusCode: http.StatusOK,
+			wantResponseStatusCode: http.StatusNoContent,
 			wantHeader:             http.Header{"Content-Type": {"application/json"}},
 		},
 		"the response content type is application/json when an error response is returned": {
@@ -78,7 +78,7 @@ func TestNewJSONHandler(t *testing.T) {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
 				return httputil.NewJSONHandler(func(_ httputil.Request[map[string]string]) (*httputil.Response[struct{}], error) {
-					return httputil.NewEmptyResponse(http.StatusOK), nil
+					return httputil.NewNoContentResponse(), nil
 				})
 			},
 			wantResponseStatusCode: http.StatusBadRequest,

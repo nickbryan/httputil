@@ -22,6 +22,9 @@ type Endpoint struct {
 	Handler http.Handler
 }
 
+// MiddlewareFunc defines a function type for HTTP middleware.
+// A MiddlewareFunc takes an http.Handler as input and returns a new http.Handler
+// that wraps the original handler with additional logic (e.g., logging, authentication).
 type MiddlewareFunc func(next http.Handler) http.Handler
 
 // Server is an HTTP server with graceful shutdown capabilities.
@@ -70,6 +73,7 @@ func NewServer(logger *slog.Logger, address string, options ...ServerOption) *Se
 	return server
 }
 
+// Register one or more endpoints with the Server so they are handled by the underlying router.
 func (s *Server) Register(endpoints ...Endpoint) {
 	for _, endpoint := range endpoints {
 		s.router.Handle(endpoint.Method+" "+endpoint.Path, endpoint.Handler)
@@ -98,7 +102,7 @@ func (s *Server) Serve(ctx context.Context) {
 
 	// Calling Shutdown causes ListenAndServe to return ErrServerClosed immediately. Shutdown then
 	// takes over and handles graceful shutdown.
-	if err := s.Listener.Shutdown(shutdownCtx); err != nil {
+	if err := s.Listener.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck // False positive.
 		s.logger.ErrorContext(ctx, "Server failed to shutdown gracefully", slog.String("error", err.Error()))
 	}
 

@@ -15,72 +15,85 @@ import (
 
 // TODO: how do we validate query params? path params?
 type (
+	// Handler defines the interface for a handler function. It takes a request of type `req`
+	// and returns a response of type `res` along with any potential error.
 	Handler[req, res any] func(r Request[req]) (*Response[res], error)
 
+	// Request represents a HTTP request with additional data of type `T`.
 	Request[T any] struct {
 		*http.Request
 		Data T
 	}
 
+	// Response represents a HTTP response with data of type `T` and a status code.
 	Response[T any] struct {
-		Header     http.Header
-		data       T
-		statusCode int
+		Header http.Header
+		data   T
+		code   int
 	}
 )
 
-func NewResponse[T any](statusCode int, data T) *Response[T] {
+// NewResponse creates a new Response object with the given status code and data.
+func NewResponse[T any](code int, data T) *Response[T] {
 	return &Response[T]{
-		Header:     make(http.Header),
-		data:       data,
-		statusCode: statusCode,
+		Header: make(http.Header),
+		data:   data,
+		code:   code,
 	}
 }
 
-// TODO: Decide if this is needed and update tests to use it if so.
-// TODO: statusCode to status?
-// TODO: drop status code in favour of StatusNoContent.
-func NewEmptyResponse(statusCode int) *Response[struct{}] {
+// NewNoContentResponse creates a new Response object with a status code
+// of http.StatusNoContent (204 No Content) and an empty struct as data.
+func NewNoContentResponse() *Response[struct{}] {
 	return &Response[struct{}]{
-		Header:     make(http.Header),
-		data:       struct{}{},
-		statusCode: statusCode,
+		Header: make(http.Header),
+		data:   struct{}{},
+		code:   http.StatusNoContent,
 	}
 }
 
 // TODO: export type and drop new function?
+// handlerError represents an error specific to the handler.
 type handlerError struct {
-	message    string
-	statusCode int
+	message string
+	code    int
 }
 
 func (e *handlerError) Error() string {
 	return e.message
 }
 
-// ErrInternal is used when the error is unknown to the caller.
+// ErrInternal is a pre-defined handlerError representing an internal server error.
 var ErrInternal = &handlerError{
-	message:    "internal server error",
-	statusCode: http.StatusInternalServerError,
+	message: "internal server error",
+	code:    http.StatusInternalServerError,
 }
 
-// NewHandlerError will create a new error response that will have the given
-// message as the error field and set the supplied status code.
-func NewHandlerError(statusCode int, message string) error {
+// NewHandlerError creates a new handlerError with the given message and status code.
+func NewHandlerError(code int, message string) error {
 	return &handlerError{
-		message:    message,
-		statusCode: statusCode,
+		message: message,
+		code:    code,
 	}
 }
 
+// NewJSONHandler creates a new http.Handler that wraps the provided [Handler] function
+// to deserialize JSON request bodies and serialize JSON response bodies.
 func NewJSONHandler[req, res any](handler Handler[req, res]) http.Handler {
-	return &jsonHandler[req, res]{handler: handler, logger: nil}
+	return &jsonHandler[req, res]{
+		handler:   handler,
+		logger:    nil,
+		validator: nil,
+		// Cache this early as reflection can be expensive.
+		reqIsStructType: reflect.TypeFor[req]().Kind() == reflect.Struct,
+	}
 }
 
 type jsonHandler[req, res any] struct {
-	handler   Handler[req, res]
-	logger    *slog.Logger
-	validator *validator.Validate
+	handler         Handler[req, res]
+	logger          *slog.Logger
+	validator       *validator.Validate
+	reqIsStructType bool
 }
 
 // SetLogger is used by the server to inject the logger that will be used by the handler.
@@ -89,10 +102,13 @@ func (h *jsonHandler[req, res]) SetLogger(l *slog.Logger) { h.logger = l }
 // SetValidator is used by the server to inject the validator that will be used by the handler.
 func (h *jsonHandler[req, res]) SetValidator(v *validator.Validate) { h.validator = v }
 
+// ServeHTTP implements the http.Handler interface. It reads the request body,
+// decodes it into the request data, validates it if a validator is set,
+// calls the wrapped handler, and writes the response back in JSON format.
 func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	request := Request[req]{Request: r}
+	request := Request[req]{Request: r} //nolint:exhaustruct // Zero value of Data is unknown.
 
 	body, err := io.ReadAll(request.Body)
 	if err != nil {
@@ -102,7 +118,7 @@ func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if _, ok := any(request.Data).(struct{}); !ok {
+	if !isEmptyStruct(request.Data) {
 		if len(body) == 0 {
 			h.writeEmptyBodyError(r.Context(), w)
 			return
@@ -116,9 +132,7 @@ func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request
 			return
 		}
 
-		// TODO: Can we cache this reflection call or maybe other calls as we only need to know the type once in order to know to validate or not?
-		// TODO: Can this be reflect.TypeFor? It looks like it would work. What happens if a pointer to struct is passed here?
-		if reflect.ValueOf(request.Data).Kind() == reflect.Struct {
+		if h.reqIsStructType {
 			if err = h.validator.Struct(&request.Data); err != nil {
 				var invalidValidationError *validator.InvalidValidationError
 				if errors.As(err, &invalidValidationError) {
@@ -160,10 +174,16 @@ func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request
 	}
 
 	writeHeaders(w, response.Header)
-	w.WriteHeader(response.statusCode)
+	w.WriteHeader(response.code)
 
 	if _, ok := any(response.data).(struct{}); !ok {
 		h.encodeResponse(r.Context(), w, response.data)
+	}
+}
+
+func (h *jsonHandler[req, res]) encodeResponse(ctx context.Context, w http.ResponseWriter, data any) {
+	if err := json.NewEncoder(w).Encode(&data); err != nil {
+		h.logger.ErrorContext(ctx, "JSON handler failed to encode response data", slog.String("error", err.Error()))
 	}
 }
 
@@ -181,7 +201,7 @@ func (h *jsonHandler[req, res]) writeErrResponse(ctx context.Context, w http.Res
 		Error string `json:"error"`
 	}{Error: err.Error()}
 
-	w.WriteHeader(err.statusCode)
+	w.WriteHeader(err.code)
 	h.encodeResponse(ctx, w, errResponse)
 }
 
@@ -207,10 +227,9 @@ func (h *jsonHandler[req, res]) writeValidationErrors(ctx context.Context, w htt
 	h.encodeResponse(ctx, w, validationErrorResponse)
 }
 
-func (h *jsonHandler[req, res]) encodeResponse(ctx context.Context, w http.ResponseWriter, data any) {
-	if err := json.NewEncoder(w).Encode(&data); err != nil {
-		h.logger.ErrorContext(ctx, "JSON handler failed to encode response data", slog.String("error", err.Error()))
-	}
+func isEmptyStruct(v any) bool {
+	_, ok := v.(struct{})
+	return ok
 }
 
 func writeHeaders(w http.ResponseWriter, headers http.Header) {
