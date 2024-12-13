@@ -9,6 +9,7 @@ type (
 	ServerOption func(so *serverOptions)
 
 	serverOptions struct {
+		address           string
 		idleTimeout       time.Duration
 		readHeaderTimeout time.Duration
 		readTimeout       time.Duration
@@ -16,6 +17,13 @@ type (
 		shutdownTimeout   time.Duration
 	}
 )
+
+// WithAddress sets the address that the Server will listen and serve on.
+func WithAddress(address string) ServerOption {
+	return func(so *serverOptions) {
+		so.address = address
+	}
+}
 
 // WithIdleTimeout sets the idle timeout for the server.
 func WithIdleTimeout(timeout time.Duration) ServerOption {
@@ -60,6 +68,7 @@ func mapServerOptionsToDefaults(opts []ServerOption) serverOptions {
 	)
 
 	defaultOpts := serverOptions{
+		address:           ":8080",
 		idleTimeout:       defaultTimeout,
 		readHeaderTimeout: defaultTimeout,
 		readTimeout:       defaultTimeout,

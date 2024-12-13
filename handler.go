@@ -133,7 +133,7 @@ func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request
 		}
 
 		if h.reqIsStructType {
-			if err = h.validator.Struct(&request.Data); err != nil {
+			if err = h.validator.StructCtx(r.Context(), &request.Data); err != nil {
 				var invalidValidationError *validator.InvalidValidationError
 				if errors.As(err, &invalidValidationError) {
 					h.logger.ErrorContext(r.Context(), "JSON handler failed to validate request data", slog.String("error", err.Error()))

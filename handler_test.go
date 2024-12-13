@@ -66,6 +66,22 @@ func TestNewJSONHandler(t *testing.T) {
 			}},
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
+		"returns a bad request status code with errors if the payload is empty but request data is expected": {
+			requestBody: strings.NewReader(""),
+			handler: func(t *testing.T) http.Handler {
+				t.Helper()
+
+				type request struct {
+					Name string `json:"name" validate:"required"`
+				}
+
+				return httputil.NewJSONHandler(func(_ httputil.Request[request]) (*httputil.Response[struct{}], error) {
+					return httputil.NewResponse(http.StatusOK, struct{}{}), nil
+				})
+			},
+			wantResponseStatusCode: http.StatusBadRequest,
+			wantResponseBody:       `{"error":"Empty request body"}`,
+		},
 		"returns a bad request status code and logs a warning when the request body cannot be decoded as json": {
 			requestBody: strings.NewReader(`{`),
 			wantLogs: []slogmem.RecordQuery{{
@@ -82,22 +98,6 @@ func TestNewJSONHandler(t *testing.T) {
 				})
 			},
 			wantResponseStatusCode: http.StatusBadRequest,
-		},
-		"returns a bad request status code with errors if the payload is empty but request data is expected": {
-			requestBody: strings.NewReader(""),
-			handler: func(t *testing.T) http.Handler {
-				t.Helper()
-
-				type request struct {
-					Name string `json:"name" validate:"required"`
-				}
-
-				return httputil.NewJSONHandler(func(_ httputil.Request[request]) (*httputil.Response[struct{}], error) {
-					return httputil.NewResponse(http.StatusOK, struct{}{}), nil
-				})
-			},
-			wantResponseStatusCode: http.StatusBadRequest,
-			wantResponseBody:       `{"error":"Empty request body"}`,
 		},
 		"returns a bad request status code with errors if the payload fails validation": {
 			requestBody: strings.NewReader("{}"),
@@ -147,6 +147,17 @@ func TestNewJSONHandler(t *testing.T) {
 				})
 			},
 			wantResponseStatusCode: http.StatusOK,
+		},
+		"the fields of a HandlerError are mapped correctly to the response": {
+			handler: func(t *testing.T) http.Handler {
+				t.Helper()
+				return httputil.NewJSONHandler(func(_ httputil.Request[struct{}]) (*httputil.Response[struct{}], error) {
+					return nil, httputil.NewHandlerError(http.StatusTeapot, "no more tea")
+				})
+			},
+			wantResponseBody:       `{"error":"no more tea"}`,
+			wantResponseStatusCode: http.StatusTeapot,
+			wantHeader:             http.Header{"Content-Type": {"application/json"}},
 		},
 		"an internal server error is returned and a log is written when a generic error is returned": {
 			handler: func(t *testing.T) http.Handler {

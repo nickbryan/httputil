@@ -127,7 +127,7 @@ func TestServerServe(t *testing.T) {
 			}
 
 			logger, logs := slogutil.NewInMemoryLogger(slog.LevelDebug)
-			server := httputil.NewServer(logger, testAddress, httputil.WithShutdownTimeout(shutdownTimeout))
+			server := httputil.NewServer(logger, httputil.WithAddress(testAddress), httputil.WithShutdownTimeout(shutdownTimeout))
 
 			server.Listener = &fakeListener{
 				listenAndServeErr: testCase.listenAndServeErr,

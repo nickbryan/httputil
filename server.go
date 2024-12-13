@@ -15,18 +15,6 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
-// TODO: do we validate this?
-type Endpoint struct {
-	Method  string
-	Path    string
-	Handler http.Handler
-}
-
-// MiddlewareFunc defines a function type for HTTP middleware.
-// A MiddlewareFunc takes an http.Handler as input and returns a new http.Handler
-// that wraps the original handler with additional logic (e.g., logging, authentication).
-type MiddlewareFunc func(next http.Handler) http.Handler
-
 // Server is an HTTP server with graceful shutdown capabilities.
 type Server struct {
 	// Listener is implemented by a *http.Server, the interface allows us to test Serve.
@@ -42,10 +30,9 @@ type Server struct {
 	shutdownTimeout time.Duration
 }
 
-// TODO: make address an option and set a default.
-// NewServer creates a new Server instance with the specified logger, address, and options.
-// The options parameter allows for customization of server settings such as timeouts.
-func NewServer(logger *slog.Logger, address string, options ...ServerOption) *Server {
+// NewServer creates a new Server instance with the specified logger and options.
+// The options parameter allows for customization of server settings such as the address and timeouts.
+func NewServer(logger *slog.Logger, options ...ServerOption) *Server {
 	opts := mapServerOptionsToDefaults(options)
 
 	server := &Server{
@@ -53,7 +40,7 @@ func NewServer(logger *slog.Logger, address string, options ...ServerOption) *Se
 		logger:          logger,
 		router:          http.NewServeMux(),
 		shutdownTimeout: opts.shutdownTimeout,
-		address:         address,
+		address:         opts.address,
 	}
 
 	//nolint:exhaustruct // Accept defaults for fields we do not set.
