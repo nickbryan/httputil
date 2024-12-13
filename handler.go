@@ -11,6 +11,7 @@ import (
 	"reflect"
 
 	"github.com/go-playground/validator/v10"
+	"github.com/nickbryan/httputil/problem"
 )
 
 // TODO: how do we validate query params? path params?
@@ -158,11 +159,19 @@ func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request
 		request.Body = io.NopCloser(bytes.NewBuffer(body))
 	}
 
-	var errResponse *handlerError
-
 	response, err := h.handler(request)
-	if errors.As(err, &errResponse) {
-		h.writeErrResponse(r.Context(), w, errResponse)
+
+	var problemDetails *problem.Details
+	if errors.As(err, &problemDetails) {
+		w.WriteHeader(problemDetails.Status)
+		h.encodeResponse(r.Context(), w, problemDetails)
+
+		return
+	}
+
+	var handlerErr *handlerError
+	if errors.As(err, &handlerErr) {
+		h.writeErrResponse(r.Context(), w, handlerErr)
 		return
 	}
 
@@ -206,6 +215,7 @@ func (h *jsonHandler[req, res]) writeErrResponse(ctx context.Context, w http.Res
 }
 
 func (h *jsonHandler[req, res]) writeValidationErrors(ctx context.Context, w http.ResponseWriter, errs []validator.FieldError) {
+	// TODO: problem.ConstraintViolation(r.URL.EscapedPath())
 	type validationErr struct {
 		Tag   string `json:"tag"`
 		Param string `json:"param"`
