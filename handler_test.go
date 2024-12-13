@@ -66,16 +66,6 @@ func TestNewJSONHandler(t *testing.T) {
 			}},
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
-		"returns a no content status code when the request body is empty but a body is expected for decoding": {
-			handler: func(t *testing.T) http.Handler {
-				t.Helper()
-				return httputil.NewJSONHandler(func(_ httputil.Request[map[string]string]) (*httputil.Response[struct{}], error) {
-					return httputil.NewEmptyResponse(http.StatusOK), nil
-				})
-			},
-			requestBody:            strings.NewReader(""),
-			wantResponseStatusCode: http.StatusBadRequest,
-		},
 		"returns a bad request status code and logs a warning when the request body cannot be decoded as json": {
 			requestBody: strings.NewReader(`{`),
 			wantLogs: []slogmem.RecordQuery{{
@@ -93,19 +83,37 @@ func TestNewJSONHandler(t *testing.T) {
 			},
 			wantResponseStatusCode: http.StatusBadRequest,
 		},
-		"the request body is mapped to the requests data": {
-			requestBody: strings.NewReader(`{"hello":"world"}`),
+		"returns a bad request status code with errors if the payload is empty but request data is expected": {
+			requestBody: strings.NewReader(""),
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
-				return httputil.NewJSONHandler(func(r httputil.Request[map[string]string]) (*httputil.Response[struct{}], error) {
-					if r.Data["hello"] != "world" {
-						t.Errorf("r.Data[\"hello\"] = %v, want: world", r.Data["hello"])
-					}
 
+				type request struct {
+					Name string `json:"name" validate:"required"`
+				}
+
+				return httputil.NewJSONHandler(func(_ httputil.Request[request]) (*httputil.Response[struct{}], error) {
 					return httputil.NewResponse(http.StatusOK, struct{}{}), nil
 				})
 			},
-			wantResponseStatusCode: http.StatusOK,
+			wantResponseStatusCode: http.StatusBadRequest,
+			wantResponseBody:       `{"error":"Empty request body"}`,
+		},
+		"returns a bad request status code with errors if the payload fails validation": {
+			requestBody: strings.NewReader("{}"),
+			handler: func(t *testing.T) http.Handler {
+				t.Helper()
+
+				type request struct {
+					Name string `json:"name" validate:"required"`
+				}
+
+				return httputil.NewJSONHandler(func(_ httputil.Request[request]) (*httputil.Response[struct{}], error) {
+					return httputil.NewResponse(http.StatusOK, struct{}{}), nil
+				})
+			},
+			wantResponseStatusCode: http.StatusBadRequest,
+			wantResponseBody:       `{"error":"Invalid request body","errors":{"name":{"tag":"required","param":""}}}`,
 		},
 		"the request body can be read again in the handler after it has been decoded into the request data type": {
 			requestBody: strings.NewReader(`{"hello":"world"}`),
@@ -119,6 +127,20 @@ func TestNewJSONHandler(t *testing.T) {
 
 					if diff := testutil.DiffJSON(string(bytes), `{"hello":"world"}`); diff != "" {
 						t.Errorf("r.Body mismatch (-want +got):\n%s", diff)
+					}
+
+					return httputil.NewResponse(http.StatusOK, struct{}{}), nil
+				})
+			},
+			wantResponseStatusCode: http.StatusOK,
+		},
+		"the request body is mapped to the requests data": {
+			requestBody: strings.NewReader(`{"hello":"world"}`),
+			handler: func(t *testing.T) http.Handler {
+				t.Helper()
+				return httputil.NewJSONHandler(func(r httputil.Request[map[string]string]) (*httputil.Response[struct{}], error) {
+					if r.Data["hello"] != "world" {
+						t.Errorf("r.Data[\"hello\"] = %v, want: world", r.Data["hello"])
 					}
 
 					return httputil.NewResponse(http.StatusOK, struct{}{}), nil
@@ -190,38 +212,6 @@ func TestNewJSONHandler(t *testing.T) {
 				},
 			}},
 			wantResponseStatusCode: http.StatusCreated,
-		},
-		"returns a bad request status code with errors if the payload fails validation": {
-			requestBody: strings.NewReader("{}"),
-			handler: func(t *testing.T) http.Handler {
-				t.Helper()
-
-				type request struct {
-					Name string `json:"name" validate:"required"`
-				}
-
-				return httputil.NewJSONHandler(func(_ httputil.Request[request]) (*httputil.Response[struct{}], error) {
-					return httputil.NewResponse(http.StatusOK, struct{}{}), nil
-				})
-			},
-			wantResponseStatusCode: http.StatusBadRequest,
-			wantResponseBody:       "{\"error\":\"request validation failed\",\"errors\":{\"name\":{\"tag\":\"required\",\"param\":\"\"}}}",
-		},
-		"returns a bad request status code with errors if the payload is empty but request data is expected": {
-			requestBody: strings.NewReader(""),
-			handler: func(t *testing.T) http.Handler {
-				t.Helper()
-
-				type request struct {
-					Name string `json:"name" validate:"required"`
-				}
-
-				return httputil.NewJSONHandler(func(_ httputil.Request[request]) (*httputil.Response[struct{}], error) {
-					return httputil.NewResponse(http.StatusOK, struct{}{}), nil
-				})
-			},
-			wantResponseStatusCode: http.StatusBadRequest,
-			wantResponseBody:       "{\"error\":\"request body is empty\"}",
 		},
 	}
 

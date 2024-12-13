@@ -13,8 +13,9 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
+// TODO: how do we validate query params? path params?
 type (
-	Handler[Req, Res any] func(r Request[Req]) (*Response[Res], error)
+	Handler[req, res any] func(r Request[req]) (*Response[res], error)
 
 	Request[T any] struct {
 		*http.Request
@@ -38,7 +39,7 @@ func NewResponse[T any](statusCode int, data T) *Response[T] {
 
 // TODO: Decide if this is needed and update tests to use it if so.
 // TODO: statusCode to status?
-// TODO: drop status code in favour of StatusNoContent
+// TODO: drop status code in favour of StatusNoContent.
 func NewEmptyResponse(statusCode int) *Response[struct{}] {
 	return &Response[struct{}]{
 		Header:     make(http.Header),
@@ -72,26 +73,26 @@ func NewHandlerError(statusCode int, message string) error {
 	}
 }
 
-func NewJSONHandler[Req, Res any](handler Handler[Req, Res]) http.Handler {
-	return &jsonHandler[Req, Res]{handler: handler, logger: nil}
+func NewJSONHandler[req, res any](handler Handler[req, res]) http.Handler {
+	return &jsonHandler[req, res]{handler: handler, logger: nil}
 }
 
-type jsonHandler[Req, Res any] struct {
-	handler   Handler[Req, Res]
+type jsonHandler[req, res any] struct {
+	handler   Handler[req, res]
 	logger    *slog.Logger
 	validator *validator.Validate
 }
 
 // SetLogger is used by the server to inject the logger that will be used by the handler.
-func (h *jsonHandler[Req, Res]) SetLogger(l *slog.Logger) { h.logger = l }
+func (h *jsonHandler[req, res]) SetLogger(l *slog.Logger) { h.logger = l }
 
 // SetValidator is used by the server to inject the validator that will be used by the handler.
-func (h *jsonHandler[Req, Res]) SetValidator(v *validator.Validate) { h.validator = v }
+func (h *jsonHandler[req, res]) SetValidator(v *validator.Validate) { h.validator = v }
 
-func (h *jsonHandler[Req, Res]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	request := Request[Req]{Request: r}
+	request := Request[req]{Request: r}
 
 	body, err := io.ReadAll(request.Body)
 	if err != nil {
@@ -162,46 +163,26 @@ func (h *jsonHandler[Req, Res]) ServeHTTP(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(response.statusCode)
 
 	if _, ok := any(response.data).(struct{}); !ok {
-		if err := json.NewEncoder(w).Encode(response.data); err != nil {
-			h.logger.ErrorContext(r.Context(), "JSON handler failed to encode response data", slog.String("error", err.Error()))
-		}
+		h.encodeResponse(r.Context(), w, response.data)
 	}
 }
 
-func writeHeaders(w http.ResponseWriter, headers http.Header) {
-	for header, values := range headers {
-		for _, value := range values {
-			w.Header().Add(header, value)
-		}
-	}
-}
-
-func (h *jsonHandler[req, res]) writeEmptyBodyError(ctx context.Context, responseWriter http.ResponseWriter) {
+func (h *jsonHandler[req, res]) writeEmptyBodyError(ctx context.Context, w http.ResponseWriter) {
 	noContentErr := struct {
 		Error string `json:"error"`
-	}{
-		Error: "request body is empty",
-	}
+	}{Error: "Empty request body"}
 
-	responseWriter.WriteHeader(http.StatusBadRequest)
-
-	if err := json.NewEncoder(responseWriter).Encode(&noContentErr); err != nil {
-		h.logger.ErrorContext(ctx, "unable to encode response as json", slog.String("error", err.Error()))
-	}
+	w.WriteHeader(http.StatusBadRequest)
+	h.encodeResponse(ctx, w, noContentErr)
 }
 
 func (h *jsonHandler[req, res]) writeErrResponse(ctx context.Context, w http.ResponseWriter, err *handlerError) {
 	errResponse := struct {
 		Error string `json:"error"`
-	}{
-		Error: err.Error(),
-	}
+	}{Error: err.Error()}
 
 	w.WriteHeader(err.statusCode)
-
-	if err := json.NewEncoder(w).Encode(&errResponse); err != nil {
-		h.logger.ErrorContext(ctx, "unable to encode response as json", slog.String("error", err.Error()))
-	}
+	h.encodeResponse(ctx, w, errResponse)
 }
 
 func (h *jsonHandler[req, res]) writeValidationErrors(ctx context.Context, w http.ResponseWriter, errs []validator.FieldError) {
@@ -213,10 +194,7 @@ func (h *jsonHandler[req, res]) writeValidationErrors(ctx context.Context, w htt
 	validationErrorResponse := struct {
 		Error  string                   `json:"error"`
 		Errors map[string]validationErr `json:"errors"`
-	}{
-		Error:  "request validation failed",
-		Errors: make(map[string]validationErr, len(errs)),
-	}
+	}{Error: "Invalid request body", Errors: make(map[string]validationErr, len(errs))}
 
 	for _, err := range errs {
 		validationErrorResponse.Errors[err.Field()] = validationErr{
@@ -226,8 +204,19 @@ func (h *jsonHandler[req, res]) writeValidationErrors(ctx context.Context, w htt
 	}
 
 	w.WriteHeader(http.StatusBadRequest)
+	h.encodeResponse(ctx, w, validationErrorResponse)
+}
 
-	if err := json.NewEncoder(w).Encode(&validationErrorResponse); err != nil {
-		h.logger.ErrorContext(ctx, "unable to encode response as json", slog.String("error", err.Error()))
+func (h *jsonHandler[req, res]) encodeResponse(ctx context.Context, w http.ResponseWriter, data any) {
+	if err := json.NewEncoder(w).Encode(&data); err != nil {
+		h.logger.ErrorContext(ctx, "JSON handler failed to encode response data", slog.String("error", err.Error()))
+	}
+}
+
+func writeHeaders(w http.ResponseWriter, headers http.Header) {
+	for header, values := range headers {
+		for _, value := range values {
+			w.Header().Add(header, value)
+		}
 	}
 }
