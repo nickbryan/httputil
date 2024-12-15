@@ -1,4 +1,6 @@
 # httputil
+Package `httputil` provides utility helpers for working with net/http adding sensible defaults, bootstrapping, and 
+removing boilerplate code required to build web services.
 
 <div align="center">
 
@@ -8,3 +10,8 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/nickbryan/httputil/blob/master/LICENSE)
 
 </div>
+
+## TODO
+* [] Fix lint issues. 
+* [] This README needs filling out properly.
+* [] Finalise all package documentation.

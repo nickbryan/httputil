@@ -16,7 +16,7 @@ type Details struct {
 	ExtensionMembers map[string]any
 }
 
-// MarshalJSON implements the json.Marshaler interface for Problem.
+// MarshalJSON implements the json.Marshaler interface for Details.
 func (d *Details) MarshalJSON() ([]byte, error) {
 	deets := make(map[string]any)
 

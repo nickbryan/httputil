@@ -35,7 +35,7 @@ func EndpointsWithMiddleware(middleware MiddlewareFunc, endpoints ...Endpoint) [
 // EndpointsWithPrefix prefixes the given path to all provided endpoints.
 // It returns a new slice of Endpoints with the prefixed paths.
 // The original endpoints are not modified.
-func EndpointsWithPrefex(prefix string, endpoints ...Endpoint) []Endpoint {
+func EndpointsWithPrefix(prefix string, endpoints ...Endpoint) []Endpoint {
 	epts := make([]Endpoint, 0, len(endpoints))
 
 	for _, endpoint := range endpoints {
