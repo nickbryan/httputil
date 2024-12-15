@@ -11,10 +11,10 @@ import (
 	"reflect"
 
 	"github.com/go-playground/validator/v10"
+
 	"github.com/nickbryan/httputil/problem"
 )
 
-// TODO: how do we validate query params? path params?
 type (
 	// Handler defines the interface for a handler function. It takes a request of type `req`
 	// and returns a response of type `res` along with any potential error.
@@ -53,7 +53,6 @@ func NewNoContentResponse() *Response[struct{}] {
 	}
 }
 
-// TODO: export type and drop new function?
 // handlerError represents an error specific to the handler.
 type handlerError struct {
 	message string
@@ -127,7 +126,6 @@ func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request
 
 		if err = json.Unmarshal(body, &request.Data); err != nil {
 			h.logger.WarnContext(r.Context(), "JSON handler failed to decode request data", slog.String("error", err.Error()))
-			// TODO: should we return a reason here or happy with the log?
 			w.WriteHeader(http.StatusBadRequest)
 
 			return
@@ -215,7 +213,6 @@ func (h *jsonHandler[req, res]) writeErrResponse(ctx context.Context, w http.Res
 }
 
 func (h *jsonHandler[req, res]) writeValidationErrors(ctx context.Context, w http.ResponseWriter, errs []validator.FieldError) {
-	// TODO: problem.ConstraintViolation(r.URL.EscapedPath())
 	type validationErr struct {
 		Tag   string `json:"tag"`
 		Param string `json:"param"`

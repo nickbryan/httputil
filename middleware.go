@@ -21,7 +21,6 @@ func NewPanicRecoveryMiddleware(logger *slog.Logger) MiddlewareFunc {
 			defer func(ctx context.Context) {
 				if err := recover(); err != nil {
 					w.WriteHeader(http.StatusInternalServerError)
-					// TODO: check the other version of this, handle string and error at least.
 					logger.ErrorContext(ctx, "Handler has panicked", slog.Any("error", err))
 				}
 			}(r.Context())

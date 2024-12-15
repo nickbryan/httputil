@@ -4,7 +4,6 @@ import (
 	"net/http"
 )
 
-// TODO: do we validate this?
 // Endpoint represents a registered HTTP endpoint.
 type Endpoint struct {
 	// Method is the HTTP method for this endpoint (e.g., "GET", "POST", "PUT", "DELETE").

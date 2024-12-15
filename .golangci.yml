@@ -185,10 +185,11 @@ issues:
     - path: _test\.go
       linters:
         - containedctx
+        - cyclop
+        - err113
         - exhaustruct
         - funlen
         - gocognit
-        - err113
         - maintidx
         - nestif
   exclude-use-default: false

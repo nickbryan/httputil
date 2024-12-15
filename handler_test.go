@@ -52,7 +52,14 @@ func TestNewJSONHandler(t *testing.T) {
 					return nil, errors.New("some error")
 				})
 			},
-			wantHeader:             http.Header{"Content-Type": {"application/json"}},
+			wantHeader: http.Header{"Content-Type": {"application/json"}},
+			wantLogs: []slogmem.RecordQuery{{
+				Message: "JSON handler received an unhandled error from inner handler",
+				Level:   slog.LevelWarn,
+				Attrs: map[string]slog.Value{
+					"error": slog.StringValue("some error"),
+				},
+			}},
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"returns an internal server error status code and logs a warning when the request body cannot be read": {
@@ -259,8 +266,11 @@ func TestNewJSONHandler(t *testing.T) {
 				t.Errorf("response.Header = %v, want: %v", response.Header(), testCase.wantHeader)
 			}
 
+			if len(testCase.wantLogs) != logs.Len() {
+				t.Errorf("logs.Len() = %d, want: %d, logs: %+v", logs.Len(), len(testCase.wantLogs), logs.AsSliceOfNestedKeyValuePairs())
+			}
+
 			for _, query := range testCase.wantLogs {
-				// TODO: test no logs if no logs expected
 				if ok, diff := logs.Contains(query); !ok {
 					t.Errorf("logs do not contain query (-want +got): \n%s", diff)
 				}

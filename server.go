@@ -53,8 +53,6 @@ func NewServer(logger *slog.Logger, options ...ServerOption) *Server {
 		IdleTimeout:       opts.idleTimeout,
 		MaxHeaderBytes:    http.DefaultMaxHeaderBytes,
 		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
-		// TODO: use this or clone the writeHandler so we can provide a static message
-		// and add the error as an attribute? Would also allow us to set pc?
 	}
 
 	return server
