@@ -13,6 +13,7 @@ removing boilerplate code required to build web services.
 
 ## TODO
 * [ ] Should we use problem details as the error format? If so, do we have a problem package or just have them as Error in the root?
+* [ ] Move Details to httputil.ProblemDetails and then consider a package problem that just creates instances of ProblemDetails. What to do about handler? Should it still return error or only the ProblemDetails type? How could we also drop the need to pass a pointer for nil in the return arguments? Something instead of nil to represent empty? Union type? Httputil.NoProblem
 * [ ] Finish tests on server.go. 
 * [ ] Finish testing handler.go.
 * [ ] Check over status codes used and error messages sent to user and logs are correct in the JSON handler code.
