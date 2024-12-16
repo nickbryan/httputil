@@ -21,7 +21,6 @@ removing boilerplate code required to build web services.
 * [ ] Export hendlerError type and drop new function?
 * [ ] Test the Endpoint wrapper functions.
 * [ ] Decide on how to wrap logger, implement and test - use as is or clone the writeHandler so we can provide a static message and add the error as an attribute? Would also allow us to set pc?
-* [ ] Decide if Endpoint fields should be validated somehow (methods are an actual method) or fallback to how the server mux handles it, implement and test.
 * [ ] Figure out how to handle query params and path params for validation and decoding.
 * [ ] Fix lint issues. 
 * [ ] Ensure that panic middleware is correct, what comes back from recover and shoudl each type be handled (maybe just err and string).
