@@ -61,6 +61,16 @@ func NewServer(logger *slog.Logger, options ...ServerOption) *Server {
 // Register one or more endpoints with the Server so they are handled by the underlying router.
 func (s *Server) Register(endpoints ...Endpoint) {
 	for _, endpoint := range endpoints {
+		switch endpoint.Method {
+		// TODO: Surely a better way of doing this case...
+		case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodConnect, http.MethodOptions, http.MethodTrace:
+			break
+		default:
+			s.logger.Error("Endpoint is not a valid method", slog.String("method", endpoint.Method), slog.String("path", endpoint.Path))
+			// TODO: Return an error here?
+			return
+		}
+
 		s.router.Handle(endpoint.Method+" "+endpoint.Path, endpoint.Handler)
 	}
 }
