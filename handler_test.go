@@ -72,6 +72,7 @@ func TestNewJSONHandler(t *testing.T) {
 				},
 			}},
 			wantResponseStatusCode: http.StatusInternalServerError,
+			wantResponseBody:       `{"detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://pkg.go.dev/github.com/nickbryan/httputil/problem#ServerError"}`,
 		},
 		"returns a bad request status code with errors if the payload is empty but request data is expected": {
 			requestBody: strings.NewReader(""),
@@ -87,7 +88,7 @@ func TestNewJSONHandler(t *testing.T) {
 				})
 			},
 			wantResponseStatusCode: http.StatusBadRequest,
-			wantResponseBody:       `{"error":"Empty request body"}`,
+			wantResponseBody:       `{"detail":"The server received an unexpected empty request body","instance":"/test","status":400,"title":"Bad Request","type":"https://pkg.go.dev/github.com/nickbryan/httputil/problem#BadRequest"}`,
 		},
 		"returns a bad request status code and logs a warning when the request body cannot be decoded as json": {
 			requestBody: strings.NewReader(`{`),
@@ -105,14 +106,20 @@ func TestNewJSONHandler(t *testing.T) {
 				})
 			},
 			wantResponseStatusCode: http.StatusBadRequest,
+			wantResponseBody:       `{"detail":"The request is invalid or malformed","instance":"/test","status":400,"title":"Bad Request","type":"https://pkg.go.dev/github.com/nickbryan/httputil/problem#BadRequest"}`,
 		},
 		"returns a bad request status code with errors if the payload fails validation": {
 			requestBody: strings.NewReader("{}"),
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
 
+				type inner struct {
+					Thing string `json:"thing" validate:"required"`
+				}
+
 				type request struct {
-					Name string `json:"name" validate:"required"`
+					Name  string `json:"name"`
+					Inner inner  `json:"inner"`
 				}
 
 				return httputil.NewJSONHandler(func(_ httputil.Request[request]) (*httputil.Response[struct{}], error) {
@@ -120,7 +127,7 @@ func TestNewJSONHandler(t *testing.T) {
 				})
 			},
 			wantResponseStatusCode: http.StatusBadRequest,
-			wantResponseBody:       `{"error":"Invalid request body","errors":{"name":{"tag":"required","param":""}}}`,
+			wantResponseBody:       `{"detail":"The request data violated one or more validation constraints","instance":"/test","status":400,"title":"Constraint Violation","type":"https://pkg.go.dev/github.com/nickbryan/httputil/problem#ConstraintViolation","violations":[{"detail":"required","pointer":"/inner/thing"}]}`,
 		},
 		"the request body can be read again in the handler after it has been decoded into the request data type": {
 			requestBody: strings.NewReader(`{"hello":"world"}`),
@@ -154,17 +161,6 @@ func TestNewJSONHandler(t *testing.T) {
 				})
 			},
 			wantResponseStatusCode: http.StatusOK,
-		},
-		"the fields of a HandlerError are mapped correctly to the response": {
-			handler: func(t *testing.T) http.Handler {
-				t.Helper()
-				return httputil.NewJSONHandler(func(_ httputil.Request[struct{}]) (*httputil.Response[struct{}], error) {
-					return nil, httputil.NewHandlerError(http.StatusTeapot, "no more tea")
-				})
-			},
-			wantResponseBody:       `{"error":"no more tea"}`,
-			wantResponseStatusCode: http.StatusTeapot,
-			wantHeader:             http.Header{"Content-Type": {"application/json"}},
 		},
 		"an internal server error is returned and a log is written when a generic error is returned": {
 			handler: func(t *testing.T) http.Handler {

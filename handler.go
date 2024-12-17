@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"reflect"
+	"strings"
 
 	"github.com/go-playground/validator/v10"
 
@@ -53,30 +54,6 @@ func NewNoContentResponse() *Response[struct{}] {
 	}
 }
 
-// handlerError represents an error specific to the handler.
-type handlerError struct {
-	message string
-	code    int
-}
-
-func (e *handlerError) Error() string {
-	return e.message
-}
-
-// ErrInternal is a pre-defined handlerError representing an internal server error.
-var ErrInternal = &handlerError{
-	message: "internal server error",
-	code:    http.StatusInternalServerError,
-}
-
-// NewHandlerError creates a new handlerError with the given message and status code.
-func NewHandlerError(code int, message string) error {
-	return &handlerError{
-		message: message,
-		code:    code,
-	}
-}
-
 // NewJSONHandler creates a new http.Handler that wraps the provided [Handler] function
 // to deserialize JSON request bodies and serialize JSON response bodies.
 func NewJSONHandler[req, res any](handler Handler[req, res]) http.Handler {
@@ -106,77 +83,46 @@ func (h *jsonHandler[req, res]) SetValidator(v *validator.Validate) { h.validato
 // decodes it into the request data, validates it if a validator is set,
 // calls the wrapped handler, and writes the response back in JSON format.
 func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
 	request := Request[req]{Request: r} //nolint:exhaustruct // Zero value of Data is unknown.
+
+	w.Header().Set("Content-Type", "application/json")
 
 	body, err := io.ReadAll(request.Body)
 	if err != nil {
 		h.logger.WarnContext(r.Context(), "JSON handler failed to read request body", slog.String("error", err.Error()))
-		w.WriteHeader(http.StatusInternalServerError)
+		h.writeErrorResponse(r.Context(), w, problem.ServerError(r))
 
 		return
 	}
 
 	if !isEmptyStruct(request.Data) {
 		if len(body) == 0 {
-			h.writeEmptyBodyError(r.Context(), w)
+			h.writeErrorResponse(r.Context(), w, problem.BadRequest(r).WithDetail("The server received an unexpected empty request body"))
 			return
 		}
 
 		if err = json.Unmarshal(body, &request.Data); err != nil {
 			h.logger.WarnContext(r.Context(), "JSON handler failed to decode request data", slog.String("error", err.Error()))
-			w.WriteHeader(http.StatusBadRequest)
+			h.writeErrorResponse(r.Context(), w, problem.BadRequest(r))
 
 			return
 		}
 
 		if h.reqIsStructType {
 			if err = h.validator.StructCtx(r.Context(), &request.Data); err != nil {
-				var invalidValidationError *validator.InvalidValidationError
-				if errors.As(err, &invalidValidationError) {
-					h.logger.ErrorContext(r.Context(), "JSON handler failed to validate request data", slog.String("error", err.Error()))
-					w.WriteHeader(http.StatusInternalServerError)
-
-					return
-				}
-
-				var validationErrors validator.ValidationErrors
-				if errors.As(err, &validationErrors) {
-					h.writeValidationErrors(r.Context(), w, validationErrors)
-					return
-				}
-
-				h.logger.ErrorContext(r.Context(), "JSON handler received an unknown validation error", slog.String("error", err.Error()))
-				w.WriteHeader(http.StatusInternalServerError)
-
+				h.writeValidationErr(w, r, err)
 				return
 			}
 		}
 
+		// Put the body contents back so that it can be read in the handler again if desired. We have consumed
+		// the buffer when reading Body above.
 		request.Body = io.NopCloser(bytes.NewBuffer(body))
 	}
 
 	response, err := h.handler(request)
-
-	var problemDetails *problem.Details
-	if errors.As(err, &problemDetails) {
-		w.WriteHeader(problemDetails.Status)
-		h.encodeResponse(r.Context(), w, problemDetails)
-
-		return
-	}
-
-	var handlerErr *handlerError
-	if errors.As(err, &handlerErr) {
-		h.writeErrResponse(r.Context(), w, handlerErr)
-		return
-	}
-
 	if err != nil {
-		h.logger.WarnContext(r.Context(), "JSON handler received an unhandled error from inner handler", slog.String("error", err.Error()))
-		w.WriteHeader(http.StatusInternalServerError)
-
+		h.writeErrorResponse(r.Context(), w, err)
 		return
 	}
 
@@ -184,54 +130,52 @@ func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(response.code)
 
 	if _, ok := any(response.data).(struct{}); !ok {
-		h.encodeResponse(r.Context(), w, response.data)
+		h.writeResponse(r.Context(), w, response.data)
 	}
 }
 
-func (h *jsonHandler[req, res]) encodeResponse(ctx context.Context, w http.ResponseWriter, data any) {
+func (h *jsonHandler[req, res]) writeValidationErr(w http.ResponseWriter, r *http.Request, err error) {
+	var invalidValidationError *validator.InvalidValidationError
+	if errors.As(err, &invalidValidationError) {
+		h.logger.ErrorContext(r.Context(), "JSON handler failed to validate request data", slog.String("error", err.Error()))
+		h.writeErrorResponse(r.Context(), w, problem.ServerError(r))
+
+		return
+	}
+
+	var errs validator.ValidationErrors
+	if errors.As(err, &errs) {
+		fields := make([]problem.Field, 0, len(errs))
+		for _, err := range errs {
+			fields = append(fields, problem.Field{Detail: err.Tag(), Pointer: "/" + strings.Join(strings.Split(err.Namespace(), ".")[1:], "/")})
+		}
+
+		h.writeErrorResponse(r.Context(), w, problem.ConstraintViolation(r, fields...))
+
+		return
+	}
+
+	h.logger.ErrorContext(r.Context(), "JSON handler received an unknown validation error", slog.String("error", err.Error()))
+	h.writeErrorResponse(r.Context(), w, problem.ServerError(r))
+}
+
+func (h *jsonHandler[req, res]) writeErrorResponse(ctx context.Context, w http.ResponseWriter, err error) {
+	var problemDetails *problem.DetailedError
+	if errors.As(err, &problemDetails) {
+		w.WriteHeader(problemDetails.Status)
+		h.writeResponse(ctx, w, problemDetails)
+
+		return
+	}
+
+	h.logger.WarnContext(ctx, "JSON handler received an unhandled error from inner handler", slog.String("error", err.Error()))
+	w.WriteHeader(http.StatusInternalServerError)
+}
+
+func (h *jsonHandler[req, res]) writeResponse(ctx context.Context, w http.ResponseWriter, data any) {
 	if err := json.NewEncoder(w).Encode(&data); err != nil {
 		h.logger.ErrorContext(ctx, "JSON handler failed to encode response data", slog.String("error", err.Error()))
 	}
-}
-
-func (h *jsonHandler[req, res]) writeEmptyBodyError(ctx context.Context, w http.ResponseWriter) {
-	noContentErr := struct {
-		Error string `json:"error"`
-	}{Error: "Empty request body"}
-
-	w.WriteHeader(http.StatusBadRequest)
-	h.encodeResponse(ctx, w, noContentErr)
-}
-
-func (h *jsonHandler[req, res]) writeErrResponse(ctx context.Context, w http.ResponseWriter, err *handlerError) {
-	errResponse := struct {
-		Error string `json:"error"`
-	}{Error: err.Error()}
-
-	w.WriteHeader(err.code)
-	h.encodeResponse(ctx, w, errResponse)
-}
-
-func (h *jsonHandler[req, res]) writeValidationErrors(ctx context.Context, w http.ResponseWriter, errs []validator.FieldError) {
-	type validationErr struct {
-		Tag   string `json:"tag"`
-		Param string `json:"param"`
-	}
-
-	validationErrorResponse := struct {
-		Error  string                   `json:"error"`
-		Errors map[string]validationErr `json:"errors"`
-	}{Error: "Invalid request body", Errors: make(map[string]validationErr, len(errs))}
-
-	for _, err := range errs {
-		validationErrorResponse.Errors[err.Field()] = validationErr{
-			Tag:   err.Tag(),
-			Param: err.Param(),
-		}
-	}
-
-	w.WriteHeader(http.StatusBadRequest)
-	h.encodeResponse(ctx, w, validationErrorResponse)
 }
 
 func isEmptyStruct(v any) bool {

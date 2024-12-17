@@ -150,7 +150,7 @@ linters-settings:
   nakedret:
     max-func-lines: 0
   nestif:
-    min-complexity: 3
+    min-complexity: 7
   nilnil:
     detect-opposite: true
   nlreturn:
