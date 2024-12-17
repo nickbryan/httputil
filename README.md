@@ -14,8 +14,8 @@ removing boilerplate code required to build web services.
 ## Features
 * **SerDe Handlers:** Serialize/Deserialize request and response data with decreased boilerplate code.
     * `NewJSONHandler` provides encoding/decoding for JSON based handlers.
-* **Reduced Error Handling:** Common error scenarious are handled and logged for consistency.
-    * Server will attempt graceful shutdown and log errors apprpriately.
+* **Reduced Error Handling:** Common error scenarios are handled and logged for consistency.
+    * Server will attempt graceful shutdown and log errors appropriately.
 * ...
 
 ## Quick Start
@@ -68,23 +68,18 @@ func newTestHandler() http.Handler {
 ```
 
 ## TODO
-* [ ] Should we use problem details as the error format? If so, do we have a problem package or just have them as Error in the root?
-* [ ] Should each problem.Details have a code field so that we can increment them per business violation rule? So "422-SAV-1" or "422-01"
+* [ ] Update README to highlight problem json as a feature and provide examples of usage.
+* [ ] Should each problem.Details have a code field so that we can increment them per business violation rule? So "422-NS-1" or "422-01"
 * [ ] Document how errors take priority over responses, if an error is returned no response will be written if one is also returned. 
 * [ ] Implement proper JSON pointer handling on validation errors as per https://datatracker.ietf.org/doc/html/rfc6901.
 * [ ] Prevent overwriting of base values in the problem json marshaling code.
 * [ ]  What to do about handler? Should it still return error or only the ProblemDetails type? How could we also drop the need to pass a pointer for nil in the return arguments? Something instead of nil to represent empty? Union type? Httputil.NoProblem
-* [ ] Finish tests on server.go. 
-* [ ] Finish testing handler.go.
+* [ ] Finish test existing code to achieve sensible coverage.
 * [ ] Check over status codes used and error messages sent to user and logs are correct in the JSON handler code.
-* [ ] Export hendlerError type and drop new function?
-* [ ] Test the Endpoint wrapper functions.
 * [ ] Decide on how to wrap logger, implement and test - use as is or clone the writeHandler so we can provide a static message and add the error as an attribute? Would also allow us to set pc?
 * [ ] Figure out how to handle query params and path params for validation and decoding.
-* [ ] Fix lint issues. 
 * [ ] Ensure that panic middleware is correct, what comes back from recover and shoudl each type be handled (maybe just err and string).
 * [ ] Add common middleware.
-* [ ] Test all middleware.
 * [ ] Finalise all default values, ensure they are correct. 
 * [ ] This README needs filling out properly.
 * [ ] Finalise all package documentation.
