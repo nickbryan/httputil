@@ -35,6 +35,16 @@ type (
 	}
 )
 
+// NewNoContentResponse creates a new Response object with a status code
+// of http.StatusNoContent (204 No Content) and an empty struct as data.
+func NewNoContentResponse() *Response[struct{}] {
+	return &Response[struct{}]{
+		Header: make(http.Header),
+		data:   struct{}{},
+		code:   http.StatusNoContent,
+	}
+}
+
 // NewResponse creates a new Response object with the given status code and data.
 func NewResponse[T any](code int, data T) *Response[T] {
 	return &Response[T]{
@@ -44,14 +54,11 @@ func NewResponse[T any](code int, data T) *Response[T] {
 	}
 }
 
-// NewNoContentResponse creates a new Response object with a status code
-// of http.StatusNoContent (204 No Content) and an empty struct as data.
-func NewNoContentResponse() *Response[struct{}] {
-	return &Response[struct{}]{
-		Header: make(http.Header),
-		data:   struct{}{},
-		code:   http.StatusNoContent,
-	}
+type jsonHandler[req, res any] struct {
+	handler         Handler[req, res]
+	logger          *slog.Logger
+	validator       *validator.Validate
+	reqIsStructType bool
 }
 
 // NewJSONHandler creates a new http.Handler that wraps the provided [Handler] function
@@ -64,13 +71,6 @@ func NewJSONHandler[req, res any](handler Handler[req, res]) http.Handler {
 		// Cache this early as reflection can be expensive.
 		reqIsStructType: reflect.TypeFor[req]().Kind() == reflect.Struct,
 	}
-}
-
-type jsonHandler[req, res any] struct {
-	handler         Handler[req, res]
-	logger          *slog.Logger
-	validator       *validator.Validate
-	reqIsStructType bool
 }
 
 // SetLogger is used by the server to inject the logger that will be used by the handler.
