@@ -73,7 +73,7 @@ func (s *Server) Serve(ctx context.Context) {
 		defer cancelAwaitSignal()
 
 		if err := s.Listener.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			s.logger.ErrorContext(ctx, "Server failed to listen and serve", slog.String("error", err.Error()))
+			s.logger.ErrorContext(ctx, "Server failed to listen and serve", slog.Any("error", err))
 		}
 	}()
 
@@ -88,7 +88,7 @@ func (s *Server) Serve(ctx context.Context) {
 	// Calling Shutdown causes ListenAndServe to return ErrServerClosed immediately. Shutdown then
 	// takes over and handles graceful shutdown.
 	if err := s.Listener.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck // False positive.
-		s.logger.ErrorContext(ctx, "Server failed to shutdown gracefully", slog.String("error", err.Error()))
+		s.logger.ErrorContext(ctx, "Server failed to shutdown gracefully", slog.Any("error", err))
 	}
 
 	s.logger.InfoContext(ctx, "Server shutdown")

@@ -42,8 +42,8 @@ func TestNewJSONHandler(t *testing.T) {
 					return httputil.NewNoContentResponse(), nil
 				})
 			},
-			wantResponseStatusCode: http.StatusNoContent,
 			wantHeader:             http.Header{"Content-Type": {"application/json"}},
+			wantResponseStatusCode: http.StatusNoContent,
 		},
 		"the response content type is application/json when an error response is returned": {
 			handler: func(t *testing.T) http.Handler {
@@ -57,7 +57,7 @@ func TestNewJSONHandler(t *testing.T) {
 				Message: "JSON handler received an unhandled error from inner handler",
 				Level:   slog.LevelWarn,
 				Attrs: map[string]slog.Value{
-					"error": slog.StringValue("some error"),
+					"error": slog.AnyValue("some error"),
 				},
 			}},
 			wantResponseStatusCode: http.StatusInternalServerError,
@@ -68,14 +68,13 @@ func TestNewJSONHandler(t *testing.T) {
 				Message: "JSON handler failed to read request body",
 				Level:   slog.LevelWarn,
 				Attrs: map[string]slog.Value{
-					"error": slog.StringValue("the request body was invalid"),
+					"error": slog.AnyValue("the request body was invalid"),
 				},
 			}},
-			wantResponseStatusCode: http.StatusInternalServerError,
 			wantResponseBody:       `{"detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://pkg.go.dev/github.com/nickbryan/httputil/problem#ServerError"}`,
+			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"returns a bad request status code with errors if the payload is empty but request data is expected": {
-			requestBody: strings.NewReader(""),
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
 
@@ -87,29 +86,29 @@ func TestNewJSONHandler(t *testing.T) {
 					return httputil.NewResponse(http.StatusOK, struct{}{}), nil
 				})
 			},
-			wantResponseStatusCode: http.StatusBadRequest,
+			requestBody:            strings.NewReader(""),
 			wantResponseBody:       `{"detail":"The server received an unexpected empty request body","instance":"/test","status":400,"title":"Bad Request","type":"https://pkg.go.dev/github.com/nickbryan/httputil/problem#BadRequest"}`,
+			wantResponseStatusCode: http.StatusBadRequest,
 		},
 		"returns a bad request status code and logs a warning when the request body cannot be decoded as json": {
-			requestBody: strings.NewReader(`{`),
-			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler failed to decode request data",
-				Level:   slog.LevelWarn,
-				Attrs: map[string]slog.Value{
-					"error": slog.StringValue("unexpected end of JSON input"),
-				},
-			}},
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
 				return httputil.NewJSONHandler(func(_ httputil.Request[map[string]string]) (*httputil.Response[struct{}], error) {
 					return httputil.NewNoContentResponse(), nil
 				})
 			},
-			wantResponseStatusCode: http.StatusBadRequest,
+			requestBody: strings.NewReader(`{`),
+			wantLogs: []slogmem.RecordQuery{{
+				Message: "JSON handler failed to decode request data",
+				Level:   slog.LevelWarn,
+				Attrs: map[string]slog.Value{
+					"error": slog.AnyValue("unexpected end of JSON input"),
+				},
+			}},
 			wantResponseBody:       `{"detail":"The request is invalid or malformed","instance":"/test","status":400,"title":"Bad Request","type":"https://pkg.go.dev/github.com/nickbryan/httputil/problem#BadRequest"}`,
+			wantResponseStatusCode: http.StatusBadRequest,
 		},
 		"returns a bad request status code with errors if the payload fails validation": {
-			requestBody: strings.NewReader("{}"),
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
 
@@ -126,11 +125,11 @@ func TestNewJSONHandler(t *testing.T) {
 					return httputil.NewResponse(http.StatusOK, struct{}{}), nil
 				})
 			},
-			wantResponseStatusCode: http.StatusBadRequest,
+			requestBody:            strings.NewReader("{}"),
 			wantResponseBody:       `{"detail":"The request data violated one or more validation constraints","instance":"/test","status":400,"title":"Constraint Violation","type":"https://pkg.go.dev/github.com/nickbryan/httputil/problem#ConstraintViolation","violations":[{"detail":"required","pointer":"/inner/thing"}]}`,
+			wantResponseStatusCode: http.StatusBadRequest,
 		},
 		"the request body can be read again in the handler after it has been decoded into the request data type": {
-			requestBody: strings.NewReader(`{"hello":"world"}`),
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
 				return httputil.NewJSONHandler(func(r httputil.Request[map[string]string]) (*httputil.Response[struct{}], error) {
@@ -146,10 +145,10 @@ func TestNewJSONHandler(t *testing.T) {
 					return httputil.NewResponse(http.StatusOK, struct{}{}), nil
 				})
 			},
+			requestBody:            strings.NewReader(`{"hello":"world"}`),
 			wantResponseStatusCode: http.StatusOK,
 		},
 		"the request body is mapped to the requests data": {
-			requestBody: strings.NewReader(`{"hello":"world"}`),
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
 				return httputil.NewJSONHandler(func(r httputil.Request[map[string]string]) (*httputil.Response[struct{}], error) {
@@ -160,6 +159,7 @@ func TestNewJSONHandler(t *testing.T) {
 					return httputil.NewResponse(http.StatusOK, struct{}{}), nil
 				})
 			},
+			requestBody:            strings.NewReader(`{"hello":"world"}`),
 			wantResponseStatusCode: http.StatusOK,
 		},
 		"an internal server error is returned and a log is written when a generic error is returned": {
@@ -169,15 +169,15 @@ func TestNewJSONHandler(t *testing.T) {
 					return nil, errors.New("some error")
 				})
 			},
+			wantHeader: http.Header{"Content-Type": {"application/json"}},
 			wantLogs: []slogmem.RecordQuery{{
 				Message: "JSON handler received an unhandled error from inner handler",
 				Level:   slog.LevelWarn,
 				Attrs: map[string]slog.Value{
-					"error": slog.StringValue("some error"),
+					"error": slog.AnyValue("some error"),
 				},
 			}},
 			wantResponseStatusCode: http.StatusInternalServerError,
-			wantHeader:             http.Header{"Content-Type": {"application/json"}},
 		},
 		"custom headers are set in the response on successful request": {
 			handler: func(t *testing.T) http.Handler {
@@ -189,8 +189,8 @@ func TestNewJSONHandler(t *testing.T) {
 					return resp, nil
 				})
 			},
-			wantResponseStatusCode: http.StatusOK,
 			wantHeader:             http.Header{"Content-Type": {"application/json"}, "My-Header": {"value"}},
+			wantResponseStatusCode: http.StatusOK,
 		},
 		"status code is used from the response on successful request": {
 			handler: func(t *testing.T) http.Handler {
@@ -208,8 +208,8 @@ func TestNewJSONHandler(t *testing.T) {
 					return httputil.NewResponse(http.StatusOK, map[string]string{"hello": "world"}), nil
 				})
 			},
-			wantResponseStatusCode: http.StatusOK,
 			wantResponseBody:       `{"hello":"world"}`,
+			wantResponseStatusCode: http.StatusOK,
 		},
 		"logs a warning when the response body cannot be encoded as json": {
 			handler: func(t *testing.T) http.Handler {
@@ -222,7 +222,7 @@ func TestNewJSONHandler(t *testing.T) {
 				Message: "JSON handler failed to encode response data",
 				Level:   slog.LevelError,
 				Attrs: map[string]slog.Value{
-					"error": slog.StringValue("json: unsupported type: chan int"),
+					"error": slog.AnyValue("json: unsupported type: chan int"),
 				},
 			}},
 			wantResponseStatusCode: http.StatusCreated,

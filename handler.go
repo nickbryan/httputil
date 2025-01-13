@@ -89,20 +89,21 @@ func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request
 
 	body, err := io.ReadAll(request.Body)
 	if err != nil {
-		h.logger.WarnContext(r.Context(), "JSON handler failed to read request body", slog.String("error", err.Error()))
+		h.logger.WarnContext(r.Context(), "JSON handler failed to read request body", slog.Any("error", err))
 		h.writeErrorResponse(r.Context(), w, problem.ServerError(r))
 
 		return
 	}
 
 	if !isEmptyStruct(request.Data) {
+		// TODO: test the inverse of this?
 		if len(body) == 0 {
 			h.writeErrorResponse(r.Context(), w, problem.BadRequest(r).WithDetail("The server received an unexpected empty request body"))
 			return
 		}
 
 		if err = json.Unmarshal(body, &request.Data); err != nil {
-			h.logger.WarnContext(r.Context(), "JSON handler failed to decode request data", slog.String("error", err.Error()))
+			h.logger.WarnContext(r.Context(), "JSON handler failed to decode request data", slog.Any("error", err))
 			h.writeErrorResponse(r.Context(), w, problem.BadRequest(r))
 
 			return
@@ -137,7 +138,7 @@ func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request
 func (h *jsonHandler[req, res]) writeValidationErr(w http.ResponseWriter, r *http.Request, err error) {
 	var invalidValidationError *validator.InvalidValidationError
 	if errors.As(err, &invalidValidationError) {
-		h.logger.ErrorContext(r.Context(), "JSON handler failed to validate request data", slog.String("error", err.Error()))
+		h.logger.ErrorContext(r.Context(), "JSON handler failed to validate request data", slog.Any("error", err))
 		h.writeErrorResponse(r.Context(), w, problem.ServerError(r))
 
 		return
@@ -155,7 +156,7 @@ func (h *jsonHandler[req, res]) writeValidationErr(w http.ResponseWriter, r *htt
 		return
 	}
 
-	h.logger.ErrorContext(r.Context(), "JSON handler received an unknown validation error", slog.String("error", err.Error()))
+	h.logger.ErrorContext(r.Context(), "JSON handler received an unknown validation error", slog.Any("error", err))
 	h.writeErrorResponse(r.Context(), w, problem.ServerError(r))
 }
 
@@ -168,13 +169,13 @@ func (h *jsonHandler[req, res]) writeErrorResponse(ctx context.Context, w http.R
 		return
 	}
 
-	h.logger.WarnContext(ctx, "JSON handler received an unhandled error from inner handler", slog.String("error", err.Error()))
+	h.logger.WarnContext(ctx, "JSON handler received an unhandled error from inner handler", slog.Any("error", err))
 	w.WriteHeader(http.StatusInternalServerError)
 }
 
 func (h *jsonHandler[req, res]) writeResponse(ctx context.Context, w http.ResponseWriter, data any) {
 	if err := json.NewEncoder(w).Encode(&data); err != nil {
-		h.logger.ErrorContext(ctx, "JSON handler failed to encode response data", slog.String("error", err.Error()))
+		h.logger.ErrorContext(ctx, "JSON handler failed to encode response data", slog.Any("error", err))
 	}
 }
 
