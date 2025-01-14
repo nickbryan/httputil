@@ -1,10 +1,9 @@
 package httputil
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
-
-	"golang.org/x/net/context"
 )
 
 // MiddlewareFunc defines a function type for HTTP middleware.
