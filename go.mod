@@ -4,7 +4,7 @@ go 1.23.3
 
 require (
 	github.com/go-playground/validator v9.31.0+incompatible
-	github.com/nickbryan/slogutil v1.2.2-0.20250113122045-4c64ac49be71
+	github.com/nickbryan/slogutil v1.2.2
 )
 
 require (

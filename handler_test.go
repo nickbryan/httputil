@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickbryan/httputil"
 	"github.com/nickbryan/httputil/internal/testutil"
+	"github.com/nickbryan/httputil/problem"
 	"github.com/nickbryan/slogutil"
 	"github.com/nickbryan/slogutil/slogmem"
 )
@@ -60,6 +61,17 @@ func TestNewJSONHandler(t *testing.T) {
 					"error": slog.AnyValue("some error"),
 				},
 			}},
+			wantResponseStatusCode: http.StatusInternalServerError,
+		},
+		"the response content type is application/problem+json when a problem response is returned": {
+			handler: func(t *testing.T) http.Handler {
+				t.Helper()
+				return httputil.NewJSONHandler(func(r httputil.Request[struct{}]) (*httputil.Response[struct{}], error) {
+					return nil, problem.ServerError(r.Request)
+				})
+			},
+			wantHeader:             http.Header{"Content-Type": {"application/problem+json"}},
+			wantResponseBody:       `{"detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://pkg.go.dev/github.com/nickbryan/httputil/problem#ServerError"}`,
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"returns an internal server error status code and logs a warning when the request body cannot be read": {

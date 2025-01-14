@@ -163,6 +163,7 @@ func (h *jsonHandler[req, res]) writeValidationErr(w http.ResponseWriter, r *htt
 func (h *jsonHandler[req, res]) writeErrorResponse(ctx context.Context, w http.ResponseWriter, err error) {
 	var problemDetails *problem.DetailedError
 	if errors.As(err, &problemDetails) {
+		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(problemDetails.Status)
 		h.writeResponse(ctx, w, problemDetails)
 
