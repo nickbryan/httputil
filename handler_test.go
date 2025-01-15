@@ -56,7 +56,7 @@ func TestNewJSONHandler(t *testing.T) {
 			wantHeader: http.Header{"Content-Type": {"application/json"}},
 			wantLogs: []slogmem.RecordQuery{{
 				Message: "JSON handler received an unhandled error from inner handler",
-				Level:   slog.LevelWarn,
+				Level:   slog.LevelError,
 				Attrs: map[string]slog.Value{
 					"error": slog.AnyValue("some error"),
 				},
@@ -187,7 +187,7 @@ func TestNewJSONHandler(t *testing.T) {
 			wantHeader: http.Header{"Content-Type": {"application/json"}},
 			wantLogs: []slogmem.RecordQuery{{
 				Message: "JSON handler received an unhandled error from inner handler",
-				Level:   slog.LevelWarn,
+				Level:   slog.LevelError,
 				Attrs: map[string]slog.Value{
 					"error": slog.AnyValue("some error"),
 				},

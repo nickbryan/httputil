@@ -135,7 +135,7 @@ func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request
 }
 
 func (h *jsonHandler[req, res]) writeValidationErr(w http.ResponseWriter, r *http.Request, err error) {
-	// This shoudl never really happen as we validate if the expected request.Data is a struct
+	// This should never really happen as we validate if the expected request.Data is a struct
 	// which is a valid value for StructCtx. This error only gets returned on invalid types being passed to
 	// `Struct`, `StructExcept`, StructPartial` or `Field` and their context variants.
 	// This means there is unfortunately no way to test this.

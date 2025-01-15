@@ -97,7 +97,7 @@ func (s *Server) Serve(ctx context.Context) {
 // ServeHTTP delegates the request handling to the underlying router. Exposing ServeHTTP
 // allows endpoints to be tested without a running server.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.router.ServeHTTP(w, r)
+	newPanicRecoveryMiddleware(s.logger)(s.router).ServeHTTP(w, r)
 }
 
 // NewValidator returns a new validator.Validate that is configured for JSON tags.

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"syscall"
 	"testing"
@@ -160,6 +161,46 @@ func TestServerServe(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestServerServeHTTP(t *testing.T) {
+	t.Parallel()
+
+	t.Run("recovers from a panic gracefully", func(t *testing.T) {
+		t.Parallel()
+
+		logger, records := slogutil.NewInMemoryLogger(slog.LevelDebug)
+		svr := httputil.NewServer(logger)
+
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, "/", nil)
+
+		svr.Register(httputil.Endpoint{
+			Method: http.MethodGet,
+			Path:   "/",
+			Handler: http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+				panic("panic from handler")
+			}),
+		})
+
+		svr.ServeHTTP(response, request)
+
+		if response.Code != http.StatusInternalServerError {
+			t.Errorf("unexpected status code, want: %d, got: %d", http.StatusInternalServerError, response.Code)
+		}
+
+		query := slogmem.RecordQuery{
+			Level:   slog.LevelError,
+			Message: "Handler panicked",
+			Attrs: map[string]slog.Value{
+				"error": slog.AnyValue("panic from handler"),
+			},
+		}
+
+		if ok, diff := records.Contains(query); !ok {
+			t.Errorf("logs does not contain query, want: %+v, got:\n%s", query, diff)
+		}
+	})
 }
 
 func sendFutureSignalNotification(ctx context.Context, t *testing.T, sig os.Signal) (returnErr error) {
