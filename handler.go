@@ -96,7 +96,6 @@ func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request
 	}
 
 	if !isEmptyStruct(request.Data) {
-		// TODO: test the inverse of this?
 		if len(body) == 0 {
 			h.writeErrorResponse(r.Context(), w, problem.BadRequest(r).WithDetail("The server received an unexpected empty request body"))
 			return
@@ -130,12 +129,16 @@ func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request
 	writeHeaders(w, response.Header)
 	w.WriteHeader(response.code)
 
-	if _, ok := any(response.data).(struct{}); !ok {
+	if !isEmptyStruct(response.data) {
 		h.writeResponse(r.Context(), w, response.data)
 	}
 }
 
 func (h *jsonHandler[req, res]) writeValidationErr(w http.ResponseWriter, r *http.Request, err error) {
+	// This shoudl never really happen as we validate if the expected request.Data is a struct
+	// which is a valid value for StructCtx. This error only gets returned on invalid types being passed to
+	// `Struct`, `StructExcept`, StructPartial` or `Field` and their context variants.
+	// This means there is unfortunately no way to test this.
 	var invalidValidationError *validator.InvalidValidationError
 	if errors.As(err, &invalidValidationError) {
 		h.logger.ErrorContext(r.Context(), "JSON handler failed to validate request data", slog.Any("error", err))
@@ -156,6 +159,8 @@ func (h *jsonHandler[req, res]) writeValidationErr(w http.ResponseWriter, r *htt
 		return
 	}
 
+	// The validator should never return an unknown error type based in its current implementation
+	// but we handle it anyway in case that ever changes. Unfortunately, like above, there is no way to test this.
 	h.logger.ErrorContext(r.Context(), "JSON handler received an unknown validation error", slog.Any("error", err))
 	h.writeErrorResponse(r.Context(), w, problem.ServerError(r))
 }
@@ -170,7 +175,7 @@ func (h *jsonHandler[req, res]) writeErrorResponse(ctx context.Context, w http.R
 		return
 	}
 
-	h.logger.WarnContext(ctx, "JSON handler received an unhandled error from inner handler", slog.Any("error", err))
+	h.logger.ErrorContext(ctx, "JSON handler received an unhandled error from inner handler", slog.Any("error", err))
 	w.WriteHeader(http.StatusInternalServerError)
 }
 

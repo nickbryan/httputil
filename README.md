@@ -77,7 +77,6 @@ func newTestHandler() http.Handler {
 * [ ] Prevent overwriting of base values in the problem json marshaling code.
 * [ ] What to do about handler? Should it still return error or only the ProblemDetails type? How could we also drop the need to pass a pointer for nil in the return arguments? Something instead of nil to represent empty? Union type? Httputil.NoProblem
 * [ ] Finish test existing code to achieve sensible coverage.
-* [ ] Check over status codes used and error messages sent to user and logs are correct in the JSON handler code.
 * [ ] Decide on how to wrap logger, implement and test - use as is or clone the writeHandler so we can provide a static message and add the error as an attribute? Would also allow us to set pc?
 * [ ] Figure out how to handle query params and path params for validation and decoding.
 * [ ] Ensure that panic middleware is correct, what comes back from recover and shoudl each type be handled (maybe just err and string).

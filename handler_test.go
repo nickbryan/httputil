@@ -95,10 +95,11 @@ func TestNewJSONHandler(t *testing.T) {
 				}
 
 				return httputil.NewJSONHandler(func(_ httputil.Request[request]) (*httputil.Response[struct{}], error) {
-					return httputil.NewResponse(http.StatusOK, struct{}{}), nil
+					return httputil.NewNoContentResponse(), nil
 				})
 			},
 			requestBody:            strings.NewReader(""),
+			wantHeader:             http.Header{"Content-Type": {"application/problem+json"}},
 			wantResponseBody:       `{"detail":"The server received an unexpected empty request body","instance":"/test","status":400,"title":"Bad Request","type":"https://pkg.go.dev/github.com/nickbryan/httputil/problem#BadRequest"}`,
 			wantResponseStatusCode: http.StatusBadRequest,
 		},
@@ -110,6 +111,7 @@ func TestNewJSONHandler(t *testing.T) {
 				})
 			},
 			requestBody: strings.NewReader(`{`),
+			wantHeader:  http.Header{"Content-Type": {"application/problem+json"}},
 			wantLogs: []slogmem.RecordQuery{{
 				Message: "JSON handler failed to decode request data",
 				Level:   slog.LevelWarn,
@@ -134,10 +136,11 @@ func TestNewJSONHandler(t *testing.T) {
 				}
 
 				return httputil.NewJSONHandler(func(_ httputil.Request[request]) (*httputil.Response[struct{}], error) {
-					return httputil.NewResponse(http.StatusOK, struct{}{}), nil
+					return httputil.NewNoContentResponse(), nil
 				})
 			},
 			requestBody:            strings.NewReader("{}"),
+			wantHeader:             http.Header{"Content-Type": {"application/problem+json"}},
 			wantResponseBody:       `{"detail":"The request data violated one or more validation constraints","instance":"/test","status":400,"title":"Constraint Violation","type":"https://pkg.go.dev/github.com/nickbryan/httputil/problem#ConstraintViolation","violations":[{"detail":"required","pointer":"/inner/thing"}]}`,
 			wantResponseStatusCode: http.StatusBadRequest,
 		},
@@ -154,11 +157,11 @@ func TestNewJSONHandler(t *testing.T) {
 						t.Errorf("r.Body mismatch (-want +got):\n%s", diff)
 					}
 
-					return httputil.NewResponse(http.StatusOK, struct{}{}), nil
+					return httputil.NewNoContentResponse(), nil
 				})
 			},
 			requestBody:            strings.NewReader(`{"hello":"world"}`),
-			wantResponseStatusCode: http.StatusOK,
+			wantResponseStatusCode: http.StatusNoContent,
 		},
 		"the request body is mapped to the requests data": {
 			handler: func(t *testing.T) http.Handler {
@@ -168,11 +171,11 @@ func TestNewJSONHandler(t *testing.T) {
 						t.Errorf("r.Data[\"hello\"] = %v, want: world", r.Data["hello"])
 					}
 
-					return httputil.NewResponse(http.StatusOK, struct{}{}), nil
+					return httputil.NewNoContentResponse(), nil
 				})
 			},
 			requestBody:            strings.NewReader(`{"hello":"world"}`),
-			wantResponseStatusCode: http.StatusOK,
+			wantResponseStatusCode: http.StatusNoContent,
 		},
 		"an internal server error is returned and a log is written when a generic error is returned": {
 			handler: func(t *testing.T) http.Handler {
@@ -195,23 +198,23 @@ func TestNewJSONHandler(t *testing.T) {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
 				return httputil.NewJSONHandler(func(_ httputil.Request[struct{}]) (*httputil.Response[struct{}], error) {
-					resp := httputil.NewResponse(http.StatusOK, struct{}{})
+					resp := httputil.NewNoContentResponse()
 					resp.Header.Set("My-Header", "value")
 
 					return resp, nil
 				})
 			},
 			wantHeader:             http.Header{"Content-Type": {"application/json"}, "My-Header": {"value"}},
-			wantResponseStatusCode: http.StatusOK,
+			wantResponseStatusCode: http.StatusNoContent,
 		},
 		"status code is used from the response on successful request": {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
 				return httputil.NewJSONHandler(func(_ httputil.Request[struct{}]) (*httputil.Response[struct{}], error) {
-					return httputil.NewResponse(http.StatusNoContent, struct{}{}), nil
+					return httputil.NewResponse(http.StatusAccepted, struct{}{}), nil
 				})
 			},
-			wantResponseStatusCode: http.StatusNoContent,
+			wantResponseStatusCode: http.StatusAccepted,
 		},
 		"response data is encoded as json in the body": {
 			handler: func(t *testing.T) http.Handler {
@@ -237,7 +240,26 @@ func TestNewJSONHandler(t *testing.T) {
 					"error": slog.AnyValue("json: unsupported type: chan int"),
 				},
 			}},
+			// We have no way to overwrite the status code to an error code in this situation as it will
+			// have already been written.
 			wantResponseStatusCode: http.StatusCreated,
+		},
+		"only the error case is handled when both an error and a response is returned from the handler": {
+			handler: func(t *testing.T) http.Handler {
+				t.Helper()
+				return httputil.NewJSONHandler(func(_ httputil.Request[struct{}]) (*httputil.Response[struct{}], error) {
+					return httputil.NewNoContentResponse(), errors.New("some error")
+				})
+			},
+			wantHeader: http.Header{"Content-Type": {"application/json"}},
+			wantLogs: []slogmem.RecordQuery{{
+				Message: "JSON handler received an unhandled error from inner handler",
+				Level:   slog.LevelError,
+				Attrs: map[string]slog.Value{
+					"error": slog.AnyValue("some error"),
+				},
+			}},
+			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 	}
 
