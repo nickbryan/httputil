@@ -18,6 +18,10 @@ type Endpoint struct {
 // It returns a new slice of Endpoints with the middleware applied to their handlers.
 // The original endpoints are not modified.
 func EndpointsWithMiddleware(middleware MiddlewareFunc, endpoints ...Endpoint) []Endpoint {
+	if middleware == nil {
+		return endpoints
+	}
+
 	epts := make([]Endpoint, 0, len(endpoints))
 
 	for _, endpoint := range endpoints {
