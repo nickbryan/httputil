@@ -1,0 +1,93 @@
+package httputil_test
+
+import (
+	"log/slog"
+	"net/http"
+	"testing"
+	"time"
+
+	"github.com/nickbryan/httputil"
+	"github.com/nickbryan/slogutil"
+)
+
+/*
+	These tests look like they know too much about the underlying implementation but that is by design.
+	We encapsulate the http.Server as a httputil.Listener so that the user can override it if desired.
+	We provide http.Server as the default implementation allowing us to confidently check that the values
+	get set as expected rather than testing the behavioral impact they have on the server itself.
+	This is nice because the behavioral impact is also really hard to test...
+*/
+
+// Shutdown timeout is tested as part of Server.Serve.
+func TestServerOptionsDefaults(t *testing.T) {
+	t.Parallel()
+
+	logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+	server := httputil.NewServer(logger)
+
+	netHTTPServer, ok := server.Listener.(*http.Server)
+	if !ok {
+		t.Fatalf("listener is not a http.Server")
+	}
+
+	const defaultTimeout = time.Minute
+
+	if got, want := netHTTPServer.Addr, ":8080"; got != want {
+		t.Errorf("default address not set, got: %s, want: %s", got, want)
+	}
+
+	if got, want := netHTTPServer.IdleTimeout, defaultTimeout; got != want {
+		t.Errorf("default idle timeout not set, got: %s, want: %s", got, want)
+	}
+
+	if got, want := netHTTPServer.ReadHeaderTimeout, defaultTimeout; got != want {
+		t.Errorf("default read header timeout not set, got: %s, want: %s", got, want)
+	}
+
+	if got, want := netHTTPServer.ReadTimeout, defaultTimeout; got != want {
+		t.Errorf("default read timeout not set, got: %s, want: %s", got, want)
+	}
+
+	if got, want := netHTTPServer.WriteTimeout, defaultTimeout; got != want {
+		t.Errorf("default write timeout not set, got: %s, want: %s", got, want)
+	}
+}
+
+// Shutdown timeout is tested as part of Server.Serve.
+func TestServerOptions(t *testing.T) {
+	t.Parallel()
+
+	logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+	server := httputil.NewServer(logger,
+		httputil.WithAddress("someaddr:8765"),
+		httputil.WithIdleTimeout(time.Duration(1)),
+		httputil.WithReadHeaderTimeout(time.Duration(2)),
+		httputil.WithReadTimeout(time.Duration(3)),
+		httputil.WithWriteTimeout(time.Duration(4)),
+	)
+
+	netHTTPServer, ok := server.Listener.(*http.Server)
+	if !ok {
+		t.Fatalf("listener is not a http.Server")
+	}
+
+	if got, want := netHTTPServer.Addr, "someaddr:8765"; got != want {
+		t.Errorf("default address not set, got: %s, want: %s", got, want)
+	}
+
+	if got, want := netHTTPServer.IdleTimeout, time.Duration(1); got != want {
+		t.Errorf("default idle timeout not set, got: %s, want: %s", got, want)
+	}
+
+	if got, want := netHTTPServer.ReadHeaderTimeout, time.Duration(2); got != want {
+		t.Errorf("default read header timeout not set, got: %s, want: %s", got, want)
+	}
+
+	if got, want := netHTTPServer.ReadTimeout, time.Duration(3); got != want {
+		t.Errorf("default read timeout not set, got: %s, want: %s", got, want)
+	}
+
+	if got, want := netHTTPServer.WriteTimeout, time.Duration(4); got != want {
+		t.Errorf("default write timeout not set, got: %s, want: %s", got, want)
+	}
+}

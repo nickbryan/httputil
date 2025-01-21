@@ -70,13 +70,14 @@ func newTestHandler() http.Handler {
 ## TODO
 * [ ] Does the validator need to be exported? Should be configurable so that it can be overridden?
 * [ ] Implement the remaining problem details for common errors.
+* [ ] Create pages in markdown format for problem details and link them into the github repo from the problem payload (instead of using godoc)?
+* [ ] Update handler code to return the correct problem when they are all defined (empty body for example).
 * [ ] Update README to highlight problem json as a feature and provide examples of usage.
 * [ ] How do we allow people to return a custom error payload if required so they are not locked to problem json?
 * [ ] Should each problem.Details have a code field so that we can increment them per business violation rule? So "422-NS-1" or "422-01"
 * [ ] Document how errors take priority over responses, if an error is returned no response will be written if one is also returned. 
 * [ ] Implement proper JSON pointer handling on validation errors as per https://datatracker.ietf.org/doc/html/rfc6901.
 * [ ] Prevent overwriting of base values in the problem json marshaling code.
-* [ ] What to do about handler? Should it still return error or only the ProblemDetails type? How could we also drop the need to pass a pointer for nil in the return arguments? Something instead of nil to represent empty? Union type? Httputil.NoProblem
 * [ ] Finish test existing code to achieve sensible coverage.
 * [ ] Decide on how to wrap logger, implement and test - use as is or clone the writeHandler so we can provide a static message and add the error as an attribute? Would also allow us to set pc?
 * [ ] Figure out how to handle query params and path params for validation and decoding.
