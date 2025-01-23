@@ -36,13 +36,53 @@ func BadRequest(r *http.Request) *DetailedError {
 // ConstraintViolation creates a DetailedError for constraint violation errors.
 // The Field describe the specific fields that violated constraints.
 func ConstraintViolation(r *http.Request, fields ...Field) *DetailedError {
+	if fields == nil {
+		fields = []Field{}
+	}
+
 	return &DetailedError{
 		Type:             DefaultErrorDocumentationLocation + "ConstraintViolation",
 		Title:            "Constraint Violation",
 		Detail:           "The request data violated one or more validation constraints",
-		Status:           http.StatusBadRequest,
+		Status:           http.StatusUnprocessableEntity,
 		Instance:         r.URL.Path,
 		ExtensionMembers: map[string]any{"violations": fields},
+	}
+}
+
+// Forbidden creates a DetailedError for forbidden errors.
+func Forbidden(r *http.Request) *DetailedError {
+	return &DetailedError{
+		Type:             DefaultErrorDocumentationLocation + "Forbidden",
+		Title:            "Forbidden",
+		Detail:           "You do not have the necessary permissions to " + r.Method + " this resource",
+		Status:           http.StatusForbidden,
+		Instance:         r.URL.Path,
+		ExtensionMembers: nil,
+	}
+}
+
+// NotFound creates a DetailedError for not found errors.
+func NotFound(r *http.Request) *DetailedError {
+	return &DetailedError{
+		Type:             DefaultErrorDocumentationLocation + "NotFound",
+		Title:            "Not Found",
+		Detail:           "The requested resource was not found",
+		Status:           http.StatusNotFound,
+		Instance:         r.URL.Path,
+		ExtensionMembers: nil,
+	}
+}
+
+// ResourceExists creates a DetailedError for duplicate resource errors.
+func ResourceExists(r *http.Request) *DetailedError {
+	return &DetailedError{
+		Type:             DefaultErrorDocumentationLocation + "ResourceExists",
+		Title:            "Resource Exists",
+		Detail:           "A resource already exists with the specified identifier",
+		Status:           http.StatusConflict,
+		Instance:         r.URL.Path,
+		ExtensionMembers: nil,
 	}
 }
 
@@ -53,6 +93,18 @@ func ServerError(r *http.Request) *DetailedError {
 		Title:            "Server Error",
 		Detail:           "The server encountered an unexpected internal error",
 		Status:           http.StatusInternalServerError,
+		Instance:         r.URL.Path,
+		ExtensionMembers: nil,
+	}
+}
+
+// Unauthorized creates a DetailedError for unauthorized errors.
+func Unauthorized(r *http.Request) *DetailedError {
+	return &DetailedError{
+		Type:             DefaultErrorDocumentationLocation + "Unauthorized",
+		Title:            "Unauthorized",
+		Detail:           "You must be authenticated to " + r.Method + " this resource",
+		Status:           http.StatusUnauthorized,
 		Instance:         r.URL.Path,
 		ExtensionMembers: nil,
 	}

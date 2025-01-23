@@ -122,7 +122,7 @@ func TestNewJSONHandler(t *testing.T) {
 			wantResponseBody:       `{"detail":"The request is invalid or malformed","instance":"/test","status":400,"title":"Bad Request","type":"https://pkg.go.dev/github.com/nickbryan/httputil/problem#BadRequest"}`,
 			wantResponseStatusCode: http.StatusBadRequest,
 		},
-		"returns a bad request status code with errors if the payload fails validation": {
+		"returns an unprocessable entity request status code with errors if the payload fails validation": {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
 
@@ -141,8 +141,8 @@ func TestNewJSONHandler(t *testing.T) {
 			},
 			requestBody:            strings.NewReader("{}"),
 			wantHeader:             http.Header{"Content-Type": {"application/problem+json"}},
-			wantResponseBody:       `{"detail":"The request data violated one or more validation constraints","instance":"/test","status":400,"title":"Constraint Violation","type":"https://pkg.go.dev/github.com/nickbryan/httputil/problem#ConstraintViolation","violations":[{"detail":"required","pointer":"/inner/thing"}]}`,
-			wantResponseStatusCode: http.StatusBadRequest,
+			wantResponseBody:       `{"detail":"The request data violated one or more validation constraints","instance":"/test","status":422,"title":"Constraint Violation","type":"https://pkg.go.dev/github.com/nickbryan/httputil/problem#ConstraintViolation","violations":[{"detail":"required","pointer":"/inner/thing"}]}`,
+			wantResponseStatusCode: http.StatusUnprocessableEntity,
 		},
 		"the request body can be read again in the handler after it has been decoded into the request data type": {
 			handler: func(t *testing.T) http.Handler {

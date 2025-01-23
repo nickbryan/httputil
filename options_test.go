@@ -11,11 +11,12 @@ import (
 )
 
 /*
-	These tests look like they know too much about the underlying implementation but that is by design.
-	We encapsulate the http.Server as a httputil.Listener so that the user can override it if desired.
-	We provide http.Server as the default implementation allowing us to confidently check that the values
-	get set as expected rather than testing the behavioral impact they have on the server itself.
-	This is nice because the behavioral impact is also really hard to test...
+These tests look like they know too much about the underlying implementation but that is by design.
+We encapsulate the http.Server as a httputil.Listener so that we can test our wrapper. We provide
+http.Server as the default implementation allowing us to confidently check that the values
+get set as expected rather than having to test the behavioral impact they have on the server itself
+which is already tested within the wrapped http.Server. We just need to know our values are being
+set correctly.
 */
 
 // Shutdown timeout is tested as part of Server.Serve.
