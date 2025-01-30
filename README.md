@@ -61,7 +61,7 @@ func newTestHandler() http.Handler {
 		Names []string `json:"names"`
 	}
 
-	return httputil.NewJSONHandler(func(r httputil.Request[struct{}]) (*httputil.Response[response], error) {
+	return httputil.NewJSONHandler(func(r httputil.RequestNoBody) (*httputil.Response[response], error) {
 		return httputil.NewResponse(http.StatusOK, response{Names: []string{"Dr Jones"}}), nil
 	})
 }

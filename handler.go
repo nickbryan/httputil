@@ -27,12 +27,18 @@ type (
 		Data T
 	}
 
+	// RequestNoBody represents an empty Request.
+	RequestNoBody = Request[struct{}]
+
 	// Response represents a HTTP response with data of type `T` and a status code.
 	Response[T any] struct {
 		Header http.Header
 		data   T
 		code   int
 	}
+
+	// ResponseNoBody represents an empty Response.
+	ResponseNoBody = Response[struct{}]
 )
 
 // NewNoContentResponse creates a new Response object with a status code
