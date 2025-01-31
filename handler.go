@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/go-playground/validator/v10"
@@ -102,6 +103,7 @@ func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request
 	}
 
 	if !isEmptyStruct(request.Data) {
+		setStructParamsVals(&request)
 		if len(body) == 0 {
 			h.writeErrorResponse(r.Context(), w, problem.BadRequest(r).WithDetail("The server received an unexpected empty request body"))
 			return
@@ -138,6 +140,44 @@ func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request
 	if !isEmptyStruct(response.data) {
 		h.writeResponse(r.Context(), w, response.data)
 	}
+}
+
+// setStructParamsVals get all the path params that should be in a request url
+func setStructParamsVals(request *Request[any]) error {
+	value := reflect.ValueOf(request)
+	if value.Kind() != reflect.Ptr || value.IsNil() {
+		return errors.New("input must be a non-nil pointer to a struct")
+	}
+
+	value = value.Elem()
+	if value.Kind() != reflect.Struct {
+		return errors.New("input must be a pointer to a struct")
+	}
+
+	vType := value.Type()
+
+	for i := 0; i < value.NumField(); i++ {
+		field := vType.Field(i)
+
+		tag := field.Tag.Get("path")
+		if tag != "" {
+			paramVal := request.PathValue(tag)
+		}
+
+		tag := field.Tag.Get("query")
+		if tag != "" {
+			// paramVal := request.
+		}
+
+		switch value.Kind() {
+		case reflect.String:
+			value.SetString(paramVal)
+		default:
+			panic("unexpected reflect.Kind")
+		}
+	}
+
+	return nil
 }
 
 func (h *jsonHandler[req, res]) writeValidationErr(w http.ResponseWriter, r *http.Request, err error) {
