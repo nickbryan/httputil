@@ -13,9 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickbryan/httputil"
 	"github.com/nickbryan/slogutil"
 	"github.com/nickbryan/slogutil/slogmem"
+
+	"github.com/nickbryan/httputil"
 )
 
 //nolint:paralleltest // These test do not run in parallel due to how signal notifications are handled and tested.

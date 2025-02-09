@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickbryan/httputil"
 	"github.com/nickbryan/slogutil"
+
+	"github.com/nickbryan/httputil"
 )
 
 /*

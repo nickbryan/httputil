@@ -68,9 +68,7 @@ func newTestHandler() http.Handler {
 ```
 
 ## TODO
-* [ ] Does the validator need to be exported? Should be configurable so that it can be overridden?
 * [ ] Implement the remaining problem details for common errors.
-* [ ] Create pages in markdown format for problem details and link them into the github repo from the problem payload (instead of using godoc)?
 * [ ] Update handler code to return the correct problem when they are all defined (empty body for example).
 * [ ] Update README to highlight problem json as a feature and provide examples of usage.
 * [ ] How do we allow people to return a custom error payload if required so they are not locked to problem json?

@@ -7,12 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os/signal"
-	"reflect"
-	"strings"
 	"syscall"
 	"time"
-
-	"github.com/go-playground/validator/v10"
 )
 
 // Server is an HTTP server with graceful shutdown capabilities.
@@ -98,22 +94,4 @@ func (s *Server) Serve(ctx context.Context) {
 // allows endpoints to be tested without a running server.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	newPanicRecoveryMiddleware(s.logger)(s.router).ServeHTTP(w, r)
-}
-
-// NewValidator returns a new validator.Validate that is configured for JSON tags.
-func NewValidator() *validator.Validate {
-	vld := validator.New()
-
-	vld.RegisterTagNameFunc(func(f reflect.StructField) string {
-		const tags = 2
-		name := strings.SplitN(f.Tag.Get("json"), ",", tags)[0]
-
-		if name == "-" {
-			return ""
-		}
-
-		return name
-	})
-
-	return vld
 }

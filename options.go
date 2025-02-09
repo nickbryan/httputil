@@ -1,7 +1,11 @@
 package httputil
 
 import (
+	"reflect"
+	"strings"
 	"time"
+
+	"github.com/go-playground/validator/v10"
 )
 
 type (
@@ -13,8 +17,9 @@ type (
 		idleTimeout       time.Duration
 		readHeaderTimeout time.Duration
 		readTimeout       time.Duration
-		writeTimeout      time.Duration
+		validator         *validator.Validate
 		shutdownTimeout   time.Duration
+		writeTimeout      time.Duration
 	}
 )
 
@@ -53,6 +58,31 @@ func WithShutdownTimeout(timeout time.Duration) ServerOption {
 	}
 }
 
+// NewValidator returns a new validator.Validate that is configured for JSON tags.
+func NewValidator() *validator.Validate {
+	vld := validator.New()
+
+	vld.RegisterTagNameFunc(func(f reflect.StructField) string {
+		const tags = 2
+		name := strings.SplitN(f.Tag.Get("json"), ",", tags)[0]
+
+		if name == "-" {
+			return ""
+		}
+
+		return name
+	})
+
+	return vld
+}
+
+// WithValidator sets the timeout for writing the response.
+func WithValidator(validator *validator.Validate) ServerOption {
+	return func(so *serverOptions) {
+		so.validator = validator
+	}
+}
+
 // WithWriteTimeout sets the timeout for writing the response.
 func WithWriteTimeout(timeout time.Duration) ServerOption {
 	return func(so *serverOptions) {
@@ -73,6 +103,7 @@ func mapServerOptionsToDefaults(opts []ServerOption) serverOptions {
 		readHeaderTimeout: defaultTimeout,
 		readTimeout:       defaultTimeout,
 		shutdownTimeout:   defaultShutdownTimeout,
+		validator:         NewValidator(),
 		writeTimeout:      defaultTimeout,
 	}
 

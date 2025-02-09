@@ -7,7 +7,7 @@ import (
 const (
 	// DefaultErrorDocumentationLocation is the default URL pointing to the documentation
 	// for Problem Details format. It can be overridden using the ErrorDocumentationLocation var.
-	DefaultErrorDocumentationLocation = "https://pkg.go.dev/github.com/nickbryan/httputil/problem#"
+	DefaultErrorDocumentationLocation = "https://github.com/nickbryan/httputil/blob/main/docs/problems/"
 )
 
 // ErrorDocumentationLocation specifies the URL for the documentation of the Problem Details format.
@@ -24,7 +24,7 @@ type Field struct {
 // BadRequest creates a DetailedError for bad request errors.
 func BadRequest(r *http.Request) *DetailedError {
 	return &DetailedError{
-		Type:             DefaultErrorDocumentationLocation + "BadRequest",
+		Type:             typeLocation("bad-request"),
 		Title:            "Bad Request",
 		Detail:           "The request is invalid or malformed",
 		Status:           http.StatusBadRequest,
@@ -41,7 +41,7 @@ func ConstraintViolation(r *http.Request, fields ...Field) *DetailedError {
 	}
 
 	return &DetailedError{
-		Type:             DefaultErrorDocumentationLocation + "ConstraintViolation",
+		Type:             typeLocation("constraint-violation"),
 		Title:            "Constraint Violation",
 		Detail:           "The request data violated one or more validation constraints",
 		Status:           http.StatusUnprocessableEntity,
@@ -53,7 +53,7 @@ func ConstraintViolation(r *http.Request, fields ...Field) *DetailedError {
 // Forbidden creates a DetailedError for forbidden errors.
 func Forbidden(r *http.Request) *DetailedError {
 	return &DetailedError{
-		Type:             DefaultErrorDocumentationLocation + "Forbidden",
+		Type:             typeLocation("forbidden"),
 		Title:            "Forbidden",
 		Detail:           "You do not have the necessary permissions to " + r.Method + " this resource",
 		Status:           http.StatusForbidden,
@@ -65,7 +65,7 @@ func Forbidden(r *http.Request) *DetailedError {
 // NotFound creates a DetailedError for not found errors.
 func NotFound(r *http.Request) *DetailedError {
 	return &DetailedError{
-		Type:             DefaultErrorDocumentationLocation + "NotFound",
+		Type:             typeLocation("not-found"),
 		Title:            "Not Found",
 		Detail:           "The requested resource was not found",
 		Status:           http.StatusNotFound,
@@ -77,7 +77,7 @@ func NotFound(r *http.Request) *DetailedError {
 // ResourceExists creates a DetailedError for duplicate resource errors.
 func ResourceExists(r *http.Request) *DetailedError {
 	return &DetailedError{
-		Type:             DefaultErrorDocumentationLocation + "ResourceExists",
+		Type:             typeLocation("resource-exists"),
 		Title:            "Resource Exists",
 		Detail:           "A resource already exists with the specified identifier",
 		Status:           http.StatusConflict,
@@ -89,7 +89,7 @@ func ResourceExists(r *http.Request) *DetailedError {
 // ServerError creates a DetailedError for internal server errors.
 func ServerError(r *http.Request) *DetailedError {
 	return &DetailedError{
-		Type:             DefaultErrorDocumentationLocation + "ServerError",
+		Type:             typeLocation("server-error"),
 		Title:            "Server Error",
 		Detail:           "The server encountered an unexpected internal error",
 		Status:           http.StatusInternalServerError,
@@ -101,11 +101,15 @@ func ServerError(r *http.Request) *DetailedError {
 // Unauthorized creates a DetailedError for unauthorized errors.
 func Unauthorized(r *http.Request) *DetailedError {
 	return &DetailedError{
-		Type:             DefaultErrorDocumentationLocation + "Unauthorized",
+		Type:             typeLocation("unauthorized"),
 		Title:            "Unauthorized",
 		Detail:           "You must be authenticated to " + r.Method + " this resource",
 		Status:           http.StatusUnauthorized,
 		Instance:         r.URL.Path,
 		ExtensionMembers: nil,
 	}
+}
+
+func typeLocation(t string) string {
+	return ErrorDocumentationLocation + t + ".md"
 }
