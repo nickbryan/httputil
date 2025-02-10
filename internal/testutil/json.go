@@ -18,8 +18,8 @@ func isValidJSON(x, y []byte) bool {
 	return json.Valid(x) && json.Valid(y)
 }
 
-// asJSON unmarshals the provided byte slice into an any type. It attempts to decode the JSON
-// and returns a wrapped error if the unmarshalling fails.
+// asJSON unmarshals the provided byte slice into an any type. It attempts to
+// decode the JSON and returns a wrapped error if the unmarshalling fails.
 func asJSON(in []byte) any {
 	var out any
 

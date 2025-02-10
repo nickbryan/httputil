@@ -17,8 +17,9 @@ import (
 )
 
 type (
-	// Handler defines the interface for a handler function. It takes a request of type `req`
-	// and returns a response of type `res` along with any potential error.
+	// Handler defines the interface for a handler function. It takes a request of
+	// type `req` and returns a response of type `res` along with any potential
+	// error.
 	Handler[req, res any] func(r Request[req]) (*Response[res], error)
 
 	// Request represents a HTTP request with additional data of type `T`.
@@ -41,10 +42,10 @@ type (
 	ResponseNoBody = Response[struct{}]
 )
 
-// NewNoContentResponse creates a new Response object with a status code
-// of http.StatusNoContent (204 No Content) and an empty struct as data.
-func NewNoContentResponse() *Response[struct{}] {
-	return &Response[struct{}]{
+// NewNoContentResponse creates a new Response object with a status code of
+// http.StatusNoContent (204 No Content) and an empty struct as data.
+func NewNoContentResponse() *ResponseNoBody {
+	return &ResponseNoBody{
 		Header: make(http.Header),
 		data:   struct{}{},
 		code:   http.StatusNoContent,
@@ -67,8 +68,9 @@ type jsonHandler[req, res any] struct {
 	reqIsStructType bool
 }
 
-// NewJSONHandler creates a new http.Handler that wraps the provided [Handler] function
-// to deserialize JSON request bodies and serialize JSON response bodies.
+// NewJSONHandler creates a new http.Handler that wraps the provided [Handler]
+// function to deserialize JSON request bodies and serialize JSON response
+// bodies.
 func NewJSONHandler[req, res any](handler Handler[req, res]) http.Handler {
 	return &jsonHandler[req, res]{
 		handler:   handler,
@@ -86,8 +88,8 @@ func (h *jsonHandler[req, res]) SetLogger(l *slog.Logger) { h.logger = l }
 func (h *jsonHandler[req, res]) SetValidator(v *validator.Validate) { h.validator = v }
 
 // ServeHTTP implements the http.Handler interface. It reads the request body,
-// decodes it into the request data, validates it if a validator is set,
-// calls the wrapped handler, and writes the response back in JSON format.
+// decodes it into the request data, validates it if a validator is set, calls
+// the wrapped handler, and writes the response back in JSON format.
 func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	request := Request[req]{Request: r} //nolint:exhaustruct // Zero value of Data is unknown.
 
@@ -121,8 +123,8 @@ func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request
 			}
 		}
 
-		// Put the body contents back so that it can be read in the handler again if desired. We have consumed
-		// the buffer when reading Body above.
+		// Put the body contents back so that it can be read in the handler again if
+		// desired. We have consumed the buffer when reading Body above.
 		request.Body = io.NopCloser(bytes.NewBuffer(body))
 	}
 
@@ -141,10 +143,11 @@ func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request
 }
 
 func (h *jsonHandler[req, res]) writeValidationErr(w http.ResponseWriter, r *http.Request, err error) {
-	// This should never really happen as we validate if the expected request.Data is a struct
-	// which is a valid value for StructCtx. This error only gets returned on invalid types being passed to
-	// `Struct`, `StructExcept`, StructPartial` or `Field` and their context variants.
-	// This means there is unfortunately no way to test this.
+	// This should never really happen as we validate if the expected request.Data is
+	// a struct which is a valid value for StructCtx. This error only gets returned
+	// on invalid types being passed to `Struct`, `StructExcept`, StructPartial` or
+	// `Field` and their context variants. This means there is unfortunately no way
+	// to test this.
 	var invalidValidationError *validator.InvalidValidationError
 	if errors.As(err, &invalidValidationError) {
 		h.logger.ErrorContext(r.Context(), "JSON handler failed to validate request data", slog.Any("error", err))
@@ -165,8 +168,9 @@ func (h *jsonHandler[req, res]) writeValidationErr(w http.ResponseWriter, r *htt
 		return
 	}
 
-	// The validator should never return an unknown error type based in its current implementation
-	// but we handle it anyway in case that ever changes. Unfortunately, like above, there is no way to test this.
+	// The validator should never return an unknown error type based in its current
+	// implementation, but we handle it anyway in case that ever changes.
+	// Unfortunately, like above, there is no way to test this.
 	h.logger.ErrorContext(r.Context(), "JSON handler received an unknown validation error", slog.Any("error", err))
 	h.writeErrorResponse(r.Context(), w, problem.ServerError(r))
 }

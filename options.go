@@ -90,7 +90,8 @@ func WithWriteTimeout(timeout time.Duration) ServerOption {
 	}
 }
 
-// mapServerOptionsToDefaults applies the provided ServerOptions to a default serverOptions struct.
+// mapServerOptionsToDefaults applies the provided ServerOptions to a default
+// serverOptions struct.
 func mapServerOptionsToDefaults(opts []ServerOption) serverOptions {
 	const (
 		defaultShutdownTimeout = 5 * time.Second

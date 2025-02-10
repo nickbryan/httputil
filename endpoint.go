@@ -7,16 +7,16 @@ import (
 // Endpoint represents a registered HTTP endpoint.
 type Endpoint struct {
 	// Method is the HTTP method for this endpoint (e.g., "GET", "POST", "PUT", "DELETE").
-	Method string
+	Method string `json:"Method,omitempty"`
 	// Path is the URL path for this endpoint (e.g., "/users", "/products/{id}").
-	Path string
+	Path string `json:"Path,omitempty"`
 	// Handler is the http.Handler that will handle requests to this endpoint.
-	Handler http.Handler
+	Handler http.Handler `json:"Handler,omitempty"`
 }
 
-// EndpointsWithMiddleware applies the given middleware to all provided endpoints.
-// It returns a new slice of Endpoints with the middleware applied to their handlers.
-// The original endpoints are not modified.
+// EndpointsWithMiddleware applies the given middleware to all provided
+// endpoints. It returns a new slice of Endpoints with the middleware applied to
+// their handlers. The original endpoints are not modified.
 func EndpointsWithMiddleware(middleware MiddlewareFunc, endpoints ...Endpoint) []Endpoint {
 	if middleware == nil {
 		return endpoints
@@ -35,9 +35,9 @@ func EndpointsWithMiddleware(middleware MiddlewareFunc, endpoints ...Endpoint) [
 	return epts
 }
 
-// EndpointsWithPrefix prefixes the given path to all provided endpoints.
-// It returns a new slice of Endpoints with the prefixed paths.
-// The original endpoints are not modified.
+// EndpointsWithPrefix prefixes the given path to all provided endpoints. It
+// returns a new slice of Endpoints with the prefixed paths. The original
+// endpoints are not modified.
 func EndpointsWithPrefix(prefix string, endpoints ...Endpoint) []Endpoint {
 	epts := make([]Endpoint, 0, len(endpoints))
 

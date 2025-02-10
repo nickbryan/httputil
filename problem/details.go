@@ -1,5 +1,5 @@
-// Package problem provides utilities for constructing and handling error responses
-// in accordance with RFC 9457 (Problem Details for HTTP APIs).
+// Package problem provides utilities for constructing and handling error
+// responses in accordance with RFC 9457 (Problem Details for HTTP APIs).
 //
 // This package offers a structured way to create detailed error responses.
 // Additionally, it provides helper functions for common error scenarios.
@@ -11,8 +11,8 @@ import (
 	"maps"
 )
 
-// DetailedError encapsulates the fields required to respond with an error
-// in accordance with RFC 9457 (Problem Details for HTTP APIs).
+// DetailedError encapsulates the fields required to respond with an error in
+// accordance with RFC 9457 (Problem Details for HTTP APIs).
 type DetailedError struct {
 	// Type is a URI reference that identifies the specific problem.
 	Type string
@@ -28,8 +28,9 @@ type DetailedError struct {
 	ExtensionMembers map[string]any
 }
 
-// WithDetail creates a new DetailedError instance with the provided detail message.
-// It returns a copy of the original DetailedError with the updated Detail field.
+// WithDetail creates a new DetailedError instance with the provided detail
+// message. It returns a copy of the original DetailedError with the updated
+// Detail field.
 func (d *DetailedError) WithDetail(detail string) *DetailedError {
 	clone := *d
 
@@ -39,11 +40,12 @@ func (d *DetailedError) WithDetail(detail string) *DetailedError {
 	return &clone
 }
 
-// WithExtension creates a new DetailedError instance with an added or updated extension member.
-// It returns a copy of the original DetailedError with the specified extension member added or updated.
-// If the original DetailedError has no ExtensionMembers, a new map is created.
-// Returns a new DetailedError instance with the added or updated extension member.
-// The original DetailedError is not modified.
+// WithExtension creates a new DetailedError instance with an added or updated
+// extension member. It returns a copy of the original DetailedError with the
+// specified extension member added or updated. If the original DetailedError has
+// no ExtensionMembers, a new map is created. Returns a new DetailedError
+// instance with the added or updated extension member. The original
+// DetailedError is not modified.
 func (d *DetailedError) WithExtension(k string, v any) *DetailedError {
 	clone := *d
 
@@ -57,11 +59,12 @@ func (d *DetailedError) WithExtension(k string, v any) *DetailedError {
 	return &clone
 }
 
-// Error implements the `error` interface, allowing DetailedError objects to be used as errors.
+// Error implements the `error` interface, allowing DetailedError objects to be
+// used as errors.
 func (d *DetailedError) Error() string { return fmt.Sprintf("%d %s: %s", d.Status, d.Title, d.Detail) }
 
-// MarshalJSON implements the `json.Marshaler` interface for DetailedError.
-// It marshals the DetailedError object into a JSON byte slice.
+// MarshalJSON implements the `json.Marshaler` interface for DetailedError. It
+// marshals the DetailedError object into a JSON byte slice.
 func (d *DetailedError) MarshalJSON() ([]byte, error) {
 	deets := make(map[string]any)
 

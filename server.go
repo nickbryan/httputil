@@ -27,7 +27,8 @@ type Server struct {
 }
 
 // NewServer creates a new Server instance with the specified logger and options.
-// The options parameter allows for customization of server settings such as the address and timeouts.
+// The options parameter allows for customization of server settings such as the
+// address and timeouts.
 func NewServer(logger *slog.Logger, options ...ServerOption) *Server {
 	opts := mapServerOptionsToDefaults(options)
 
@@ -54,15 +55,16 @@ func NewServer(logger *slog.Logger, options ...ServerOption) *Server {
 	return server
 }
 
-// Register one or more endpoints with the Server so they are handled by the underlying router.
+// Register one or more endpoints with the Server so they are handled by the
+// underlying router.
 func (s *Server) Register(endpoints ...Endpoint) {
 	for _, endpoint := range endpoints {
 		s.router.Handle(endpoint.Method+" "+endpoint.Path, endpoint.Handler)
 	}
 }
 
-// Serve starts the HTTP server and listens for incoming requests.
-// It gracefully shuts down the server when it receives an SIGINT, SIGTERM, or SIGQUIT signal.
+// Serve starts the HTTP server and listens for incoming requests. It gracefully
+// shuts down the server when it receives an SIGINT, SIGTERM, or SIGQUIT signal.
 func (s *Server) Serve(ctx context.Context) {
 	awaitSignalCtx, cancelAwaitSignal := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	go func() {
@@ -76,13 +78,14 @@ func (s *Server) Serve(ctx context.Context) {
 	s.logger.InfoContext(ctx, "Server started", slog.String("address", s.address))
 	<-awaitSignalCtx.Done()
 
-	// We use a new context here as inheriting from ctx would create an instant timeout
-	// if ctx was canceled. We want to ensure that we still attempt graceful shutdown if this happens.
+	// We use a new context here as inheriting from ctx would create an instant
+	// timeout if ctx was canceled. We want to ensure that we still attempt graceful
+	// shutdown if this happens.
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), s.shutdownTimeout)
 	defer cancelShutdown()
 
-	// Calling Shutdown causes ListenAndServe to return ErrServerClosed immediately. Shutdown then
-	// takes over and handles graceful shutdown.
+	// Calling Shutdown causes ListenAndServe to return ErrServerClosed immediately.
+	// Shutdown then takes over and handles graceful shutdown.
 	if err := s.Listener.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck // False positive.
 		s.logger.ErrorContext(ctx, "Server failed to shutdown gracefully", slog.Any("error", err))
 	}
@@ -90,8 +93,8 @@ func (s *Server) Serve(ctx context.Context) {
 	s.logger.InfoContext(ctx, "Server shutdown")
 }
 
-// ServeHTTP delegates the request handling to the underlying router. Exposing ServeHTTP
-// allows endpoints to be tested without a running server.
+// ServeHTTP delegates the request handling to the underlying router. Exposing
+// ServeHTTP allows endpoints to be tested without a running server.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	newPanicRecoveryMiddleware(s.logger)(s.router).ServeHTTP(w, r)
 }

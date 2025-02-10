@@ -10,12 +10,14 @@ const (
 	DefaultErrorDocumentationLocation = "https://github.com/nickbryan/httputil/blob/main/docs/problems/"
 )
 
-// ErrorDocumentationLocation specifies the URL for the documentation of the Problem Details format.
-// This variable can be customized to point to your own API documentation or a different reference.
+// ErrorDocumentationLocation specifies the URL for the documentation of the
+// Problem Details format. This variable can be customized to point to your own
+// API documentation or a different reference.
 var ErrorDocumentationLocation = DefaultErrorDocumentationLocation //nolint:gochecknoglobals // Global var improves API without degrading user experience.
 
-// Field represents a specific field that caused a violation constraint.
-// It includes details about the error and a pointer to the field in the request body.
+// Field represents a specific field that caused a violation constraint. It
+// includes details about the error and a pointer to the field in the request
+// body.
 type Field struct {
 	Detail  string `json:"detail"`
 	Pointer string `json:"pointer"`
