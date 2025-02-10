@@ -76,7 +76,7 @@ func newTestHandler() http.Handler {
 * [ ] Should each problem.Details have a code field so that we can increment them per business violation rule? So "422-NS-1" or "422-01"
 * [ ] Document how errors take priority over responses, if an error is returned no response will be written if one is also returned. 
 * [ ] Implement proper JSON pointer handling on validation errors as per https://datatracker.ietf.org/doc/html/rfc6901.
-* [ ] Prevent overwriting of base values in the problem json marshaling code.
+* [ ] Test overwriting of base values in the problem json marshaling code.
 * [ ] Finish test existing code to achieve sensible coverage.
 * [ ] Decide on how to wrap logger, implement and test - use as is or clone the writeHandler so we can provide a static message and add the error as an attribute? Would also allow us to set pc?
 * [ ] Figure out how to handle query params and path params for validation and decoding.

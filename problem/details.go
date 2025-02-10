@@ -68,15 +68,15 @@ func (d *DetailedError) Error() string { return fmt.Sprintf("%d %s: %s", d.Statu
 func (d *DetailedError) MarshalJSON() ([]byte, error) {
 	deets := make(map[string]any)
 
+	for k, v := range d.ExtensionMembers {
+		deets[k] = v
+	}
+
 	deets["type"] = d.Type
 	deets["title"] = d.Title
 	deets["detail"] = d.Detail
 	deets["status"] = d.Status
 	deets["instance"] = d.Instance
-
-	for k, v := range d.ExtensionMembers {
-		deets[k] = v
-	}
 
 	bytes, err := json.Marshal(deets)
 	if err != nil {

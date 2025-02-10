@@ -88,6 +88,62 @@ func TestConstructors(t *testing.T) {
 				extensions:     `,"violations":[{"detail":"Invalid","pointer":"/thing"},{"detail":"Short","pointer":"/other"}]`,
 			},
 		},
+		"forbidden sets the expected problem details for the resource instance": {
+			detailedError: problem.Forbidden(newRequest(http.MethodGet, "/forbidden")),
+			want: details{
+				detail:         "You do not have the necessary permissions to GET this resource",
+				instance:       "/forbidden",
+				status:         http.StatusForbidden,
+				title:          "Forbidden",
+				typeIdentifier: "forbidden",
+				extensions:     "",
+			},
+		},
+		"not found sets the expected problem details for the resource instance": {
+			detailedError: problem.NotFound(newRequest(http.MethodGet, "/missing")),
+			want: details{
+				detail:         "The requested resource was not found",
+				instance:       "/missing",
+				status:         http.StatusNotFound,
+				title:          "Not Found",
+				typeIdentifier: "not-found",
+				extensions:     "",
+			},
+		},
+
+		"conflict sets the expected problem details for the resource instance": {
+			detailedError: problem.ResourceExists(newRequest(http.MethodPost, "/conflict")),
+			want: details{
+				detail:         "A resource already exists with the specified identifier",
+				instance:       "/conflict",
+				status:         http.StatusConflict,
+				title:          "Resource Exists",
+				typeIdentifier: "resource-exists",
+				extensions:     "",
+			},
+		},
+		"internal server error sets the expected problem details for the resource instance": {
+			detailedError: problem.ServerError(newRequest(http.MethodPost, "/error")),
+			want: details{
+				detail:         "The server encountered an unexpected internal error",
+				instance:       "/error",
+				status:         http.StatusInternalServerError,
+				title:          "Server Error",
+				typeIdentifier: "server-error",
+				extensions:     "",
+			},
+		},
+		"unauthorized sets the expected problem details for the resource instance": {
+			detailedError: problem.Unauthorized(newRequest(http.MethodGet, "/private")),
+			want: details{
+				detail:         "You must be authenticated to GET this resource",
+				instance:       "/private",
+				status:         http.StatusUnauthorized,
+				title:          "Unauthorized",
+				typeIdentifier: "unauthorized",
+				extensions:     "",
+			},
+		},
 	}
 
 	for testName, testCase := range testCases {

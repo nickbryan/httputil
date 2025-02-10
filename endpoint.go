@@ -7,11 +7,11 @@ import (
 // Endpoint represents a registered HTTP endpoint.
 type Endpoint struct {
 	// Method is the HTTP method for this endpoint (e.g., "GET", "POST", "PUT", "DELETE").
-	Method string `json:"Method,omitempty"`
+	Method string
 	// Path is the URL path for this endpoint (e.g., "/users", "/products/{id}").
-	Path string `json:"Path,omitempty"`
+	Path string
 	// Handler is the http.Handler that will handle requests to this endpoint.
-	Handler http.Handler `json:"Handler,omitempty"`
+	Handler http.Handler
 }
 
 // EndpointsWithMiddleware applies the given middleware to all provided
