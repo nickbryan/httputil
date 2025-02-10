@@ -2,6 +2,7 @@
 
 **Type**: `https://github.com/nickbryan/httputil/blob/main/docs/problems/not-found.md`  
 **Status**: `404 Not Found`
+**Code**: `404-01`
 
 ## Description
 
@@ -16,6 +17,7 @@ The `Not Found` error indicates that the server could not find a match for the p
   "type": "https://github.com/nickbryan/httputil/blob/main/docs/problems/not-found.md",
   "title": "Not Found",
   "status": 404,
+  "code": "404-01",
   "detail": "The requested resource was not found",
   "instance": "/api/resource/99999"
 }

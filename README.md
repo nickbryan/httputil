@@ -73,7 +73,6 @@ func newTestHandler() http.Handler {
 * [ ] Update handler code to return the correct problem when they are all defined (empty body for example).
 * [ ] Update README to highlight problem json as a feature and provide examples of usage.
 * [ ] How do we allow people to return a custom error payload if required so they are not locked to problem json?
-* [ ] Should each problem.Details have a code field so that we can increment them per business violation rule? So "422-NS-1" or "422-01"
 * [ ] Document how errors take priority over responses, if an error is returned no response will be written if one is also returned. 
 * [ ] Implement proper JSON pointer handling on validation errors as per https://datatracker.ietf.org/doc/html/rfc6901.
 * [ ] Test overwriting of base values in the problem json marshaling code.

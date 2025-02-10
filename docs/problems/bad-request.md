@@ -1,7 +1,8 @@
 # Bad Request
 
-**Type**: `https://github.com/nickbryan/httputil/blob/main/docs/problems/bad-request.md`  
+**Type**: `https://github.com/nickbryan/httputil/blob/main/docs/problems/bad-request.md`
 **Status**: `400 Bad Request`
+**Code**: `400-01`
 
 ## Description
 
@@ -16,6 +17,7 @@ Bad Request errors are typically a result of improper client behavior and should
   "type": "https://github.com/nickbryan/httputil/blob/main/docs/problems/bad-request.md",
   "title": "Bad Request",
   "status": 400,
+  "code": "400-01",
   "detail": "The request is invalid or malformed",
   "instance": "/api/resource"
 }

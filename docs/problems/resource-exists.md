@@ -2,6 +2,7 @@
 
 **Type**: `https://github.com/nickbryan/httputil/blob/main/docs/problems/resource-exists.md`  
 **Status**: `409 Conflict`
+**Code**: `409-01`
 
 ## Description
 
@@ -16,6 +17,7 @@ The `Resource Exists` error indicates a conflict with the current state of the s
   "type": "https://github.com/nickbryan/httputil/blob/main/docs/problems/resource-exists.md",
   "title": "Resource Exists",
   "status": 409,
+  "code": "409-01",
   "detail": "A resource already exists with the specified identifier",
   "instance": "/api/resource"
 }

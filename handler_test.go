@@ -72,7 +72,7 @@ func TestNewJSONHandler(t *testing.T) {
 				})
 			},
 			wantHeader:             http.Header{"Content-Type": {"application/problem+json"}},
-			wantResponseBody:       `{"detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
+			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"returns an internal server error status code and logs a warning when the request body cannot be read": {
@@ -84,7 +84,7 @@ func TestNewJSONHandler(t *testing.T) {
 					"error": slog.AnyValue("the request body was invalid"),
 				},
 			}},
-			wantResponseBody:       `{"detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
+			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"returns a bad request status code with errors if the payload is empty but request data is expected": {
@@ -101,7 +101,7 @@ func TestNewJSONHandler(t *testing.T) {
 			},
 			requestBody:            strings.NewReader(""),
 			wantHeader:             http.Header{"Content-Type": {"application/problem+json"}},
-			wantResponseBody:       `{"detail":"The server received an unexpected empty request body","instance":"/test","status":400,"title":"Bad Request","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/bad-request.md"}`,
+			wantResponseBody:       `{"code":"400-01","detail":"The server received an unexpected empty request body","instance":"/test","status":400,"title":"Bad Request","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/bad-request.md"}`,
 			wantResponseStatusCode: http.StatusBadRequest,
 		},
 		"returns a bad request status code and logs a warning when the request body cannot be decoded as json": {
@@ -120,7 +120,7 @@ func TestNewJSONHandler(t *testing.T) {
 					"error": slog.AnyValue("unexpected end of JSON input"),
 				},
 			}},
-			wantResponseBody:       `{"detail":"The request is invalid or malformed","instance":"/test","status":400,"title":"Bad Request","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/bad-request.md"}`,
+			wantResponseBody:       `{"code":"400-01","detail":"The request is invalid or malformed","instance":"/test","status":400,"title":"Bad Request","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/bad-request.md"}`,
 			wantResponseStatusCode: http.StatusBadRequest,
 		},
 		"returns an unprocessable entity request status code with errors if the payload fails validation": {
@@ -142,7 +142,7 @@ func TestNewJSONHandler(t *testing.T) {
 			},
 			requestBody:            strings.NewReader("{}"),
 			wantHeader:             http.Header{"Content-Type": {"application/problem+json"}},
-			wantResponseBody:       `{"detail":"The request data violated one or more validation constraints","instance":"/test","status":422,"title":"Constraint Violation","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/constraint-violation.md","violations":[{"detail":"required","pointer":"/inner/thing"}]}`,
+			wantResponseBody:       `{"code":"422-02","detail":"The request data violated one or more validation constraints","instance":"/test","status":422,"title":"Constraint Violation","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/constraint-violation.md","violations":[{"detail":"required","pointer":"/inner/thing"}]}`,
 			wantResponseStatusCode: http.StatusUnprocessableEntity,
 		},
 		"the request body can be read again in the handler after it has been decoded into the request data type": {

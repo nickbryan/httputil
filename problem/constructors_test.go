@@ -28,6 +28,7 @@ func TestConstructors(t *testing.T) {
 		detail         string
 		instance       string
 		status         int
+		code           string
 		title          string
 		typeIdentifier string
 		extensions     string
@@ -43,6 +44,7 @@ func TestConstructors(t *testing.T) {
 				detail:         "The request is invalid or malformed",
 				instance:       "/tests",
 				status:         http.StatusBadRequest,
+				code:           "400-01",
 				title:          "Bad Request",
 				typeIdentifier: "bad-request",
 				extensions:     "",
@@ -54,6 +56,7 @@ func TestConstructors(t *testing.T) {
 				detail:         "The request data violated one or more validation constraints",
 				instance:       "/tests",
 				status:         http.StatusUnprocessableEntity,
+				code:           "422-02",
 				title:          "Constraint Violation",
 				typeIdentifier: "constraint-violation",
 				extensions:     `,"violations":[]`,
@@ -68,6 +71,7 @@ func TestConstructors(t *testing.T) {
 				detail:         "The request data violated one or more validation constraints",
 				instance:       "/tests",
 				status:         http.StatusUnprocessableEntity,
+				code:           "422-02",
 				title:          "Constraint Violation",
 				typeIdentifier: "constraint-violation",
 				extensions:     `,"violations":[{"detail":"Invalid","pointer":"/"}]`,
@@ -83,6 +87,7 @@ func TestConstructors(t *testing.T) {
 				detail:         "The request data violated one or more validation constraints",
 				instance:       "/tests",
 				status:         http.StatusUnprocessableEntity,
+				code:           "422-02",
 				title:          "Constraint Violation",
 				typeIdentifier: "constraint-violation",
 				extensions:     `,"violations":[{"detail":"Invalid","pointer":"/thing"},{"detail":"Short","pointer":"/other"}]`,
@@ -94,6 +99,7 @@ func TestConstructors(t *testing.T) {
 				detail:         "You do not have the necessary permissions to GET this resource",
 				instance:       "/forbidden",
 				status:         http.StatusForbidden,
+				code:           "403-01",
 				title:          "Forbidden",
 				typeIdentifier: "forbidden",
 				extensions:     "",
@@ -105,6 +111,7 @@ func TestConstructors(t *testing.T) {
 				detail:         "The requested resource was not found",
 				instance:       "/missing",
 				status:         http.StatusNotFound,
+				code:           "404-01",
 				title:          "Not Found",
 				typeIdentifier: "not-found",
 				extensions:     "",
@@ -117,6 +124,7 @@ func TestConstructors(t *testing.T) {
 				detail:         "A resource already exists with the specified identifier",
 				instance:       "/conflict",
 				status:         http.StatusConflict,
+				code:           "409-01",
 				title:          "Resource Exists",
 				typeIdentifier: "resource-exists",
 				extensions:     "",
@@ -128,6 +136,7 @@ func TestConstructors(t *testing.T) {
 				detail:         "The server encountered an unexpected internal error",
 				instance:       "/error",
 				status:         http.StatusInternalServerError,
+				code:           "500-01",
 				title:          "Server Error",
 				typeIdentifier: "server-error",
 				extensions:     "",
@@ -139,6 +148,7 @@ func TestConstructors(t *testing.T) {
 				detail:         "You must be authenticated to GET this resource",
 				instance:       "/private",
 				status:         http.StatusUnauthorized,
+				code:           "401-01",
 				title:          "Unauthorized",
 				typeIdentifier: "unauthorized",
 				extensions:     "",
@@ -151,7 +161,8 @@ func TestConstructors(t *testing.T) {
 			t.Parallel()
 
 			want := fmt.Sprintf(
-				`{"detail":"%s","instance":"%s","status":%d,"title":"%s","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/%s.md"%s}`,
+				`{"code":"%s","detail":"%s","instance":"%s","status":%d,"title":"%s","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/%s.md"%s}`,
+				testCase.want.code,
 				testCase.want.detail,
 				testCase.want.instance,
 				testCase.want.status,

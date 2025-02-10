@@ -22,6 +22,8 @@ type DetailedError struct {
 	Detail string
 	// Status is the HTTP status code associated with the problem.
 	Status int
+	// Code is the domain-specific error code associated with the problem.
+	Code string
 	// Instance is a URI reference that identifies the specific occurrence of the problem.
 	Instance string
 	// ExtensionMembers is a key-value map for vendor-specific extension members.
@@ -76,6 +78,7 @@ func (d *DetailedError) MarshalJSON() ([]byte, error) {
 	deets["title"] = d.Title
 	deets["detail"] = d.Detail
 	deets["status"] = d.Status
+	deets["code"] = d.Code
 	deets["instance"] = d.Instance
 
 	bytes, err := json.Marshal(deets)

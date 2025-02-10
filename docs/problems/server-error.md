@@ -2,6 +2,7 @@
 
 **Type**: `https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md`  
 **Status**: `500 Internal Server Error`
+**Code**: `500-01`
 
 ## Description
 
@@ -16,6 +17,7 @@ This error is returned when the server encountered an unexpected condition that 
   "type": "https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md",
   "title": "Server Error",
   "status": 500,
+  "code": "500-01",
   "detail": "The server encountered an unexpected internal error",
   "instance": "/api/resource"
 }

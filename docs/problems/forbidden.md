@@ -2,6 +2,7 @@
 
 **Type**: `https://github.com/nickbryan/httputil/blob/main/docs/problems/forbidden.md`  
 **Status**: `403 Forbidden`
+**Code**: `403-01`
 
 ## Description
 
@@ -16,6 +17,7 @@ A `Forbidden` error often applies to requests restricted by user role, resource 
   "type": "https://github.com/nickbryan/httputil/blob/main/docs/problems/forbidden.md",
   "title": "Forbidden",
   "status": 403,
+  "code": "403-01",
   "detail": "You do not have the necessary permissions to DELETE this resource",
   "instance": "/api/resource/123"
 }

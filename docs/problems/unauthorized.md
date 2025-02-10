@@ -2,6 +2,7 @@
 
 **Type**: `https://github.com/nickbryan/httputil/blob/main/docs/problems/unauthorized.md`  
 **Status**: `401 Unauthorized`
+**Code**: `401-01`
 
 ## Description
 
@@ -16,6 +17,7 @@ The `Unauthorized` error indicates that the resource is protected and requires a
   "type": "https://github.com/nickbryan/httputil/blob/main/docs/problems/unauthorized.md",
   "title": "Unauthorized",
   "status": 401,
+  "code": "401-01",
   "detail": "You must be authenticated to GET this resource",
   "instance": "/api/resource"
 }
