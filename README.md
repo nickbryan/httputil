@@ -69,6 +69,7 @@ func newTestHandler() http.Handler {
 
 ## TODO
 * [ ] Implement the remaining problem details for common errors.
+* [ ] Review the docs for problem details to ensure they are correct and sufficient.
 * [ ] Update handler code to return the correct problem when they are all defined (empty body for example).
 * [ ] Update README to highlight problem json as a feature and provide examples of usage.
 * [ ] How do we allow people to return a custom error payload if required so they are not locked to problem json?
@@ -80,6 +81,8 @@ func newTestHandler() http.Handler {
 * [ ] Decide on how to wrap logger, implement and test - use as is or clone the writeHandler so we can provide a static message and add the error as an attribute? Would also allow us to set pc?
 * [ ] Figure out how to handle query params and path params for validation and decoding.
 * [ ] Add common middleware.
+* [ ] Write the client side.
+* [ ] Check compatibility with Orchestrion. 
 * [ ] Finalise all default values, ensure they are correct. 
 * [ ] This README needs filling out properly.
 * [ ] Finalise all package documentation.
