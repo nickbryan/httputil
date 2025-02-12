@@ -14,6 +14,8 @@ type Endpoint struct {
 	Handler http.Handler
 }
 
+// TODO: write clone method to centralise the copy?
+
 // EndpointsWithMiddleware applies the given middleware to all provided
 // endpoints. It returns a new slice of Endpoints with the middleware applied to
 // their handlers. The original endpoints are not modified.

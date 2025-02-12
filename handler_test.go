@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-playground/validator/v10"
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/nickbryan/slogutil"
@@ -269,6 +268,7 @@ func TestNewJSONHandler(t *testing.T) {
 			t.Parallel()
 
 			logger, logs := slogutil.NewInMemoryLogger(slog.LevelDebug)
+			server := httputil.NewServer(logger)
 
 			request := httptest.NewRequest(http.MethodGet, "/test", testCase.requestBody)
 			response := httptest.NewRecorder()
@@ -282,8 +282,13 @@ func TestNewJSONHandler(t *testing.T) {
 				handler = testCase.handler(t)
 			}
 
-			handler = withDependencies(t, handler, logger)
-			handler.ServeHTTP(response, request)
+			server.Register(httputil.Endpoint{
+				Method:  http.MethodGet,
+				Path:    "/test",
+				Handler: handler,
+			})
+
+			server.ServeHTTP(response, request)
 
 			if response.Code != testCase.wantResponseStatusCode {
 				t.Errorf("response.Code = %d, want %d", response.Code, testCase.wantResponseStatusCode)
@@ -308,22 +313,4 @@ func TestNewJSONHandler(t *testing.T) {
 			}
 		})
 	}
-}
-
-func withDependencies(t *testing.T, handler http.Handler, logger *slog.Logger) http.Handler {
-	t.Helper()
-
-	if logSetter, ok := handler.(interface{ SetLogger(l *slog.Logger) }); ok {
-		logSetter.SetLogger(logger)
-	} else {
-		t.Fatal("unable to set logger on handler")
-	}
-
-	if validatorSetter, ok := handler.(interface{ SetValidator(v *validator.Validate) }); ok {
-		validatorSetter.SetValidator(httputil.NewValidator())
-	} else {
-		t.Fatal("unable to set validator on handler")
-	}
-
-	return handler
 }

@@ -81,11 +81,13 @@ func NewJSONHandler[req, res any](handler Handler[req, res]) http.Handler {
 	}
 }
 
-// SetLogger is used by the server to inject the logger that will be used by the handler.
-func (h *jsonHandler[req, res]) SetLogger(l *slog.Logger) { h.logger = l }
+// setLogger is used by the server to inject the logger that will be used by the handler.
+func (h *jsonHandler[req, res]) setLogger(l *slog.Logger) { h.logger = l }
 
-// SetValidator is used by the server to inject the validator that will be used by the handler.
-func (h *jsonHandler[req, res]) SetValidator(v *validator.Validate) { h.validator = v }
+// setValidator is used by the server to inject the validator that will be used by the handler.
+func (h *jsonHandler[req, res]) setValidator(v *validator.Validate) {
+	h.validator = v
+}
 
 // ServeHTTP implements the http.Handler interface. It reads the request body,
 // decodes it into the request data, validates it if a validator is set, calls
@@ -134,6 +136,10 @@ func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if response == nil {
+		return // TODO: test this
+	}
+
 	writeHeaders(w, response.Header)
 	w.WriteHeader(response.code)
 
@@ -174,6 +180,9 @@ func (h *jsonHandler[req, res]) writeValidationErr(w http.ResponseWriter, r *htt
 	h.logger.ErrorContext(r.Context(), "JSON handler received an unknown validation error", slog.Any("error", err))
 	h.writeErrorResponse(r.Context(), w, problem.ServerError(r))
 }
+
+// TODO: if I detatch these functions from the handler does it make it easier to write this as middleware? I guess it
+// is the naming of middleware like how it is specific to json that is the problem
 
 func (h *jsonHandler[req, res]) writeErrorResponse(ctx context.Context, w http.ResponseWriter, err error) {
 	var problemDetails *problem.DetailedError

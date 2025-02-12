@@ -13,10 +13,13 @@ removing boilerplate code required to build web services.
 
 ## Features
 * **SerDe Handlers:** Serialize/Deserialize request and response data with decreased boilerplate code.
-    * `NewJSONHandler` provides encoding/decoding for JSON based handlers.
+  * `NewJSONHandler` provides encoding/decoding for JSON-based handlers.
 * **Reduced Error Handling:** Common error scenarios are handled and logged for consistency.
-    * Server will attempt graceful shutdown and log errors appropriately.
-* ...
+  * Server will attempt graceful shutdown and log errors appropriately.
+* **Problem JSON Implementation:** Standardized problem details for error responses as per RFC 9457.
+  * Supports customization of problem payloads and proper JSON pointer handling for validation errors.
+* **Middleware Support:** Add common middleware such as panic recovery and logging with minimal effort.
+* **Endpoint Management:** Easily register and organise endpoints with prefixing and middleware chaining.
 
 ## Quick Start
 ```go
@@ -85,3 +88,11 @@ func newTestHandler() http.Handler {
 * [ ] Finalise all default values, ensure they are correct. 
 * [ ] This README needs filling out properly.
 * [ ] Finalise all package documentation.
+* [ ] Add pre handler hook / transformer like fuego
+* [ ] Redirects
+* [ ] Cookies
+* [ ] Access to the underlying writer?
+* [ ] Could we handle the query, path, header validation through middleware or params on Endpoint? 
+  * They don't require decoding into something as they are accessible through hte request so we can validate 
+  them before they hit the handler?
+  * Maybe the middleware takes the validations in the constructor to be declared on the endpoint and applies them
