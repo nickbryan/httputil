@@ -48,7 +48,6 @@ func PathParam[T ParamType](r *http.Request, key string) *ParamBuilder[T] {
 }
 
 func QueryParam[T ParamType](r *http.Request, key string) *ParamBuilder[T] {
-
 	return newParamBuilder[T](r.URL.Query().Get(key))
 }
 

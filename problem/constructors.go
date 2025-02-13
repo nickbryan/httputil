@@ -15,10 +15,10 @@ const (
 // API documentation or a different reference.
 var ErrorDocumentationLocation = DefaultErrorDocumentationLocation //nolint:gochecknoglobals // Global var improves API without degrading user experience.
 
-// Field represents a specific field that caused a violation constraint. It
+// Property represents a specific property that caused a violation constraint. It
 // includes details about the error and a pointer to the field in the request
 // body.
-type Field struct {
+type Property struct {
 	Detail  string `json:"detail"`
 	Pointer string `json:"pointer"`
 }
@@ -37,10 +37,10 @@ func BadRequest(r *http.Request) *DetailedError {
 }
 
 // ConstraintViolation creates a DetailedError for constraint violation errors.
-// The Field describe the specific fields that violated constraints.
-func ConstraintViolation(r *http.Request, fields ...Field) *DetailedError {
-	if fields == nil {
-		fields = []Field{}
+// The Property describe the specific properties that violated constraints.
+func ConstraintViolation(r *http.Request, properties ...Property) *DetailedError {
+	if properties == nil {
+		properties = []Property{}
 	}
 
 	return &DetailedError{
@@ -50,7 +50,7 @@ func ConstraintViolation(r *http.Request, fields ...Field) *DetailedError {
 		Status:           http.StatusUnprocessableEntity,
 		Code:             "422-02",
 		Instance:         r.URL.Path,
-		ExtensionMembers: map[string]any{"violations": fields},
+		ExtensionMembers: map[string]any{"violations": properties},
 	}
 }
 

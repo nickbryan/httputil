@@ -6,7 +6,7 @@
 
 ## Description
 
-This error type is used when one or more validation rules or constraints are violated during request processing. Such constraints could include field level requirements (e.g., "required" fields), input formats, or invalid data ranges.
+This error type is used when one or more validation rules or constraints are violated during request processing. Such constraints could include property level requirements (e.g., "required" properties), input formats, or invalid data ranges.
 
 Constraint Violations occur when a client provides incorrect data that cannot be processed by the server. The `violations` field details each specific problem to help guide the client in correcting the issue.
 

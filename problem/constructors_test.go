@@ -63,7 +63,7 @@ func TestConstructors(t *testing.T) {
 			},
 		},
 		"constraint violation sets the expected problem details for the resource instance when a single field is passed": {
-			detailedError: problem.ConstraintViolation(newRequest(http.MethodGet, "/tests"), problem.Field{
+			detailedError: problem.ConstraintViolation(newRequest(http.MethodGet, "/tests"), problem.Property{
 				Detail:  "Invalid",
 				Pointer: "/",
 			}),
@@ -80,8 +80,8 @@ func TestConstructors(t *testing.T) {
 		"constraint violation sets the expected problem details for the resource instance when multiple fields are passed": {
 			detailedError: problem.ConstraintViolation(
 				newRequest(http.MethodGet, "/tests"),
-				problem.Field{Detail: "Invalid", Pointer: "/thing"},
-				problem.Field{Detail: "Short", Pointer: "/other"},
+				problem.Property{Detail: "Invalid", Pointer: "/thing"},
+				problem.Property{Detail: "Short", Pointer: "/other"},
 			),
 			want: details{
 				detail:         "The request data violated one or more validation constraints",
