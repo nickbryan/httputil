@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -141,6 +142,25 @@ func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request
 	}
 }
 
+func explainValidationError(err validator.FieldError) string {
+	switch err.Tag() {
+	case "required":
+		return fmt.Sprintf("%s is required", err.Field())
+	case "email":
+		return fmt.Sprintf("%s should be a valid email", err.Field())
+	case "uuid":
+		return fmt.Sprintf("%s should be a valid UUID", err.Field())
+	case "e164":
+		return fmt.Sprintf("%s should be a valid international phone number (e.g. +33 6 06 06 06 06)", err.Field())
+	default:
+		resp := fmt.Sprintf("%s should be %s", err.Field(), err.Tag())
+		if err.Param() != "" {
+			resp += "=" + err.Param()
+		}
+		return resp
+	}
+}
+
 func (h *jsonHandler[req, res]) writeValidationErr(w http.ResponseWriter, r *http.Request, err error) {
 	// This should never really happen as we validate if the expected request.Data is
 	// a struct which is a valid value for StructCtx. This error only gets returned
@@ -159,7 +179,7 @@ func (h *jsonHandler[req, res]) writeValidationErr(w http.ResponseWriter, r *htt
 	if errors.As(err, &errs) {
 		fields := make([]problem.Property, 0, len(errs))
 		for _, err := range errs {
-			fields = append(fields, problem.Property{Detail: err.Tag(), Pointer: "/" + strings.Join(strings.Split(err.Namespace(), ".")[1:], "/")})
+			fields = append(fields, problem.Property{Detail: explainValidationError(err), Pointer: "/" + strings.Join(strings.Split(err.Namespace(), ".")[1:], "/")})
 		}
 
 		h.writeErrorResponse(r.Context(), w, problem.ConstraintViolation(r, fields...))
