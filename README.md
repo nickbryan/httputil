@@ -81,7 +81,6 @@ func newTestHandler() http.Handler {
 * [ ] Test overwriting of base values in the problem json marshaling code.
 * [ ] Finish test existing code to achieve sensible coverage.
 * [ ] Decide on how to wrap logger, implement and test - use as is or clone the writeHandler so we can provide a static message and add the error as an attribute? Would also allow us to set pc?
-* [ ] Figure out how to handle query params and path params for validation and decoding.
 * [ ] Add common middleware.
 * [ ] Write the client side.
 * [ ] Check compatibility with Orchestrion. 
@@ -92,7 +91,3 @@ func newTestHandler() http.Handler {
 * [ ] Redirects
 * [ ] Cookies
 * [ ] Access to the underlying writer?
-* [ ] Could we handle the query, path, header validation through middleware or params on Endpoint? 
-  * They don't require decoding into something as they are accessible through hte request so we can validate 
-  them before they hit the handler?
-  * Maybe the middleware takes the validations in the constructor to be declared on the endpoint and applies them

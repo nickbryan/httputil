@@ -14,7 +14,13 @@ type Endpoint struct {
 	Handler http.Handler
 }
 
-// TODO: write clone method to centralise the copy?
+func (e Endpoint) clone() Endpoint {
+	return Endpoint{
+		Method:  e.Method,
+		Path:    e.Path,
+		Handler: e.Handler,
+	}
+}
 
 // EndpointsWithMiddleware applies the given middleware to all provided
 // endpoints. It returns a new slice of Endpoints with the middleware applied to
@@ -27,11 +33,9 @@ func EndpointsWithMiddleware(middleware MiddlewareFunc, endpoints ...Endpoint) [
 	epts := make([]Endpoint, 0, len(endpoints))
 
 	for _, endpoint := range endpoints {
-		epts = append(epts, Endpoint{
-			Method:  endpoint.Method,
-			Path:    endpoint.Path,
-			Handler: middleware(endpoint.Handler),
-		})
+		e := endpoint.clone()
+		e.Handler = middleware(e.Handler)
+		epts = append(epts, e)
 	}
 
 	return epts
@@ -44,11 +48,9 @@ func EndpointsWithPrefix(prefix string, endpoints ...Endpoint) []Endpoint {
 	epts := make([]Endpoint, 0, len(endpoints))
 
 	for _, endpoint := range endpoints {
-		epts = append(epts, Endpoint{
-			Method:  endpoint.Method,
-			Path:    prefix + endpoint.Path,
-			Handler: endpoint.Handler,
-		})
+		e := endpoint.clone()
+		e.Path = prefix + endpoint.Path
+		epts = append(epts, e)
 	}
 
 	return epts

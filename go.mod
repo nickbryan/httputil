@@ -5,6 +5,7 @@ go 1.23
 require (
 	github.com/go-playground/validator/v10 v10.24.0
 	github.com/google/go-cmp v0.6.0
+	github.com/google/uuid v1.6.0
 	github.com/nickbryan/slogutil v1.2.2
 )
 

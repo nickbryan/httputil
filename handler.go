@@ -22,7 +22,7 @@ type (
 	// error.
 	Handler[req, res any] func(r Request[req]) (*Response[res], error)
 
-	// Request represents a HTTP request with additional data of type `T`.
+	// Request represents an HTTP request with additional data of type `T`.
 	Request[T any] struct {
 		*http.Request
 		Data T
@@ -31,7 +31,7 @@ type (
 	// RequestNoBody represents an empty Request.
 	RequestNoBody = Request[struct{}]
 
-	// Response represents a HTTP response with data of type `T` and a status code.
+	// Response represents an HTTP response with data of type `T` and a status code.
 	Response[T any] struct {
 		Header http.Header
 		data   T
@@ -64,7 +64,6 @@ func NewResponse[T any](code int, data T) *Response[T] {
 type jsonHandler[req, res any] struct {
 	handler         Handler[req, res]
 	logger          *slog.Logger
-	validator       *validator.Validate
 	reqIsStructType bool
 }
 
@@ -73,9 +72,8 @@ type jsonHandler[req, res any] struct {
 // bodies.
 func NewJSONHandler[req, res any](handler Handler[req, res]) http.Handler {
 	return &jsonHandler[req, res]{
-		handler:   handler,
-		logger:    nil,
-		validator: nil,
+		handler: handler,
+		logger:  nil,
 		// Cache this early as reflection can be expensive.
 		reqIsStructType: reflect.TypeFor[req]().Kind() == reflect.Struct,
 	}
@@ -83,11 +81,6 @@ func NewJSONHandler[req, res any](handler Handler[req, res]) http.Handler {
 
 // setLogger is used by the server to inject the logger that will be used by the handler.
 func (h *jsonHandler[req, res]) setLogger(l *slog.Logger) { h.logger = l }
-
-// setValidator is used by the server to inject the validator that will be used by the handler.
-func (h *jsonHandler[req, res]) setValidator(v *validator.Validate) {
-	h.validator = v
-}
 
 // ServeHTTP implements the http.Handler interface. It reads the request body,
 // decodes it into the request data, validates it if a validator is set, calls
@@ -119,7 +112,7 @@ func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request
 		}
 
 		if h.reqIsStructType {
-			if err = h.validator.StructCtx(r.Context(), &request.Data); err != nil {
+			if err = validate.StructCtx(r.Context(), &request.Data); err != nil {
 				h.writeValidationErr(w, r, err)
 				return
 			}
@@ -180,9 +173,6 @@ func (h *jsonHandler[req, res]) writeValidationErr(w http.ResponseWriter, r *htt
 	h.logger.ErrorContext(r.Context(), "JSON handler received an unknown validation error", slog.Any("error", err))
 	h.writeErrorResponse(r.Context(), w, problem.ServerError(r))
 }
-
-// TODO: if I detatch these functions from the handler does it make it easier to write this as middleware? I guess it
-// is the naming of middleware like how it is specific to json that is the problem
 
 func (h *jsonHandler[req, res]) writeErrorResponse(ctx context.Context, w http.ResponseWriter, err error) {
 	var problemDetails *problem.DetailedError

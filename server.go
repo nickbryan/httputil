@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os/signal"
+	"reflect"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,9 +23,8 @@ type Server struct {
 		Shutdown(ctx context.Context) error
 	}
 
-	logger    *slog.Logger
-	router    *http.ServeMux
-	validator *validator.Validate
+	logger *slog.Logger
+	router *http.ServeMux
 
 	address         string
 	shutdownTimeout time.Duration
@@ -39,7 +40,6 @@ func NewServer(logger *slog.Logger, options ...ServerOption) *Server {
 		Listener:        nil, // We need to set Listener after we have a server as we pass server as the Handler.
 		logger:          logger,
 		router:          http.NewServeMux(),
-		validator:       NewValidator(),
 		shutdownTimeout: opts.shutdownTimeout,
 		address:         opts.address,
 	}
@@ -65,10 +65,6 @@ func (s *Server) Register(endpoints ...Endpoint) {
 	for _, endpoint := range endpoints {
 		if logSetter, ok := endpoint.Handler.(interface{ setLogger(l *slog.Logger) }); ok {
 			logSetter.setLogger(s.logger)
-		}
-
-		if validatorSetter, ok := endpoint.Handler.(interface{ setValidator(v *validator.Validate) }); ok {
-			validatorSetter.setValidator(s.validator)
 		}
 
 		s.router.Handle(endpoint.Method+" "+endpoint.Path, endpoint.Handler)
@@ -109,4 +105,22 @@ func (s *Server) Serve(ctx context.Context) {
 // ServeHTTP allows endpoints to be tested without a running server.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	newPanicRecoveryMiddleware(s.logger)(s.router).ServeHTTP(w, r)
+}
+
+// defaultValidator returns a new validator.Validate that is configured for JSON tags.
+func defaultValidator() *validator.Validate {
+	vld := validator.New(validator.WithRequiredStructEnabled())
+
+	vld.RegisterTagNameFunc(func(f reflect.StructField) string {
+		const tags = 2
+		name := strings.SplitN(f.Tag.Get("json"), ",", tags)[0]
+
+		if name == "-" {
+			return ""
+		}
+
+		return name
+	})
+
+	return vld
 }
