@@ -20,17 +20,24 @@ import (
 type (
 	// Handler defines the interface for a handler function. It takes a Request that
 	// has data of type D and returns a Response or an error.
-	Handler[D any] func(r Request[D]) (*Response, error)
+	Handler[D, P any] func(r Request[D, P]) (*Response, error)
 
-	// Request represents an HTTP request with additional data of type `T`.
-	Request[D any] struct {
+	// Request represents an HTTP request that expects Prams and Data.
+	Request[D, P any] struct {
 		*http.Request
 		Data           D
+		Params         P
 		ResponseWriter http.ResponseWriter
 	}
 
-	// RequestNoBody represents an empty Request.
-	RequestNoBody = Request[struct{}]
+	// RequestEmpty represents an empty Request that expects no Prams or Data.
+	RequestEmpty = Request[struct{}, struct{}]
+
+	// RequestParams represents a Request that expects Params but no Data.
+	RequestParams[P any] = Request[struct{}, P]
+
+	// RequestData represents a Request that expects Data but no Params.
+	RequestData[D any] = Request[D, struct{}]
 
 	// Response represents an HTTP response that holds optional data and the
 	// required information to write a response.
@@ -97,35 +104,36 @@ func NewResponseRedirect(code int, url string) *Response {
 	}
 }
 
-type jsonHandler[D any] struct {
-	handler         Handler[D]
-	logger          *slog.Logger
-	reqIsStructType bool
+type jsonHandler[D, P any] struct {
+	handler                             Handler[D, P]
+	logger                              *slog.Logger
+	reqIsStructType, paramsIsStructType bool
 }
 
 // NewJSONHandler creates a new http.Handler that wraps the provided [Handler]
 // function to deserialize JSON request bodies and serialize JSON response
 // bodies.
-func NewJSONHandler[D any](handler Handler[D]) http.Handler {
-	return &jsonHandler[D]{
+func NewJSONHandler[D, P any](handler Handler[D, P]) http.Handler {
+	return &jsonHandler[D, P]{
 		handler: handler,
 		logger:  nil,
 		// Cache this early as reflection can be expensive.
-		reqIsStructType: reflect.TypeFor[D]().Kind() == reflect.Struct,
+		reqIsStructType:    reflect.TypeFor[D]().Kind() == reflect.Struct,
+		paramsIsStructType: reflect.TypeFor[P]().Kind() == reflect.Struct,
 	}
 }
 
 // setLogger is used by the server to inject the logger that will be used by the handler.
-func (h *jsonHandler[D]) setLogger(l *slog.Logger) { h.logger = l }
+func (h *jsonHandler[D, P]) setLogger(l *slog.Logger) { h.logger = l }
 
 // ServeHTTP implements the http.Handler interface. It reads the request body,
 // decodes it into the request data, validates it if a validator is set, calls
 // the wrapped handler, and writes the response back in JSON format.
-func (h *jsonHandler[D]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *jsonHandler[D, P]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	//nolint:exhaustruct // Zero value of Data is unknown.
-	request, ok := h.processRequest(Request[D]{Request: r, ResponseWriter: w})
+	request, ok := h.processRequest(Request[D, P]{Request: r, ResponseWriter: w})
 	if !ok {
 		return
 	}
@@ -139,13 +147,34 @@ func (h *jsonHandler[D]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.processResponse(request, response)
 }
 
-func (h *jsonHandler[D]) processRequest(req Request[D]) (Request[D], bool) {
+func (h *jsonHandler[D, P]) processRequest(req Request[D, P]) (Request[D, P], bool) {
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		h.logger.WarnContext(req.Context(), "JSON handler failed to read request body", slog.Any("error", err))
 		h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.ServerError(req.Request))
 
 		return req, false
+	}
+
+	if !isEmptyStruct(req.Params) {
+		if err = decodeParams(req.Request, &req.Params); err != nil {
+			h.logger.WarnContext(req.Context(), "JSON handler failed to decode params data", slog.Any("error", err))
+			h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.BadRequest(req.Request)) // TODO: need custom errors for param validation.
+		}
+
+		if h.paramsIsStructType {
+			if err = validate.StructCtx(req.Context(), &req.Params); err != nil {
+				h.writeValidationErr(req.ResponseWriter, req.Request, err) // TODO: need custom errors for param validation.
+				return req, false
+			}
+		}
+
+		if err = transform(req.Context(), &req.Params); err != nil {
+			h.logger.WarnContext(req.Context(), "JSON handler failed to transform params data", slog.Any("error", err))
+			h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.ServerError(req.Request))
+
+			return req, false
+		}
 	}
 
 	if !isEmptyStruct(req.Data) {
@@ -183,7 +212,7 @@ func (h *jsonHandler[D]) processRequest(req Request[D]) (Request[D], bool) {
 	return req, true
 }
 
-func (h *jsonHandler[D]) processResponse(req Request[D], res *Response) {
+func (h *jsonHandler[D, P]) processResponse(req Request[D, P], res *Response) {
 	if res == nil {
 		return // TODO: test this, to allow for the underlying writer to be used instead
 	}
@@ -209,27 +238,7 @@ func (h *jsonHandler[D]) processResponse(req Request[D], res *Response) {
 	h.writeResponse(req.Context(), req.ResponseWriter, res.data)
 }
 
-func explainValidationError(err validator.FieldError) string {
-	switch err.Tag() {
-	case "required":
-		return err.Field() + " is required"
-	case "email":
-		return err.Field() + " should be a valid email"
-	case "uuid":
-		return err.Field() + " should be a valid UUID"
-	case "e164":
-		return err.Field() + " should be a valid international phone number (e.g. +33 6 06 06 06 06)"
-	default:
-		resp := fmt.Sprintf("%s should be %s", err.Field(), err.Tag())
-		if err.Param() != "" {
-			resp += "=" + err.Param()
-		}
-
-		return resp
-	}
-}
-
-func (h *jsonHandler[D]) writeValidationErr(w http.ResponseWriter, r *http.Request, err error) {
+func (h *jsonHandler[D, P]) writeValidationErr(w http.ResponseWriter, r *http.Request, err error) {
 	// This should never really happen as we validate if the expected request.Data is
 	// a struct which is a valid value for StructCtx. This error only gets returned
 	// on invalid types being passed to `Struct`, `StructExcept`, StructPartial` or
@@ -262,7 +271,7 @@ func (h *jsonHandler[D]) writeValidationErr(w http.ResponseWriter, r *http.Reque
 	h.writeErrorResponse(r.Context(), w, problem.ServerError(r))
 }
 
-func (h *jsonHandler[D]) writeErrorResponse(ctx context.Context, w http.ResponseWriter, err error) {
+func (h *jsonHandler[D, P]) writeErrorResponse(ctx context.Context, w http.ResponseWriter, err error) {
 	var problemDetails *problem.DetailedError
 	if errors.As(err, &problemDetails) {
 		w.Header().Set("Content-Type", "application/problem+json")
@@ -276,7 +285,7 @@ func (h *jsonHandler[D]) writeErrorResponse(ctx context.Context, w http.Response
 	w.WriteHeader(http.StatusInternalServerError)
 }
 
-func (h *jsonHandler[D]) writeResponse(ctx context.Context, w http.ResponseWriter, data any) {
+func (h *jsonHandler[D, P]) writeResponse(ctx context.Context, w http.ResponseWriter, data any) {
 	if err := json.NewEncoder(w).Encode(&data); err != nil {
 		h.logger.ErrorContext(ctx, "JSON handler failed to encode response data", slog.Any("error", err))
 	}
