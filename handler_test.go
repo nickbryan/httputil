@@ -40,7 +40,7 @@ func TestNewJSONHandler(t *testing.T) {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
 				return httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
-					return httputil.NewResponseNoContent(), nil
+					return httputil.NoContent()
 				})
 			},
 			wantHeader:             http.Header{"Content-Type": {"application/json"}},
@@ -95,7 +95,7 @@ func TestNewJSONHandler(t *testing.T) {
 				}
 
 				return httputil.NewJSONHandler(func(_ httputil.RequestData[request]) (*httputil.Response, error) {
-					return httputil.NewResponseNoContent(), nil
+					return httputil.NoContent()
 				})
 			},
 			requestBody:            strings.NewReader(""),
@@ -107,7 +107,7 @@ func TestNewJSONHandler(t *testing.T) {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
 				return httputil.NewJSONHandler(func(_ httputil.RequestData[map[string]string]) (*httputil.Response, error) {
-					return httputil.NewResponseNoContent(), nil
+					return httputil.NoContent()
 				})
 			},
 			requestBody: strings.NewReader(`{`),
@@ -136,7 +136,7 @@ func TestNewJSONHandler(t *testing.T) {
 				}
 
 				return httputil.NewJSONHandler(func(_ httputil.RequestData[request]) (*httputil.Response, error) {
-					return httputil.NewResponseNoContent(), nil
+					return httputil.NoContent()
 				})
 			},
 			requestBody:            strings.NewReader("{}"),
@@ -147,7 +147,7 @@ func TestNewJSONHandler(t *testing.T) {
 		"the request body can be read again in the handler after it has been decoded into the request data type": {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
-				return httputil.NewJSONHandler(func(r httputil.RequestParams[map[string]string]) (*httputil.Response, error) {
+				return httputil.NewJSONHandler(func(r httputil.RequestData[map[string]string]) (*httputil.Response, error) {
 					bytes, err := io.ReadAll(r.Body)
 					if err != nil {
 						t.Errorf("failed to read r.Body, err: %v", err)
@@ -157,7 +157,7 @@ func TestNewJSONHandler(t *testing.T) {
 						t.Errorf("r.Body mismatch (-want +got):\n%s", diff)
 					}
 
-					return httputil.NewResponseNoContent(), nil
+					return httputil.NoContent()
 				})
 			},
 			requestBody:            strings.NewReader(`{"hello":"world"}`),
@@ -171,7 +171,7 @@ func TestNewJSONHandler(t *testing.T) {
 						t.Errorf("r.Data[\"hello\"] = %v, want: world", r.Data["hello"])
 					}
 
-					return httputil.NewResponseNoContent(), nil
+					return httputil.NoContent()
 				})
 			},
 			requestBody:            strings.NewReader(`{"hello":"world"}`),
@@ -235,7 +235,7 @@ func TestNewJSONHandler(t *testing.T) {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
 				return httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
-					return httputil.NewResponseNoContent(), errors.New("some error")
+					return httputil.NewResponse(http.StatusNoContent, nil), errors.New("some error")
 				})
 			},
 			wantHeader: http.Header{"Content-Type": {"application/json"}},

@@ -30,14 +30,14 @@ type (
 		ResponseWriter http.ResponseWriter
 	}
 
+	// RequestData represents a Request that expects Data but no Params.
+	RequestData[D any] = Request[D, struct{}]
+
 	// RequestEmpty represents an empty Request that expects no Prams or Data.
 	RequestEmpty = Request[struct{}, struct{}]
 
 	// RequestParams represents a Request that expects Params but no Data.
 	RequestParams[P any] = Request[struct{}, P]
-
-	// RequestData represents a Request that expects Data but no Params.
-	RequestData[D any] = Request[D, struct{}]
 
 	// Response represents an HTTP response that holds optional data and the
 	// required information to write a response.
@@ -47,10 +47,10 @@ type (
 		redirect string
 	}
 
-	// Transformer allows for transforms to be performed on the
-	// Request or Response data before it gets finalized.
-	Transformer interface {
-		Transform(ctx context.Context) error
+	// Interceptor allows for operations to be performed on the
+	// Request, Response or Params data before it gets finalized.
+	Interceptor interface {
+		Intercept(ctx context.Context) error
 	}
 )
 
@@ -63,45 +63,55 @@ func NewResponse(code int, data any) *Response {
 	}
 }
 
-// NewResponseAccepted creates a new Response object with a status code of
-// http.StatusAccepted (202 Accepted) and an empty struct as data.
-func NewResponseAccepted() *Response {
+// Accepted creates a new Response object with a status code of
+// http.StatusAccepted (202 Accepted) and the given data.
+func Accepted(data any) (*Response, error) {
 	return &Response{
 		code:     http.StatusAccepted,
-		data:     nil,
+		data:     data,
 		redirect: "",
-	}
+	}, nil
 }
 
-// NewResponseCreated creates a new Response object with a status code of
-// http.StatusCreated (201 Created) and an empty struct as data.
-func NewResponseCreated() *Response {
+// Created creates a new Response object with a status code of
+// http.StatusCreated (201 Created) and the given data.
+func Created(data any) (*Response, error) {
 	return &Response{
 		code:     http.StatusCreated,
-		data:     nil,
+		data:     data,
 		redirect: "",
-	}
+	}, nil
 }
 
-// NewResponseNoContent creates a new Response object with a status code of
+// NoContent creates a new Response object with a status code of
 // http.StatusNoContent (204 No Content) and an empty struct as data.
-func NewResponseNoContent() *Response {
+func NoContent() (*Response, error) {
 	return &Response{
 		code:     http.StatusNoContent,
 		data:     nil,
 		redirect: "",
-	}
+	}, nil
 }
 
-// NewResponseRedirect creates a new Response object with the given status code
+// OK creates a new Response with HTTP status code 200 (OK) containing the
+// provided data.
+func OK(data any) (*Response, error) {
+	return &Response{
+		code:     http.StatusOK,
+		data:     data,
+		redirect: "",
+	}, nil
+}
+
+// Redirect creates a new Response object with the given status code
 // and an empty struct as data. The redirect url will be set which will
 // indicate to the Handler that a redirect should be written.
-func NewResponseRedirect(code int, url string) *Response {
+func Redirect(code int, url string) (*Response, error) {
 	return &Response{
 		code:     code,
 		data:     nil,
 		redirect: url,
-	}
+	}, nil
 }
 
 type jsonHandler[D, P any] struct {
@@ -169,8 +179,8 @@ func (h *jsonHandler[D, P]) processRequest(req Request[D, P]) (Request[D, P], bo
 			}
 		}
 
-		if err = transform(req.Context(), &req.Params); err != nil {
-			h.logger.WarnContext(req.Context(), "JSON handler failed to transform params data", slog.Any("error", err))
+		if err = intercept(req.Context(), &req.Params); err != nil {
+			h.logger.WarnContext(req.Context(), "JSON handler failed to intercept params data", slog.Any("error", err))
 			h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.ServerError(req.Request))
 
 			return req, false
@@ -197,8 +207,8 @@ func (h *jsonHandler[D, P]) processRequest(req Request[D, P]) (Request[D, P], bo
 			}
 		}
 
-		if err = transform(req.Context(), &req.Data); err != nil {
-			h.logger.WarnContext(req.Context(), "JSON handler failed to transform request data", slog.Any("error", err))
+		if err = intercept(req.Context(), &req.Data); err != nil {
+			h.logger.WarnContext(req.Context(), "JSON handler failed to intercept request data", slog.Any("error", err))
 			h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.ServerError(req.Request))
 
 			return req, false
@@ -228,8 +238,8 @@ func (h *jsonHandler[D, P]) processResponse(req Request[D, P], res *Response) {
 		return
 	}
 
-	if err := transform(req.Context(), &res.data); err != nil {
-		h.logger.WarnContext(req.Context(), "JSON handler failed to transform res data", slog.Any("error", err))
+	if err := intercept(req.Context(), &res.data); err != nil {
+		h.logger.WarnContext(req.Context(), "JSON handler failed to intercept res data", slog.Any("error", err))
 		h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.ServerError(req.Request))
 
 		return
@@ -296,10 +306,10 @@ func isEmptyStruct(v any) bool {
 	return ok
 }
 
-func transform(ctx context.Context, data any) error {
-	if transformer, ok := data.(Transformer); ok {
-		if err := transformer.Transform(ctx); err != nil {
-			return fmt.Errorf("transforming data: %w", err)
+func intercept(ctx context.Context, data any) error {
+	if interceptor, ok := data.(Interceptor); ok {
+		if err := interceptor.Intercept(ctx); err != nil {
+			return fmt.Errorf("intercepting data: %w", err)
 		}
 	}
 

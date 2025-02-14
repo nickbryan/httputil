@@ -87,4 +87,3 @@ func newTestHandler() http.Handler {
 * [ ] Finalise all default values, ensure they are correct. 
 * [ ] This README needs filling out properly.
 * [ ] Finalise all package documentation.
-* [ ] Cookies
