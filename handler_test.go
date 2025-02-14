@@ -194,19 +194,6 @@ func TestNewJSONHandler(t *testing.T) {
 			}},
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
-		"custom headers are set in the response on successful request": {
-			handler: func(t *testing.T) http.Handler {
-				t.Helper()
-				return httputil.NewJSONHandler(func(_ httputil.RequestNoBody) (*httputil.Response, error) {
-					resp := httputil.NewResponseNoContent()
-					resp.Header.Set("My-Header", "value")
-
-					return resp, nil
-				})
-			},
-			wantHeader:             http.Header{"Content-Type": {"application/json"}, "My-Header": {"value"}},
-			wantResponseStatusCode: http.StatusNoContent,
-		},
 		"status code is used from the response on successful request": {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()

@@ -12,17 +12,15 @@ import (
 	"github.com/google/uuid"
 )
 
-var (
-	// As pert the validator.New docs:
-	//
-	// InputRules is designed to be thread-safe and used as a singleton instance.
-	// It caches information about your struct and validations,
-	// in essence only parsing your validation tags once per struct type.
-	// Using multiple instances neglects the benefit of caching.
-	//
-	// Doing this allows for a much cleaner API too.
-	validate *validator.Validate
-)
+// As pert the validator.New docs:
+//
+// InputRules is designed to be thread-safe and used as a singleton instance.
+// It caches information about your struct and validations,
+// in essence only parsing your validation tags once per struct type.
+// Using multiple instances neglects the benefit of caching.
+//
+// Doing this allows for a much cleaner API too.
+var validate *validator.Validate
 
 func init() {
 	validate = defaultValidator()
@@ -169,7 +167,7 @@ func Params(r *http.Request, output any) error {
 		return fmt.Errorf("output must be a pointer to a struct, got %T", output)
 	}
 
-	for i := 0; i < outputVal.NumField(); i++ {
+	for i := range outputVal.NumField() {
 		field := outputVal.Type().Field(i)
 
 		queryTag := field.Tag.Get("query")
@@ -207,30 +205,35 @@ func Params(r *http.Request, output any) error {
 			if err != nil {
 				return fmt.Errorf("failed to convert %s to int: %w", paramName, err)
 			}
+
 			fieldVal.SetInt(int64(v))
 		case bool:
 			v, err := strconv.ParseBool(paramValue)
 			if err != nil {
 				return fmt.Errorf("failed to convert %s to bool: %w", paramName, err)
 			}
+
 			fieldVal.SetBool(v)
 		case float64:
 			v, err := strconv.ParseFloat(paramValue, 64)
 			if err != nil {
 				return fmt.Errorf("failed to convert %s to float64: %w", paramName, err)
 			}
+
 			fieldVal.SetFloat(v)
 		case time.Time:
 			v, err := time.Parse(time.RFC3339, paramValue)
 			if err != nil {
 				return fmt.Errorf("failed to convert %s to time.Time: %w", paramName, err)
 			}
+
 			fieldVal.Set(reflect.ValueOf(v))
 		case uuid.UUID:
 			v, err := uuid.Parse(paramValue)
 			if err != nil {
 				return fmt.Errorf("failed to convert %s to uuid.UUID: %w", paramName, err)
 			}
+
 			fieldVal.Set(reflect.ValueOf(v))
 		default:
 			return fmt.Errorf("unsupported field type: %T", fieldVal.Interface())

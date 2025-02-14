@@ -87,7 +87,4 @@ func newTestHandler() http.Handler {
 * [ ] Finalise all default values, ensure they are correct. 
 * [ ] This README needs filling out properly.
 * [ ] Finalise all package documentation.
-* [ ] Add pre handler hook / transformer like fuego
-* [ ] Redirects
 * [ ] Cookies
-* [ ] Access to the underlying writer?

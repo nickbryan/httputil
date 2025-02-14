@@ -18,34 +18,41 @@ import (
 )
 
 type (
-	// Handler defines the interface for a handler function. It takes a request of
-	// type `req` and returns a response of type `res` along with any potential
-	// error.
-	Handler[req any] func(r Request[req]) (*Response, error)
+	// Handler defines the interface for a handler function. It takes a Request that
+	// has data of type D and returns a Response or an error.
+	Handler[D any] func(r Request[D]) (*Response, error)
 
 	// Request represents an HTTP request with additional data of type `T`.
-	Request[T any] struct {
+	Request[D any] struct {
 		*http.Request
-		Data T
+		Data           D
+		ResponseWriter http.ResponseWriter
 	}
 
 	// RequestNoBody represents an empty Request.
 	RequestNoBody = Request[struct{}]
 
-	// Response represents an HTTP response with data of type `T` and a status code.
+	// Response represents an HTTP response that holds optional data and the
+	// required information to write a response.
 	Response struct {
-		Header http.Header
-		data   any
-		code   int
+		code     int
+		data     any
+		redirect string
+	}
+
+	// Transformer allows for transforms to be performed on the
+	// Request or Response data before it gets finalized.
+	Transformer interface {
+		Transform(ctx context.Context) error
 	}
 )
 
 // NewResponse creates a new Response object with the given status code and data.
 func NewResponse(code int, data any) *Response {
 	return &Response{
-		Header: make(http.Header),
-		data:   data,
-		code:   code,
+		code:     code,
+		data:     data,
+		redirect: "",
 	}
 }
 
@@ -53,9 +60,9 @@ func NewResponse(code int, data any) *Response {
 // http.StatusAccepted (202 Accepted) and an empty struct as data.
 func NewResponseAccepted() *Response {
 	return &Response{
-		Header: make(http.Header),
-		data:   nil,
-		code:   http.StatusAccepted,
+		code:     http.StatusAccepted,
+		data:     nil,
+		redirect: "",
 	}
 }
 
@@ -63,9 +70,9 @@ func NewResponseAccepted() *Response {
 // http.StatusCreated (201 Created) and an empty struct as data.
 func NewResponseCreated() *Response {
 	return &Response{
-		Header: make(http.Header),
-		data:   nil,
-		code:   http.StatusCreated,
+		code:     http.StatusCreated,
+		data:     nil,
+		redirect: "",
 	}
 }
 
@@ -73,14 +80,25 @@ func NewResponseCreated() *Response {
 // http.StatusNoContent (204 No Content) and an empty struct as data.
 func NewResponseNoContent() *Response {
 	return &Response{
-		Header: make(http.Header),
-		data:   nil,
-		code:   http.StatusNoContent,
+		code:     http.StatusNoContent,
+		data:     nil,
+		redirect: "",
 	}
 }
 
-type jsonHandler[req any] struct {
-	handler         Handler[req]
+// NewResponseRedirect creates a new Response object with the given status code
+// and an empty struct as data. The redirect url will be set which will
+// indicate to the Handler that a redirect should be written.
+func NewResponseRedirect(code int, url string) *Response {
+	return &Response{
+		code:     code,
+		data:     nil,
+		redirect: url,
+	}
+}
+
+type jsonHandler[D any] struct {
+	handler         Handler[D]
 	logger          *slog.Logger
 	reqIsStructType bool
 }
@@ -88,57 +106,28 @@ type jsonHandler[req any] struct {
 // NewJSONHandler creates a new http.Handler that wraps the provided [Handler]
 // function to deserialize JSON request bodies and serialize JSON response
 // bodies.
-func NewJSONHandler[req any](handler Handler[req]) http.Handler {
-	return &jsonHandler[req]{
+func NewJSONHandler[D any](handler Handler[D]) http.Handler {
+	return &jsonHandler[D]{
 		handler: handler,
 		logger:  nil,
 		// Cache this early as reflection can be expensive.
-		reqIsStructType: reflect.TypeFor[req]().Kind() == reflect.Struct,
+		reqIsStructType: reflect.TypeFor[D]().Kind() == reflect.Struct,
 	}
 }
 
 // setLogger is used by the server to inject the logger that will be used by the handler.
-func (h *jsonHandler[req]) setLogger(l *slog.Logger) { h.logger = l }
+func (h *jsonHandler[D]) setLogger(l *slog.Logger) { h.logger = l }
 
 // ServeHTTP implements the http.Handler interface. It reads the request body,
 // decodes it into the request data, validates it if a validator is set, calls
 // the wrapped handler, and writes the response back in JSON format.
-func (h *jsonHandler[req]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	request := Request[req]{Request: r} //nolint:exhaustruct // Zero value of Data is unknown.
-
+func (h *jsonHandler[D]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	body, err := io.ReadAll(request.Body)
-	if err != nil {
-		h.logger.WarnContext(r.Context(), "JSON handler failed to read request body", slog.Any("error", err))
-		h.writeErrorResponse(r.Context(), w, problem.ServerError(r))
-
+	//nolint:exhaustruct // Zero value of Data is unknown.
+	request, ok := h.processRequest(Request[D]{Request: r, ResponseWriter: w})
+	if !ok {
 		return
-	}
-
-	if !isEmptyStruct(request.Data) {
-		if len(body) == 0 {
-			h.writeErrorResponse(r.Context(), w, problem.BadRequest(r).WithDetail("The server received an unexpected empty request body"))
-			return
-		}
-
-		if err = json.Unmarshal(body, &request.Data); err != nil {
-			h.logger.WarnContext(r.Context(), "JSON handler failed to decode request data", slog.Any("error", err))
-			h.writeErrorResponse(r.Context(), w, problem.BadRequest(r))
-
-			return
-		}
-
-		if h.reqIsStructType {
-			if err = validate.StructCtx(r.Context(), &request.Data); err != nil {
-				h.writeValidationErr(w, r, err)
-				return
-			}
-		}
-
-		// Put the body contents back so that it can be read in the handler again if
-		// desired. We have consumed the buffer when reading Body above.
-		request.Body = io.NopCloser(bytes.NewBuffer(body))
 	}
 
 	response, err := h.handler(request)
@@ -147,40 +136,100 @@ func (h *jsonHandler[req]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if response == nil {
+	h.processResponse(request, response)
+}
+
+func (h *jsonHandler[D]) processRequest(req Request[D]) (Request[D], bool) {
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		h.logger.WarnContext(req.Context(), "JSON handler failed to read request body", slog.Any("error", err))
+		h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.ServerError(req.Request))
+
+		return req, false
+	}
+
+	if !isEmptyStruct(req.Data) {
+		if len(body) == 0 {
+			h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.BadRequest(req.Request).WithDetail("The server received an unexpected empty request body"))
+			return req, false
+		}
+
+		if err = json.Unmarshal(body, &req.Data); err != nil {
+			h.logger.WarnContext(req.Context(), "JSON handler failed to decode request data", slog.Any("error", err))
+			h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.BadRequest(req.Request))
+
+			return req, false
+		}
+
+		if h.reqIsStructType {
+			if err = validate.StructCtx(req.Context(), &req.Data); err != nil {
+				h.writeValidationErr(req.ResponseWriter, req.Request, err)
+				return req, false
+			}
+		}
+
+		if err = transform(req.Context(), &req.Data); err != nil {
+			h.logger.WarnContext(req.Context(), "JSON handler failed to transform request data", slog.Any("error", err))
+			h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.ServerError(req.Request))
+
+			return req, false
+		}
+	}
+
+	// Put the body contents back so that it can be read in the handler again if
+	// desired. We have consumed the buffer when reading Body above.
+	req.Body = io.NopCloser(bytes.NewBuffer(body))
+
+	return req, true
+}
+
+func (h *jsonHandler[D]) processResponse(req Request[D], res *Response) {
+	if res == nil {
 		return // TODO: test this, to allow for the underlying writer to be used instead
 	}
 
-	writeHeaders(w, response.Header)
-	w.WriteHeader(response.code)
-
-	if response.data == nil {
+	if res.redirect != "" { // TODO: test this
+		http.Redirect(req.ResponseWriter, req.Request, res.redirect, res.code)
 		return
 	}
 
-	h.writeResponse(r.Context(), w, response.data)
+	req.ResponseWriter.WriteHeader(res.code)
+
+	if res.data == nil {
+		return
+	}
+
+	if err := transform(req.Context(), &res.data); err != nil {
+		h.logger.WarnContext(req.Context(), "JSON handler failed to transform res data", slog.Any("error", err))
+		h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.ServerError(req.Request))
+
+		return
+	}
+
+	h.writeResponse(req.Context(), req.ResponseWriter, res.data)
 }
 
 func explainValidationError(err validator.FieldError) string {
 	switch err.Tag() {
 	case "required":
-		return fmt.Sprintf("%s is required", err.Field())
+		return err.Field() + " is required"
 	case "email":
-		return fmt.Sprintf("%s should be a valid email", err.Field())
+		return err.Field() + " should be a valid email"
 	case "uuid":
-		return fmt.Sprintf("%s should be a valid UUID", err.Field())
+		return err.Field() + " should be a valid UUID"
 	case "e164":
-		return fmt.Sprintf("%s should be a valid international phone number (e.g. +33 6 06 06 06 06)", err.Field())
+		return err.Field() + " should be a valid international phone number (e.g. +33 6 06 06 06 06)"
 	default:
 		resp := fmt.Sprintf("%s should be %s", err.Field(), err.Tag())
 		if err.Param() != "" {
 			resp += "=" + err.Param()
 		}
+
 		return resp
 	}
 }
 
-func (h *jsonHandler[req]) writeValidationErr(w http.ResponseWriter, r *http.Request, err error) {
+func (h *jsonHandler[D]) writeValidationErr(w http.ResponseWriter, r *http.Request, err error) {
 	// This should never really happen as we validate if the expected request.Data is
 	// a struct which is a valid value for StructCtx. This error only gets returned
 	// on invalid types being passed to `Struct`, `StructExcept`, StructPartial` or
@@ -213,7 +262,7 @@ func (h *jsonHandler[req]) writeValidationErr(w http.ResponseWriter, r *http.Req
 	h.writeErrorResponse(r.Context(), w, problem.ServerError(r))
 }
 
-func (h *jsonHandler[req]) writeErrorResponse(ctx context.Context, w http.ResponseWriter, err error) {
+func (h *jsonHandler[D]) writeErrorResponse(ctx context.Context, w http.ResponseWriter, err error) {
 	var problemDetails *problem.DetailedError
 	if errors.As(err, &problemDetails) {
 		w.Header().Set("Content-Type", "application/problem+json")
@@ -227,7 +276,7 @@ func (h *jsonHandler[req]) writeErrorResponse(ctx context.Context, w http.Respon
 	w.WriteHeader(http.StatusInternalServerError)
 }
 
-func (h *jsonHandler[req]) writeResponse(ctx context.Context, w http.ResponseWriter, data any) {
+func (h *jsonHandler[D]) writeResponse(ctx context.Context, w http.ResponseWriter, data any) {
 	if err := json.NewEncoder(w).Encode(&data); err != nil {
 		h.logger.ErrorContext(ctx, "JSON handler failed to encode response data", slog.Any("error", err))
 	}
@@ -238,10 +287,12 @@ func isEmptyStruct(v any) bool {
 	return ok
 }
 
-func writeHeaders(w http.ResponseWriter, headers http.Header) {
-	for header, values := range headers {
-		for _, value := range values {
-			w.Header().Add(header, value)
+func transform(ctx context.Context, data any) error {
+	if transformer, ok := data.(Transformer); ok {
+		if err := transformer.Transform(ctx); err != nil {
+			return fmt.Errorf("transforming data: %w", err)
 		}
 	}
+
+	return nil
 }
