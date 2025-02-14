@@ -21,7 +21,7 @@ type (
 	// Handler defines the interface for a handler function. It takes a request of
 	// type `req` and returns a response of type `res` along with any potential
 	// error.
-	Handler[req, res any] func(r Request[req]) (*Response[res], error)
+	Handler[req any] func(r Request[req]) (*Response, error)
 
 	// Request represents an HTTP request with additional data of type `T`.
 	Request[T any] struct {
@@ -33,37 +33,54 @@ type (
 	RequestNoBody = Request[struct{}]
 
 	// Response represents an HTTP response with data of type `T` and a status code.
-	Response[T any] struct {
+	Response struct {
 		Header http.Header
-		data   T
+		data   any
 		code   int
 	}
-
-	// ResponseNoBody represents an empty Response.
-	ResponseNoBody = Response[struct{}]
 )
 
-// NewNoContentResponse creates a new Response object with a status code of
-// http.StatusNoContent (204 No Content) and an empty struct as data.
-func NewNoContentResponse() *ResponseNoBody {
-	return &ResponseNoBody{
-		Header: make(http.Header),
-		data:   struct{}{},
-		code:   http.StatusNoContent,
-	}
-}
-
 // NewResponse creates a new Response object with the given status code and data.
-func NewResponse[T any](code int, data T) *Response[T] {
-	return &Response[T]{
+func NewResponse(code int, data any) *Response {
+	return &Response{
 		Header: make(http.Header),
 		data:   data,
 		code:   code,
 	}
 }
 
-type jsonHandler[req, res any] struct {
-	handler         Handler[req, res]
+// NewResponseAccepted creates a new Response object with a status code of
+// http.StatusAccepted (202 Accepted) and an empty struct as data.
+func NewResponseAccepted() *Response {
+	return &Response{
+		Header: make(http.Header),
+		data:   nil,
+		code:   http.StatusAccepted,
+	}
+}
+
+// NewResponseCreated creates a new Response object with a status code of
+// http.StatusCreated (201 Created) and an empty struct as data.
+func NewResponseCreated() *Response {
+	return &Response{
+		Header: make(http.Header),
+		data:   nil,
+		code:   http.StatusCreated,
+	}
+}
+
+// NewResponseNoContent creates a new Response object with a status code of
+// http.StatusNoContent (204 No Content) and an empty struct as data.
+func NewResponseNoContent() *Response {
+	return &Response{
+		Header: make(http.Header),
+		data:   nil,
+		code:   http.StatusNoContent,
+	}
+}
+
+type jsonHandler[req any] struct {
+	handler         Handler[req]
 	logger          *slog.Logger
 	reqIsStructType bool
 }
@@ -71,8 +88,8 @@ type jsonHandler[req, res any] struct {
 // NewJSONHandler creates a new http.Handler that wraps the provided [Handler]
 // function to deserialize JSON request bodies and serialize JSON response
 // bodies.
-func NewJSONHandler[req, res any](handler Handler[req, res]) http.Handler {
-	return &jsonHandler[req, res]{
+func NewJSONHandler[req any](handler Handler[req]) http.Handler {
+	return &jsonHandler[req]{
 		handler: handler,
 		logger:  nil,
 		// Cache this early as reflection can be expensive.
@@ -81,12 +98,12 @@ func NewJSONHandler[req, res any](handler Handler[req, res]) http.Handler {
 }
 
 // setLogger is used by the server to inject the logger that will be used by the handler.
-func (h *jsonHandler[req, res]) setLogger(l *slog.Logger) { h.logger = l }
+func (h *jsonHandler[req]) setLogger(l *slog.Logger) { h.logger = l }
 
 // ServeHTTP implements the http.Handler interface. It reads the request body,
 // decodes it into the request data, validates it if a validator is set, calls
 // the wrapped handler, and writes the response back in JSON format.
-func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *jsonHandler[req]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	request := Request[req]{Request: r} //nolint:exhaustruct // Zero value of Data is unknown.
 
 	w.Header().Set("Content-Type", "application/json")
@@ -131,15 +148,17 @@ func (h *jsonHandler[req, res]) ServeHTTP(w http.ResponseWriter, r *http.Request
 	}
 
 	if response == nil {
-		return // TODO: test this
+		return // TODO: test this, to allow for the underlying writer to be used instead
 	}
 
 	writeHeaders(w, response.Header)
 	w.WriteHeader(response.code)
 
-	if !isEmptyStruct(response.data) {
-		h.writeResponse(r.Context(), w, response.data)
+	if response.data == nil {
+		return
 	}
+
+	h.writeResponse(r.Context(), w, response.data)
 }
 
 func explainValidationError(err validator.FieldError) string {
@@ -161,7 +180,7 @@ func explainValidationError(err validator.FieldError) string {
 	}
 }
 
-func (h *jsonHandler[req, res]) writeValidationErr(w http.ResponseWriter, r *http.Request, err error) {
+func (h *jsonHandler[req]) writeValidationErr(w http.ResponseWriter, r *http.Request, err error) {
 	// This should never really happen as we validate if the expected request.Data is
 	// a struct which is a valid value for StructCtx. This error only gets returned
 	// on invalid types being passed to `Struct`, `StructExcept`, StructPartial` or
@@ -194,7 +213,7 @@ func (h *jsonHandler[req, res]) writeValidationErr(w http.ResponseWriter, r *htt
 	h.writeErrorResponse(r.Context(), w, problem.ServerError(r))
 }
 
-func (h *jsonHandler[req, res]) writeErrorResponse(ctx context.Context, w http.ResponseWriter, err error) {
+func (h *jsonHandler[req]) writeErrorResponse(ctx context.Context, w http.ResponseWriter, err error) {
 	var problemDetails *problem.DetailedError
 	if errors.As(err, &problemDetails) {
 		w.Header().Set("Content-Type", "application/problem+json")
@@ -208,7 +227,7 @@ func (h *jsonHandler[req, res]) writeErrorResponse(ctx context.Context, w http.R
 	w.WriteHeader(http.StatusInternalServerError)
 }
 
-func (h *jsonHandler[req, res]) writeResponse(ctx context.Context, w http.ResponseWriter, data any) {
+func (h *jsonHandler[req]) writeResponse(ctx context.Context, w http.ResponseWriter, data any) {
 	if err := json.NewEncoder(w).Encode(&data); err != nil {
 		h.logger.ErrorContext(ctx, "JSON handler failed to encode response data", slog.Any("error", err))
 	}

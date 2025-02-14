@@ -39,8 +39,8 @@ func TestNewJSONHandler(t *testing.T) {
 		"the response content type is application/json when a successful response is returned": {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
-				return httputil.NewJSONHandler(func(_ httputil.RequestNoBody) (*httputil.ResponseNoBody, error) {
-					return httputil.NewNoContentResponse(), nil
+				return httputil.NewJSONHandler(func(_ httputil.RequestNoBody) (*httputil.Response, error) {
+					return httputil.NewResponseNoContent(), nil
 				})
 			},
 			wantHeader:             http.Header{"Content-Type": {"application/json"}},
@@ -49,7 +49,7 @@ func TestNewJSONHandler(t *testing.T) {
 		"the response content type is application/json when an error response is returned": {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
-				return httputil.NewJSONHandler(func(_ httputil.RequestNoBody) (*httputil.ResponseNoBody, error) {
+				return httputil.NewJSONHandler(func(_ httputil.RequestNoBody) (*httputil.Response, error) {
 					return nil, errors.New("some error")
 				})
 			},
@@ -66,7 +66,7 @@ func TestNewJSONHandler(t *testing.T) {
 		"the response content type is application/problem+json when a problem response is returned": {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
-				return httputil.NewJSONHandler(func(r httputil.RequestNoBody) (*httputil.ResponseNoBody, error) {
+				return httputil.NewJSONHandler(func(r httputil.RequestNoBody) (*httputil.Response, error) {
 					return nil, problem.ServerError(r.Request)
 				})
 			},
@@ -94,8 +94,8 @@ func TestNewJSONHandler(t *testing.T) {
 					Name string `json:"name" validate:"required"`
 				}
 
-				return httputil.NewJSONHandler(func(_ httputil.Request[request]) (*httputil.ResponseNoBody, error) {
-					return httputil.NewNoContentResponse(), nil
+				return httputil.NewJSONHandler(func(_ httputil.Request[request]) (*httputil.Response, error) {
+					return httputil.NewResponseNoContent(), nil
 				})
 			},
 			requestBody:            strings.NewReader(""),
@@ -106,8 +106,8 @@ func TestNewJSONHandler(t *testing.T) {
 		"returns a bad request status code and logs a warning when the request body cannot be decoded as json": {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
-				return httputil.NewJSONHandler(func(_ httputil.Request[map[string]string]) (*httputil.ResponseNoBody, error) {
-					return httputil.NewNoContentResponse(), nil
+				return httputil.NewJSONHandler(func(_ httputil.Request[map[string]string]) (*httputil.Response, error) {
+					return httputil.NewResponseNoContent(), nil
 				})
 			},
 			requestBody: strings.NewReader(`{`),
@@ -135,8 +135,8 @@ func TestNewJSONHandler(t *testing.T) {
 					Inner inner  `json:"inner"`
 				}
 
-				return httputil.NewJSONHandler(func(_ httputil.Request[request]) (*httputil.ResponseNoBody, error) {
-					return httputil.NewNoContentResponse(), nil
+				return httputil.NewJSONHandler(func(_ httputil.Request[request]) (*httputil.Response, error) {
+					return httputil.NewResponseNoContent(), nil
 				})
 			},
 			requestBody:            strings.NewReader("{}"),
@@ -147,7 +147,7 @@ func TestNewJSONHandler(t *testing.T) {
 		"the request body can be read again in the handler after it has been decoded into the request data type": {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
-				return httputil.NewJSONHandler(func(r httputil.Request[map[string]string]) (*httputil.ResponseNoBody, error) {
+				return httputil.NewJSONHandler(func(r httputil.Request[map[string]string]) (*httputil.Response, error) {
 					bytes, err := io.ReadAll(r.Body)
 					if err != nil {
 						t.Errorf("failed to read r.Body, err: %v", err)
@@ -157,7 +157,7 @@ func TestNewJSONHandler(t *testing.T) {
 						t.Errorf("r.Body mismatch (-want +got):\n%s", diff)
 					}
 
-					return httputil.NewNoContentResponse(), nil
+					return httputil.NewResponseNoContent(), nil
 				})
 			},
 			requestBody:            strings.NewReader(`{"hello":"world"}`),
@@ -166,12 +166,12 @@ func TestNewJSONHandler(t *testing.T) {
 		"the request body is mapped to the requests data": {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
-				return httputil.NewJSONHandler(func(r httputil.Request[map[string]string]) (*httputil.ResponseNoBody, error) {
+				return httputil.NewJSONHandler(func(r httputil.Request[map[string]string]) (*httputil.Response, error) {
 					if r.Data["hello"] != "world" {
 						t.Errorf("r.Data[\"hello\"] = %v, want: world", r.Data["hello"])
 					}
 
-					return httputil.NewNoContentResponse(), nil
+					return httputil.NewResponseNoContent(), nil
 				})
 			},
 			requestBody:            strings.NewReader(`{"hello":"world"}`),
@@ -180,7 +180,7 @@ func TestNewJSONHandler(t *testing.T) {
 		"an internal server error is returned and a log is written when a generic error is returned": {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
-				return httputil.NewJSONHandler(func(_ httputil.RequestNoBody) (*httputil.ResponseNoBody, error) {
+				return httputil.NewJSONHandler(func(_ httputil.RequestNoBody) (*httputil.Response, error) {
 					return nil, errors.New("some error")
 				})
 			},
@@ -197,8 +197,8 @@ func TestNewJSONHandler(t *testing.T) {
 		"custom headers are set in the response on successful request": {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
-				return httputil.NewJSONHandler(func(_ httputil.RequestNoBody) (*httputil.ResponseNoBody, error) {
-					resp := httputil.NewNoContentResponse()
+				return httputil.NewJSONHandler(func(_ httputil.RequestNoBody) (*httputil.Response, error) {
+					resp := httputil.NewResponseNoContent()
 					resp.Header.Set("My-Header", "value")
 
 					return resp, nil
@@ -210,8 +210,8 @@ func TestNewJSONHandler(t *testing.T) {
 		"status code is used from the response on successful request": {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
-				return httputil.NewJSONHandler(func(_ httputil.RequestNoBody) (*httputil.ResponseNoBody, error) {
-					return httputil.NewResponse(http.StatusAccepted, struct{}{}), nil
+				return httputil.NewJSONHandler(func(_ httputil.RequestNoBody) (*httputil.Response, error) {
+					return httputil.NewResponse(http.StatusAccepted, nil), nil
 				})
 			},
 			wantResponseStatusCode: http.StatusAccepted,
@@ -219,7 +219,7 @@ func TestNewJSONHandler(t *testing.T) {
 		"response data is encoded as json in the body": {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
-				return httputil.NewJSONHandler(func(_ httputil.RequestNoBody) (*httputil.Response[map[string]string], error) {
+				return httputil.NewJSONHandler(func(_ httputil.RequestNoBody) (*httputil.Response, error) {
 					return httputil.NewResponse(http.StatusOK, map[string]string{"hello": "world"}), nil
 				})
 			},
@@ -229,7 +229,7 @@ func TestNewJSONHandler(t *testing.T) {
 		"logs a warning when the response body cannot be encoded as json": {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
-				return httputil.NewJSONHandler(func(_ httputil.RequestNoBody) (*httputil.Response[map[string]chan int], error) {
+				return httputil.NewJSONHandler(func(_ httputil.RequestNoBody) (*httputil.Response, error) {
 					return httputil.NewResponse(http.StatusCreated, map[string]chan int{"chan": make(chan int)}), nil
 				})
 			},
@@ -247,8 +247,8 @@ func TestNewJSONHandler(t *testing.T) {
 		"only the error case is handled when both an error and a response is returned from the handler": {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
-				return httputil.NewJSONHandler(func(_ httputil.RequestNoBody) (*httputil.ResponseNoBody, error) {
-					return httputil.NewNoContentResponse(), errors.New("some error")
+				return httputil.NewJSONHandler(func(_ httputil.RequestNoBody) (*httputil.Response, error) {
+					return httputil.NewResponseNoContent(), errors.New("some error")
 				})
 			},
 			wantHeader: http.Header{"Content-Type": {"application/json"}},
@@ -274,7 +274,7 @@ func TestNewJSONHandler(t *testing.T) {
 			response := httptest.NewRecorder()
 
 			handler := httputil.NewJSONHandler(
-				func(_ httputil.RequestNoBody) (*httputil.ResponseNoBody, error) {
+				func(_ httputil.RequestNoBody) (*httputil.Response, error) {
 					return httputil.NewResponse(http.StatusOK, struct{}{}), nil
 				},
 			)
