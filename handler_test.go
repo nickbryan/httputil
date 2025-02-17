@@ -262,7 +262,7 @@ func TestNewJSONHandler(t *testing.T) {
 
 			handler := httputil.NewJSONHandler(
 				func(_ httputil.RequestEmpty) (*httputil.Response, error) {
-					return httputil.NewResponse(http.StatusOK, struct{}{}), nil
+					return httputil.OK(nil)
 				},
 			)
 			if testCase.handler != nil {

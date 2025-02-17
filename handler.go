@@ -117,6 +117,7 @@ func Redirect(code int, url string) (*Response, error) {
 type jsonHandler[D, P any] struct {
 	handler                             Handler[D, P]
 	logger                              *slog.Logger
+	validator                           *validator.Validate
 	reqIsStructType, paramsIsStructType bool
 }
 
@@ -125,8 +126,9 @@ type jsonHandler[D, P any] struct {
 // bodies.
 func NewJSONHandler[D, P any](handler Handler[D, P]) http.Handler {
 	return &jsonHandler[D, P]{
-		handler: handler,
-		logger:  nil,
+		handler:   handler,
+		logger:    nil,
+		validator: nil,
 		// Cache this early as reflection can be expensive.
 		reqIsStructType:    reflect.TypeFor[D]().Kind() == reflect.Struct,
 		paramsIsStructType: reflect.TypeFor[P]().Kind() == reflect.Struct,
@@ -135,6 +137,9 @@ func NewJSONHandler[D, P any](handler Handler[D, P]) http.Handler {
 
 // setLogger is used by the server to inject the logger that will be used by the handler.
 func (h *jsonHandler[D, P]) setLogger(l *slog.Logger) { h.logger = l }
+
+// setValidator is used by the server to inject the validator that will be used by the handler.
+func (h *jsonHandler[D, P]) setValidator(v *validator.Validate) { h.validator = v }
 
 // ServeHTTP implements the http.Handler interface. It reads the request body,
 // decodes it into the request data, validates it if a validator is set, calls
@@ -173,7 +178,7 @@ func (h *jsonHandler[D, P]) processRequest(req Request[D, P]) (Request[D, P], bo
 		}
 
 		if h.paramsIsStructType {
-			if err = validate.StructCtx(req.Context(), &req.Params); err != nil {
+			if err = h.validator.StructCtx(req.Context(), &req.Params); err != nil {
 				h.writeValidationErr(req.ResponseWriter, req.Request, err) // TODO: need custom errors for param validation.
 				return req, false
 			}
@@ -201,7 +206,7 @@ func (h *jsonHandler[D, P]) processRequest(req Request[D, P]) (Request[D, P], bo
 		}
 
 		if h.reqIsStructType {
-			if err = validate.StructCtx(req.Context(), &req.Data); err != nil {
+			if err = h.validator.StructCtx(req.Context(), &req.Data); err != nil {
 				h.writeValidationErr(req.ResponseWriter, req.Request, err)
 				return req, false
 			}

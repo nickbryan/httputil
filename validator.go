@@ -8,20 +8,6 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
-// As pert the validator.New docs:
-//
-// InputRules is designed to be thread-safe and used as a singleton instance.
-// It caches information about your struct and validations,
-// in essence only parsing your validation tags once per struct type.
-// Using multiple instances neglects the benefit of caching.
-//
-// Doing this allows for a much cleaner API too.
-var validate *validator.Validate
-
-func init() {
-	validate = defaultValidator()
-}
-
 // defaultValidator returns a new validator.Validate that is configured for JSON tags.
 func defaultValidator() *validator.Validate {
 	vld := validator.New(validator.WithRequiredStructEnabled())

@@ -139,7 +139,7 @@ func TestServerServe(t *testing.T) {
 			}
 
 			if testCase.signal != nil {
-				if err := sendFutureSignalNotification(context.Background(), t, testCase.signal); err != nil {
+				if err := sendFutureSignalNotification(t.Context(), t, testCase.signal); err != nil {
 					t.Fatalf("unexpected error sending signal notification: %s", err.Error())
 				}
 			}
