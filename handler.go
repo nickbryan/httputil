@@ -229,10 +229,10 @@ func (h *jsonHandler[D, P]) processRequest(req Request[D, P]) (Request[D, P], bo
 
 func (h *jsonHandler[D, P]) processResponse(req Request[D, P], res *Response) {
 	if res == nil {
-		return // TODO: test this, to allow for the underlying writer to be used instead
+		return
 	}
 
-	if res.redirect != "" { // TODO: test this
+	if res.redirect != "" {
 		http.Redirect(req.ResponseWriter, req.Request, res.redirect, res.code)
 		return
 	}

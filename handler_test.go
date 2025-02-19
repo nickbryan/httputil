@@ -198,7 +198,7 @@ func TestNewJSONHandler(t *testing.T) {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
 				return httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
-					return httputil.NewResponse(http.StatusAccepted, nil), nil
+					return httputil.Accepted(nil)
 				})
 			},
 			wantResponseStatusCode: http.StatusAccepted,
@@ -207,7 +207,7 @@ func TestNewJSONHandler(t *testing.T) {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
 				return httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
-					return httputil.NewResponse(http.StatusOK, map[string]string{"hello": "world"}), nil
+					return httputil.OK(map[string]string{"hello": "world"})
 				})
 			},
 			wantResponseBody:       `{"hello":"world"}`,
@@ -217,7 +217,7 @@ func TestNewJSONHandler(t *testing.T) {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
 				return httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
-					return httputil.NewResponse(http.StatusCreated, map[string]chan int{"chan": make(chan int)}), nil
+					return httputil.Created(map[string]chan int{"chan": make(chan int)})
 				})
 			},
 			wantLogs: []slogmem.RecordQuery{{
@@ -231,7 +231,7 @@ func TestNewJSONHandler(t *testing.T) {
 			// have already been written.
 			wantResponseStatusCode: http.StatusCreated,
 		},
-		"only the error case is handled when both an error and a response is returned from the handler": {
+		"only handles the error case when both an error and a response is returned from the handler": {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
 				return httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
@@ -247,6 +247,29 @@ func TestNewJSONHandler(t *testing.T) {
 				},
 			}},
 			wantResponseStatusCode: http.StatusInternalServerError,
+		},
+		"redirects the request when a redirect response is returned": {
+			handler: func(t *testing.T) http.Handler {
+				t.Helper()
+				return httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+					return httputil.Redirect(http.StatusPermanentRedirect, "http://example.com")
+				})
+			},
+			wantHeader:             http.Header{"Content-Type": []string{"application/json"}, "Location": []string{"http://example.com"}},
+			wantResponseStatusCode: http.StatusPermanentRedirect,
+		},
+		"allows writing to the response writer directly": {
+			handler: func(t *testing.T) http.Handler {
+				t.Helper()
+				return httputil.NewJSONHandler(func(r httputil.RequestEmpty) (*httputil.Response, error) {
+					r.ResponseWriter.Header().Set("X-Correlation-ID", "some-random-id")
+					r.ResponseWriter.WriteHeader(http.StatusTeapot)
+
+					return nil, nil
+				})
+			},
+			wantHeader:             http.Header{"X-Correlation-ID": []string{"some-random-id"}},
+			wantResponseStatusCode: http.StatusTeapot,
 		},
 	}
 
