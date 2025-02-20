@@ -262,13 +262,13 @@ func TestNewJSONHandler(t *testing.T) {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
 				return httputil.NewJSONHandler(func(r httputil.RequestEmpty) (*httputil.Response, error) {
-					r.ResponseWriter.Header().Set("X-Correlation-ID", "some-random-id")
+					r.ResponseWriter.Header().Set("X-Correlation-Id", "some-random-id")
 					r.ResponseWriter.WriteHeader(http.StatusTeapot)
 
 					return nil, nil
 				})
 			},
-			wantHeader:             http.Header{"X-Correlation-ID": []string{"some-random-id"}},
+			wantHeader:             http.Header{"Content-Type": []string{"application/json"}, "X-Correlation-Id": []string{"some-random-id"}},
 			wantResponseStatusCode: http.StatusTeapot,
 		},
 	}

@@ -47,10 +47,10 @@ type (
 		redirect string
 	}
 
-	// Interceptor allows for operations to be performed on the
+	// Transformer allows for operations to be performed on the
 	// Request, Response or Params data before it gets finalized.
-	Interceptor interface {
-		Intercept(ctx context.Context) error
+	Transformer interface {
+		Transform(ctx context.Context) error
 	}
 )
 
@@ -129,7 +129,7 @@ func NewJSONHandler[D, P any](handler Handler[D, P]) http.Handler {
 		handler:   handler,
 		logger:    nil,
 		validator: nil,
-		// Cache this early as reflection can be expensive.
+		// Cache this early to save on reflection calls.
 		reqIsStructType:    reflect.TypeFor[D]().Kind() == reflect.Struct,
 		paramsIsStructType: reflect.TypeFor[P]().Kind() == reflect.Struct,
 	}
@@ -147,19 +147,16 @@ func (h *jsonHandler[D, P]) setValidator(v *validator.Validate) { h.validator = 
 func (h *jsonHandler[D, P]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	//nolint:exhaustruct // Zero value of Data is unknown.
-	request, ok := h.processRequest(Request[D, P]{Request: r, ResponseWriter: w})
-	if !ok {
-		return
-	}
+	//nolint:exhaustruct // Zero value for D and P is unknown.
+	if request, ok := h.processRequest(Request[D, P]{Request: r, ResponseWriter: w}); ok {
+		response, err := h.handler(request)
+		if err != nil {
+			h.writeErrorResponse(r.Context(), w, err)
+			return
+		}
 
-	response, err := h.handler(request)
-	if err != nil {
-		h.writeErrorResponse(r.Context(), w, err)
-		return
+		h.processResponse(request, response)
 	}
-
-	h.processResponse(request, response)
 }
 
 func (h *jsonHandler[D, P]) processRequest(req Request[D, P]) (Request[D, P], bool) {
@@ -184,8 +181,8 @@ func (h *jsonHandler[D, P]) processRequest(req Request[D, P]) (Request[D, P], bo
 			}
 		}
 
-		if err = intercept(req.Context(), &req.Params); err != nil {
-			h.logger.WarnContext(req.Context(), "JSON handler failed to intercept params data", slog.Any("error", err))
+		if err = transform(req.Context(), &req.Params); err != nil {
+			h.logger.WarnContext(req.Context(), "JSON handler failed to transform params data", slog.Any("error", err))
 			h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.ServerError(req.Request))
 
 			return req, false
@@ -212,8 +209,8 @@ func (h *jsonHandler[D, P]) processRequest(req Request[D, P]) (Request[D, P], bo
 			}
 		}
 
-		if err = intercept(req.Context(), &req.Data); err != nil {
-			h.logger.WarnContext(req.Context(), "JSON handler failed to intercept request data", slog.Any("error", err))
+		if err = transform(req.Context(), &req.Data); err != nil {
+			h.logger.WarnContext(req.Context(), "JSON handler failed to transform request data", slog.Any("error", err))
 			h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.ServerError(req.Request))
 
 			return req, false
@@ -243,8 +240,8 @@ func (h *jsonHandler[D, P]) processResponse(req Request[D, P], res *Response) {
 		return
 	}
 
-	if err := intercept(req.Context(), &res.data); err != nil {
-		h.logger.WarnContext(req.Context(), "JSON handler failed to intercept res data", slog.Any("error", err))
+	if err := transform(req.Context(), &res.data); err != nil {
+		h.logger.WarnContext(req.Context(), "JSON handler failed to transform res data", slog.Any("error", err))
 		h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.ServerError(req.Request))
 
 		return
@@ -311,10 +308,10 @@ func isEmptyStruct(v any) bool {
 	return ok
 }
 
-func intercept(ctx context.Context, data any) error {
-	if interceptor, ok := data.(Interceptor); ok {
-		if err := interceptor.Intercept(ctx); err != nil {
-			return fmt.Errorf("intercepting data: %w", err)
+func transform(ctx context.Context, data any) error {
+	if transformer, ok := data.(Transformer); ok {
+		if err := transformer.Transform(ctx); err != nil {
+			return fmt.Errorf("transforming data: %w", err)
 		}
 	}
 
