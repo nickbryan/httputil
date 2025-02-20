@@ -283,21 +283,14 @@ func TestNewJSONHandler(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, "/test", testCase.requestBody)
 			response := httptest.NewRecorder()
 
-			handler := httputil.NewJSONHandler(
-				func(_ httputil.RequestEmpty) (*httputil.Response, error) {
-					return httputil.OK(nil)
-				},
-			)
+			handler := httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+				return httputil.OK(nil)
+			})
 			if testCase.handler != nil {
 				handler = testCase.handler(t)
 			}
 
-			server.Register(httputil.Endpoint{
-				Method:  http.MethodGet,
-				Path:    "/test",
-				Handler: handler,
-			})
-
+			server.Register(httputil.Endpoint{Method: http.MethodGet, Path: "/test", Handler: handler})
 			server.ServeHTTP(response, request)
 
 			if response.Code != testCase.wantResponseStatusCode {
