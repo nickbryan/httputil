@@ -22,11 +22,21 @@ type (
 	// has data of type D and params of type P and returns a Response or an error.
 	Action[D, P any] func(r Request[D, P]) (*Response, error)
 
+	// Guard will be called by the Handler before a request is handled to allow for
+	// processes such as auth to run. A Guard will not be called for a standard
+	// http.Handler.
+	Guard interface {
+		Guard(r *http.Request) (*Response, error)
+	}
+
+	// GuardStack represents multiple Guard instances that will be run in order.
+	GuardStack []Guard
+
 	// Handler wraps a http.Handler with the ability to initialize
 	// the implementation with the Server logger and validator.
 	Handler interface {
 		http.Handler
-		init(l *slog.Logger, v *validator.Validate)
+		init(l *slog.Logger, v *validator.Validate, g Guard)
 	}
 
 	// Request represents an HTTP request that expects Prams and Data.
@@ -54,16 +64,6 @@ type (
 		redirect string
 	}
 
-	// Guard will be called by the Handler before a request is handled to allow for
-	// processes such as auth to run. A Guard will not be called for a standard
-	// http.Handler.
-	Guard interface {
-		Guard(r *http.Request) (*Response, error)
-	}
-
-	// GuardStack represents multiple Guard instances that will be run in order.
-	GuardStack []Guard
-
 	// Transformer allows for operations to be performed on the Request, Response or
 	// Params data before it gets finalized. A Transformer will not be called for a
 	// standard http.Handler.
@@ -78,7 +78,7 @@ type (
 func (s GuardStack) Guard(r *http.Request) (*Response, error) {
 	for _, g := range s {
 		if response, err := g.Guard(r); response != nil || err != nil {
-			return response, err //nolint:nilnil,wrapcheck // Allow guard to determine result.
+			return response, err //nolint:nilnil,wrapcheck // Allow Guard to determine result.
 		}
 	}
 
@@ -147,6 +147,7 @@ func Redirect(code int, url string) (*Response, error) {
 
 type jsonHandler[D, P any] struct {
 	action                              Action[D, P]
+	guard                               Guard
 	logger                              *slog.Logger
 	validator                           *validator.Validate
 	reqIsStructType, paramsIsStructType bool
@@ -157,6 +158,7 @@ type jsonHandler[D, P any] struct {
 func NewJSONHandler[D, P any](action Action[D, P]) Handler {
 	return &jsonHandler[D, P]{
 		action:    action,
+		guard:     nil,
 		logger:    nil,
 		validator: nil,
 		// Cache this early to save on reflection calls.
@@ -183,9 +185,24 @@ func (h *jsonHandler[D, P]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *jsonHandler[D, P]) init(l *slog.Logger, v *validator.Validate) { h.logger, h.validator = l, v }
+func (h *jsonHandler[D, P]) init(l *slog.Logger, v *validator.Validate, g Guard) {
+	h.logger, h.validator, h.guard = l, v, g
+}
 
 func (h *jsonHandler[D, P]) processRequest(req Request[D, P]) (Request[D, P], bool) {
+	if h.guard != nil {
+		response, err := h.guard.Guard(req.Request)
+		if err != nil {
+			h.writeErrorResponse(req.Context(), req.ResponseWriter, err)
+			return req, false
+		}
+
+		if response != nil {
+			h.processResponse(req, response)
+			return req, false
+		}
+	}
+
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		h.logger.WarnContext(req.Context(), "JSON handler failed to read request body", slog.Any("error", err))
@@ -352,7 +369,7 @@ func (h netHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.handler.ServeHTTP(w, r)
 }
 
-func (h netHTTPHandler) init(_ *slog.Logger, _ *validator.Validate) {}
+func (h netHTTPHandler) init(_ *slog.Logger, _ *validator.Validate, _ Guard) {}
 
 // NewNetHTTPHandler creates a new Handler that wraps the provided http.Handler
 // so that it can be used on an Endpoint definition.
