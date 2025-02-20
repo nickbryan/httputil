@@ -55,7 +55,7 @@ func TestNewJSONHandler(t *testing.T) {
 			},
 			wantHeader: http.Header{"Content-Type": {"application/json"}},
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler received an unhandled error from inner handler",
+				Message: "JSON handler received an unhandled error from action",
 				Level:   slog.LevelError,
 				Attrs: map[string]slog.Value{
 					"error": slog.AnyValue("some error"),
@@ -144,7 +144,7 @@ func TestNewJSONHandler(t *testing.T) {
 			wantResponseBody:       `{"code":"422-02","detail":"The request data violated one or more validation constraints","instance":"/test","status":422,"title":"Constraint Violation","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/constraint-violation.md","violations":[{"detail":"thing is required","pointer":"/inner/thing"}]}`,
 			wantResponseStatusCode: http.StatusUnprocessableEntity,
 		},
-		"the request body can be read again in the handler after it has been decoded into the request data type": {
+		"the request body can be read again in the action after it has been decoded into the request data type": {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
 				return httputil.NewJSONHandler(func(r httputil.RequestData[map[string]string]) (*httputil.Response, error) {
@@ -186,7 +186,7 @@ func TestNewJSONHandler(t *testing.T) {
 			},
 			wantHeader: http.Header{"Content-Type": {"application/json"}},
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler received an unhandled error from inner handler",
+				Message: "JSON handler received an unhandled error from action",
 				Level:   slog.LevelError,
 				Attrs: map[string]slog.Value{
 					"error": slog.AnyValue("some error"),
@@ -231,7 +231,7 @@ func TestNewJSONHandler(t *testing.T) {
 			// have already been written.
 			wantResponseStatusCode: http.StatusCreated,
 		},
-		"only handles the error case when both an error and a response is returned from the handler": {
+		"only handles the error case when both an error and a response is returned from the action": {
 			handler: func(t *testing.T) http.Handler {
 				t.Helper()
 				return httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
@@ -240,7 +240,7 @@ func TestNewJSONHandler(t *testing.T) {
 			},
 			wantHeader: http.Header{"Content-Type": {"application/json"}},
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler received an unhandled error from inner handler",
+				Message: "JSON handler received an unhandled error from action",
 				Level:   slog.LevelError,
 				Attrs: map[string]slog.Value{
 					"error": slog.AnyValue("some error"),

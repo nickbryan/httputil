@@ -18,9 +18,9 @@ import (
 )
 
 type (
-	// Handler defines the interface for a handler function. It takes a Request that
-	// has data of type D and returns a Response or an error.
-	Handler[D, P any] func(r Request[D, P]) (*Response, error)
+	// Action defines the interface for an action function. It takes a Request that
+	// has data of type D and params of type P and returns a Response or an error.
+	Action[D, P any] func(r Request[D, P]) (*Response, error)
 
 	// Request represents an HTTP request that expects Prams and Data.
 	Request[D, P any] struct {
@@ -47,7 +47,7 @@ type (
 		redirect string
 	}
 
-	// Guard will be called by Handler before a request is handled to
+	// Guard will be called by the Handler before a request is handled to
 	// allow for processes such as auth to run. A Guard will not
 	// be called for a standard http.Handler.
 	Guard interface {
@@ -129,7 +129,7 @@ func OK(data any) (*Response, error) {
 
 // Redirect creates a new Response object with the given status code
 // and an empty struct as data. The redirect url will be set which will
-// indicate to the Handler that a redirect should be written.
+// indicate to the handler that a redirect should be written.
 func Redirect(code int, url string) (*Response, error) {
 	return &Response{
 		code:     code,
@@ -139,18 +139,17 @@ func Redirect(code int, url string) (*Response, error) {
 }
 
 type jsonHandler[D, P any] struct {
-	handler                             Handler[D, P]
+	action                              Action[D, P]
 	logger                              *slog.Logger
 	validator                           *validator.Validate
 	reqIsStructType, paramsIsStructType bool
 }
 
-// NewJSONHandler creates a new http.Handler that wraps the provided [Handler]
-// function to deserialize JSON request bodies and serialize JSON response
-// bodies.
-func NewJSONHandler[D, P any](handler Handler[D, P]) http.Handler {
+// NewJSONHandler creates a new http.Handler that wraps the provided [Action] to
+// deserialize JSON request bodies and serialize JSON response bodies.
+func NewJSONHandler[D, P any](action Action[D, P]) http.Handler {
 	return &jsonHandler[D, P]{
-		handler:   handler,
+		action:    action,
 		logger:    nil,
 		validator: nil,
 		// Cache this early to save on reflection calls.
@@ -167,13 +166,13 @@ func (h *jsonHandler[D, P]) setValidator(v *validator.Validate) { h.validator = 
 
 // ServeHTTP implements the http.Handler interface. It reads the request body,
 // decodes it into the request data, validates it if a validator is set, calls
-// the wrapped handler, and writes the response back in JSON format.
+// the wrapped Action, and writes the response back in JSON format.
 func (h *jsonHandler[D, P]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	//nolint:exhaustruct // Zero value for D and P is unknown.
 	if request, ok := h.processRequest(Request[D, P]{Request: r, ResponseWriter: w}); ok {
-		response, err := h.handler(request)
+		response, err := h.action(request)
 		if err != nil {
 			h.writeErrorResponse(r.Context(), w, err)
 			return
@@ -241,7 +240,7 @@ func (h *jsonHandler[D, P]) processRequest(req Request[D, P]) (Request[D, P], bo
 		}
 	}
 
-	// Put the body contents back so that it can be read in the handler again if
+	// Put the body contents back so that it can be read in the action again if
 	// desired. We have consumed the buffer when reading Body above.
 	req.Body = io.NopCloser(bytes.NewBuffer(body))
 
@@ -317,7 +316,7 @@ func (h *jsonHandler[D, P]) writeErrorResponse(ctx context.Context, w http.Respo
 		return
 	}
 
-	h.logger.ErrorContext(ctx, "JSON handler received an unhandled error from inner handler", slog.Any("error", err))
+	h.logger.ErrorContext(ctx, "JSON handler received an unhandled error from action", slog.Any("error", err))
 	w.WriteHeader(http.StatusInternalServerError)
 }
 
