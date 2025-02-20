@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/nickbryan/httputil"
 )
@@ -53,7 +54,7 @@ func TestEndpointsWithMiddleware(t *testing.T) {
 	t.Run("returns nothing when no endpoints are passed and middleware is nil", func(t *testing.T) {
 		t.Parallel()
 
-		endpoints := httputil.EndpointsWithMiddleware(nil)
+		endpoints := httputil.EndpointGroup{}.WithMiddleware(nil)
 
 		if len(endpoints) != 0 {
 			t.Errorf("expected len(endpoints) = 0, got: %d", len(endpoints))
@@ -63,7 +64,7 @@ func TestEndpointsWithMiddleware(t *testing.T) {
 	t.Run("returns nothing when no endpoints are passed and middleware is not nil", func(t *testing.T) {
 		t.Parallel()
 
-		endpoints := httputil.EndpointsWithMiddleware(injectContextValueMiddleware)
+		endpoints := httputil.EndpointGroup{}.WithMiddleware(injectContextValueMiddleware)
 
 		if len(endpoints) != 0 {
 			t.Errorf("expected len(endpoints) = 0, got: %d", len(endpoints))
@@ -73,18 +74,18 @@ func TestEndpointsWithMiddleware(t *testing.T) {
 	t.Run("returns the endpoints when middleware is nil", func(t *testing.T) {
 		t.Parallel()
 
-		endpoints := []httputil.Endpoint{
+		endpoints := httputil.EndpointGroup{
 			{Method: http.MethodGet, Path: "/users", Handler: nil},
 			{Method: http.MethodPost, Path: "/users", Handler: nil},
 		}
 
-		endpointsWithMiddleware := httputil.EndpointsWithMiddleware(nil, endpoints...)
+		endpointsWithMiddleware := endpoints.WithMiddleware(nil)
 
 		if len(endpointsWithMiddleware) != len(endpoints) {
 			t.Errorf("expected len(endpoints) = %d, got: %d", len(endpoints), len(endpointsWithMiddleware))
 		}
 
-		if diff := cmp.Diff(endpoints, endpointsWithMiddleware); diff != "" {
+		if diff := cmp.Diff(endpoints, endpointsWithMiddleware, cmpopts.IgnoreInterfaces(struct{ httputil.RequestInterceptor }{})); diff != "" {
 			t.Errorf("returned endpoints are not the same as the passed endpoints, diff: %s", diff)
 		}
 	})
@@ -92,11 +93,11 @@ func TestEndpointsWithMiddleware(t *testing.T) {
 	t.Run("returns an endpoint with middleware", func(t *testing.T) {
 		t.Parallel()
 
-		endpointsWithMiddleware := httputil.EndpointsWithMiddleware(injectContextValueMiddleware, httputil.Endpoint{
+		endpointsWithMiddleware := httputil.EndpointGroup{{
 			Method:  http.MethodPost,
 			Path:    "/users",
 			Handler: newTestHandler(t),
-		})
+		}}.WithMiddleware(injectContextValueMiddleware)
 
 		if len(endpointsWithMiddleware) != 1 {
 			t.Fatalf("expected len(endpoints) = 1, got: %d", len(endpointsWithMiddleware))
@@ -110,12 +111,12 @@ func TestEndpointsWithMiddleware(t *testing.T) {
 	t.Run("returns multiple endpoints with middleware", func(t *testing.T) {
 		t.Parallel()
 
-		endpoints := []httputil.Endpoint{
+		endpoints := httputil.EndpointGroup{
 			{Method: http.MethodGet, Path: "/users", Handler: newTestHandler(t)},
 			{Method: http.MethodPost, Path: "/users", Handler: newTestHandler(t)},
 		}
 
-		endpointsWithMiddleware := httputil.EndpointsWithMiddleware(injectContextValueMiddleware, endpoints...)
+		endpointsWithMiddleware := endpoints.WithMiddleware(injectContextValueMiddleware)
 
 		if len(endpointsWithMiddleware) != len(endpoints) {
 			t.Errorf("expected len(endpoints) = %d, got: %d", len(endpoints), len(endpointsWithMiddleware))
@@ -129,7 +130,7 @@ func TestEndpointsWithMiddleware(t *testing.T) {
 	})
 }
 
-func TestEndpointsWithPrefix(t *testing.T) {
+func TestEndpointGroupWithPrefix(t *testing.T) {
 	t.Parallel()
 
 	testCases := map[string]struct {
@@ -163,7 +164,7 @@ func TestEndpointsWithPrefix(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
-			var endpoints []httputil.Endpoint
+			var endpoints httputil.EndpointGroup
 			for _, path := range testCase.endpointsPaths {
 				endpoints = append(endpoints, httputil.Endpoint{
 					Method:  http.MethodGet,
@@ -172,7 +173,7 @@ func TestEndpointsWithPrefix(t *testing.T) {
 				})
 			}
 
-			endpoints = httputil.EndpointsWithPrefix(testCase.prefix, endpoints...)
+			endpoints = endpoints.WithPrefix(testCase.prefix)
 
 			if len(testCase.wantEndpointPaths) != len(endpoints) {
 				t.Fatalf("number of returned endpoints (%d) != wantEndpointPaths (%d)", len(endpoints), len(testCase.wantEndpointPaths))
