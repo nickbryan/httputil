@@ -16,8 +16,8 @@ type (
 		Path string
 		// Handler is the [Handler] that will handle requests for this endpoint.
 		Handler Handler
-		// Guard is the [Guard] that will be called by the Handler before handling the request.
-		Guard Guard
+
+		guard Guard
 	}
 
 	// EndpointGroup represents a group of Endpoint definitions
@@ -25,21 +25,30 @@ type (
 	EndpointGroup []Endpoint
 )
 
-// WithStackedGuard adds the Guard as a GuardStack with the currently set Guard
+func ProtectEndpoint(e Endpoint, g Guard) Endpoint {
+	return Endpoint{
+		Method:  e.Method,
+		Path:    e.Path,
+		Handler: e.Handler,
+		guard:   g,
+	}
+}
+
+// WithGuard adds the Guard as a GuardStack with the currently set Guard
 // as the second Guard in the stack. It returns a new slice of EndpointGroup with
 // the Guard set. The original endpoints are not modified.
-func (eg EndpointGroup) WithStackedGuard(guard Guard) EndpointGroup {
+func (eg EndpointGroup) WithGuard(guard Guard) EndpointGroup {
 	if guard == nil {
 		return eg
 	}
 
 	return cloneAndUpdate(eg, func(e *Endpoint) {
-		if e.Guard == nil {
-			e.Guard = guard
+		if e.guard == nil {
+			e.guard = guard
 			return
 		}
 
-		e.Guard = GuardStack{guard, e.Guard}
+		e.guard = GuardStack{guard, e.guard}
 	})
 }
 
@@ -89,7 +98,7 @@ func cloneAndUpdate(endpoints []Endpoint, update func(e *Endpoint)) []Endpoint {
 			Method:  endpoint.Method,
 			Path:    endpoint.Path,
 			Handler: endpoint.Handler,
-			Guard:   endpoint.Guard,
+			guard:   endpoint.guard,
 		}
 
 		update(&e)

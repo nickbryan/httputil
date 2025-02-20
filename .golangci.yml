@@ -129,6 +129,9 @@ linters-settings:
       - switch
       - map
     default-signifies-exhaustive: true
+  exhaustruct:
+    exclude:
+      - '.+/httputil\.Endpoint$'
   funlen:
     ignore-comments: true
   gocognit:

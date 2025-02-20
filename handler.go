@@ -78,7 +78,7 @@ type (
 func (s GuardStack) Guard(r *http.Request) (*Response, error) {
 	for _, g := range s {
 		if response, err := g.Guard(r); response != nil || err != nil {
-			return response, err //nolint:nilnil,wrapcheck // Allow Guard to determine result.
+			return response, err //nolint:nilnil,wrapcheck // Allow guard to determine result.
 		}
 	}
 

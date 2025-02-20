@@ -63,7 +63,7 @@ func NewServer(logger *slog.Logger, options ...ServerOption) *Server {
 // underlying router.
 func (s *Server) Register(endpoints ...Endpoint) {
 	for _, endpoint := range endpoints {
-		endpoint.Handler.init(s.logger, s.validator, endpoint.Guard)
+		endpoint.Handler.init(s.logger, s.validator, endpoint.guard)
 		s.router.Handle(endpoint.Method+" "+endpoint.Path, endpoint.Handler)
 	}
 }
