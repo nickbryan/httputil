@@ -179,9 +179,9 @@ func TestServerServeHTTP(t *testing.T) {
 		svr.Register(httputil.Endpoint{
 			Method: http.MethodGet,
 			Path:   "/",
-			Handler: http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+			Handler: httputil.NewNetHTTPHandler(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 				panic("panic from handler")
-			}),
+			})),
 		})
 
 		svr.ServeHTTP(response, request)

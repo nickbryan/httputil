@@ -1,7 +1,10 @@
 package httputil
 
 import (
+	"log/slog"
 	"net/http"
+
+	"github.com/go-playground/validator/v10"
 )
 
 type (
@@ -11,8 +14,8 @@ type (
 		Method string
 		// Path is the URL path for this endpoint (e.g., "/users", "/products/{id}").
 		Path string
-		// Handler is the http.Handler that will handle requests to this endpoint.
-		Handler http.Handler
+		// Handler is the [Handler] that will handle requests for this endpoint.
+		Handler Handler
 
 		guard Guard
 	}
@@ -61,7 +64,10 @@ func (eg EndpointGroup) WithMiddleware(middleware MiddlewareFunc) EndpointGroup 
 	}
 
 	return cloneAndUpdate(eg, func(e *Endpoint) {
-		e.Handler = middleware(e.Handler)
+		e.Handler = handlerMiddlewareWrapper{
+			handler:    e.Handler,
+			middleware: middleware,
+		}
 	})
 }
 
@@ -92,3 +98,14 @@ func cloneAndUpdate(endpoints []Endpoint, update func(e *Endpoint)) []Endpoint {
 
 	return es
 }
+
+type handlerMiddlewareWrapper struct {
+	handler    Handler
+	middleware MiddlewareFunc
+}
+
+func (h handlerMiddlewareWrapper) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.middleware(h.handler).ServeHTTP(w, r)
+}
+
+func (h handlerMiddlewareWrapper) init(l *slog.Logger, v *validator.Validate) { h.handler.init(l, v) }

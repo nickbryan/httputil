@@ -121,6 +121,7 @@ linters-settings:
           - github.com/nickbryan/slogutil
           - github.com/go-playground/validator/v10
           - github.com/google/go-cmp/cmp
+          - github.com/google/uuid
   errcheck:
     check-type-assertions: true
   exhaustive:
@@ -145,6 +146,14 @@ linters-settings:
     import-require-grouping: true
   interfacebloat:
     max: 3
+  ireturn:
+    allow:
+      - anon
+      - error
+      - empty
+      - generic
+      - stdlib
+      - httputil.Handler
   misspell:
     locale: US # US English is most common in software code so keep it familiar.
   nakedret:

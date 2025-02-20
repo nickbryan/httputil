@@ -22,6 +22,13 @@ type (
 	// has data of type D and params of type P and returns a Response or an error.
 	Action[D, P any] func(r Request[D, P]) (*Response, error)
 
+	// Handler wraps a http.Handler with the ability to initialize
+	// the implementation with the Server logger and validator.
+	Handler interface {
+		http.Handler
+		init(l *slog.Logger, v *validator.Validate)
+	}
+
 	// Request represents an HTTP request that expects Prams and Data.
 	Request[D, P any] struct {
 		*http.Request
@@ -47,19 +54,19 @@ type (
 		redirect string
 	}
 
-	// Guard will be called by the Handler before a request is handled to
-	// allow for processes such as auth to run. A Guard will not
-	// be called for a standard http.Handler.
+	// Guard will be called by the Handler before a request is handled to allow for
+	// processes such as auth to run. A Guard will not be called for a standard
+	// http.Handler.
 	Guard interface {
 		Guard(r *http.Request) (*Response, error)
 	}
 
-	// GuardStack represents multiple Guard
-	// instances that will be run in order.
+	// GuardStack represents multiple Guard instances that will be run in order.
 	GuardStack []Guard
 
-	// Transformer allows for operations to be performed on the
-	// Request, Response or Params data before it gets finalized.
+	// Transformer allows for operations to be performed on the Request, Response or
+	// Params data before it gets finalized. A Transformer will not be called for a
+	// standard http.Handler.
 	Transformer interface {
 		Transform(ctx context.Context) error
 	}
@@ -145,9 +152,9 @@ type jsonHandler[D, P any] struct {
 	reqIsStructType, paramsIsStructType bool
 }
 
-// NewJSONHandler creates a new http.Handler that wraps the provided [Action] to
+// NewJSONHandler creates a new Handler that wraps the provided [Action] to
 // deserialize JSON request bodies and serialize JSON response bodies.
-func NewJSONHandler[D, P any](action Action[D, P]) http.Handler {
+func NewJSONHandler[D, P any](action Action[D, P]) Handler {
 	return &jsonHandler[D, P]{
 		action:    action,
 		logger:    nil,
@@ -157,12 +164,6 @@ func NewJSONHandler[D, P any](action Action[D, P]) http.Handler {
 		paramsIsStructType: reflect.TypeFor[P]().Kind() == reflect.Struct,
 	}
 }
-
-// setLogger is used by the server to inject the logger that will be used by the handler.
-func (h *jsonHandler[D, P]) setLogger(l *slog.Logger) { h.logger = l }
-
-// setValidator is used by the server to inject the validator that will be used by the handler.
-func (h *jsonHandler[D, P]) setValidator(v *validator.Validate) { h.validator = v }
 
 // ServeHTTP implements the http.Handler interface. It reads the request body,
 // decodes it into the request data, validates it if a validator is set, calls
@@ -181,6 +182,8 @@ func (h *jsonHandler[D, P]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.processResponse(request, response)
 	}
 }
+
+func (h *jsonHandler[D, P]) init(l *slog.Logger, v *validator.Validate) { h.logger, h.validator = l, v }
 
 func (h *jsonHandler[D, P]) processRequest(req Request[D, P]) (Request[D, P], bool) {
 	body, err := io.ReadAll(req.Body)
@@ -339,4 +342,26 @@ func transform(ctx context.Context, data any) error {
 	}
 
 	return nil
+}
+
+type netHTTPHandler struct {
+	handler http.Handler
+}
+
+func (h netHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.handler.ServeHTTP(w, r)
+}
+
+func (h netHTTPHandler) init(_ *slog.Logger, _ *validator.Validate) {}
+
+// NewNetHTTPHandler creates a new Handler that wraps the provided http.Handler
+// so that it can be used on an Endpoint definition.
+func NewNetHTTPHandler(h http.Handler) Handler {
+	return netHTTPHandler{handler: h}
+}
+
+// NewNetHTTPHandlerFunc creates a new Handler that wraps the provided http.HandlerFunc
+// so that it can be used on an Endpoint definition.
+func NewNetHTTPHandlerFunc(h http.HandlerFunc) Handler {
+	return netHTTPHandler{handler: h}
 }
