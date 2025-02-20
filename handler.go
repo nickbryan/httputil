@@ -47,12 +47,36 @@ type (
 		redirect string
 	}
 
+	// Guard will be called by Handler before a request is handled to
+	// allow for processes such as auth to run. A Guard will not
+	// be called for a standard http.Handler.
+	Guard interface {
+		Guard(r *http.Request) (*Response, error)
+	}
+
+	// GuardStack represents multiple Guard
+	// instances that will be run in order.
+	GuardStack []Guard
+
 	// Transformer allows for operations to be performed on the
 	// Request, Response or Params data before it gets finalized.
 	Transformer interface {
 		Transform(ctx context.Context) error
 	}
 )
+
+// Guard will run each Guard in order starting from 0. It will continue iteration
+// until a non nil Response or error is returned, it will then return the
+// Response and error of that call.
+func (s GuardStack) Guard(r *http.Request) (*Response, error) {
+	for _, g := range s {
+		if response, err := g.Guard(r); response != nil || err != nil {
+			return response, err //nolint:nilnil,wrapcheck // Allow guard to determine result.
+		}
+	}
+
+	return nil, nil //nolint:nilnil // nil, nil signals continue.
+}
 
 // NewResponse creates a new Response object with the given status code and data.
 func NewResponse(code int, data any) *Response {

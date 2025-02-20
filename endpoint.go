@@ -14,41 +14,41 @@ type (
 		// Handler is the http.Handler that will handle requests to this endpoint.
 		Handler http.Handler
 
-		requestInterceptor RequestInterceptor
+		guard Guard
 	}
 
 	// EndpointGroup represents a group of Endpoint definitions
 	// allowing access to helper functions to define the group.
 	EndpointGroup []Endpoint
-
-	// TODO: where does this belong, it will not be called when the handler is just a http.Handler?
-	RequestInterceptor interface {
-		InterceptRequest(w http.ResponseWriter, r *http.Request) (*Response, error)
-	}
-
-	RequestInterceptorStack []RequestInterceptor
 )
 
-func (s RequestInterceptorStack) InterceptRequest(w http.ResponseWriter, r *http.Request) (*Response, error) {
-	for _, i := range s {
-		if response, err := i.InterceptRequest(w, r); response != nil || err != nil {
-			return response, err //nolint:nilnil,wrapcheck // Request intercepted allow interceptor to determine result.
-		}
-	}
-
-	return nil, nil //nolint:nilnil // nil, nil signals continue.
-}
-
-// WithRequestInterceptor sets the RequestInterceptor on each Endpoint. It
-// returns a new slice of EndpointGroup with the RequestInterceptor set. The original
-// endpoints are not modified.
-func (eg EndpointGroup) WithRequestInterceptor(interceptor RequestInterceptor) EndpointGroup {
-	if interceptor == nil {
+// WithGuard sets the Guard on each Endpoint. It returns a new slice of
+// EndpointGroup with the Guard set. The original endpoints are not modified.
+func (eg EndpointGroup) WithGuard(guard Guard) EndpointGroup {
+	if guard == nil {
 		return eg
 	}
 
 	return cloneAndUpdate(eg, func(e *Endpoint) {
-		e.requestInterceptor = interceptor
+		e.guard = guard
+	})
+}
+
+// WithStackedGuard adds the Guard as a GuardStack with the currently set Guard
+// as the second Guard in the stack. It returns a new slice of EndpointGroup with
+// the Guard set. The original endpoints are not modified.
+func (eg EndpointGroup) WithStackedGuard(guard Guard) EndpointGroup {
+	if guard == nil {
+		return eg
+	}
+
+	return cloneAndUpdate(eg, func(e *Endpoint) {
+		if e.guard == nil {
+			e.guard = guard
+			return
+		}
+
+		e.guard = GuardStack{guard, e.guard}
 	})
 }
 
@@ -79,10 +79,10 @@ func cloneAndUpdate(endpoints []Endpoint, update func(e *Endpoint)) []Endpoint {
 
 	for _, endpoint := range endpoints {
 		e := Endpoint{
-			Method:             endpoint.Method,
-			Path:               endpoint.Path,
-			Handler:            endpoint.Handler,
-			requestInterceptor: endpoint.requestInterceptor,
+			Method:  endpoint.Method,
+			Path:    endpoint.Path,
+			Handler: endpoint.Handler,
+			guard:   endpoint.guard,
 		}
 
 		update(&e)

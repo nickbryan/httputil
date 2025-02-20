@@ -62,6 +62,7 @@ func NewServer(logger *slog.Logger, options ...ServerOption) *Server {
 // Register one or more endpoints with the Server so they are handled by the
 // underlying router.
 func (s *Server) Register(endpoints ...Endpoint) {
+	// TODO: this doesn't work with middleware.
 	for _, endpoint := range endpoints {
 		if logSetter, ok := endpoint.Handler.(interface{ setLogger(l *slog.Logger) }); ok {
 			logSetter.setLogger(s.logger)

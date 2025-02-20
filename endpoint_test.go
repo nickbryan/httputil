@@ -85,7 +85,7 @@ func TestEndpointsWithMiddleware(t *testing.T) {
 			t.Errorf("expected len(endpoints) = %d, got: %d", len(endpoints), len(endpointsWithMiddleware))
 		}
 
-		if diff := cmp.Diff(endpoints, endpointsWithMiddleware, cmpopts.IgnoreInterfaces(struct{ httputil.RequestInterceptor }{})); diff != "" {
+		if diff := cmp.Diff(endpoints, endpointsWithMiddleware, cmpopts.IgnoreInterfaces(struct{ httputil.Guard }{})); diff != "" {
 			t.Errorf("returned endpoints are not the same as the passed endpoints, diff: %s", diff)
 		}
 	})
