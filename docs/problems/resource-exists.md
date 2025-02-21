@@ -1,17 +1,16 @@
 # Resource Exists
-
 **Type**: `https://github.com/nickbryan/httputil/blob/main/docs/problems/resource-exists.md`  
 **Status**: `409 Conflict`
 **Code**: `409-01`
 
 ## Description
+This error occurs when a client tries to create a resource that already exists. For example, attempting 
+to create a user with an email that is already registered.
 
-This error occurs when a client tries to create a resource that already exists. For example, attempting to create a user with an email that is already registered.
-
-The `Resource Exists` error indicates a conflict with the current state of the server and the action the client tried to perform.
+The `Resource Exists` error indicates a conflict with the current state of the server and the action the 
+client tried to perform.
 
 ## Example JSON
-
 ```json
 {
   "type": "https://github.com/nickbryan/httputil/blob/main/docs/problems/resource-exists.md",

@@ -26,64 +26,77 @@ removing boilerplate code required to build web services.
 package main
 
 import (
-	"context"
-	"net/http"
+  "context"
+  "log/slog"
+  "net/http"
 
-	"github.com/nickbryan/httputil"
-	"github.com/nickbryan/slogutil"
+  "github.com/nickbryan/slogutil"
+
+  "github.com/nickbryan/httputil"
+  "github.com/nickbryan/httputil/problem"
 )
 
+type authGuard struct{}
+
+func newAuthGuard() authGuard { return authGuard{} }
+
+func (g authGuard) Guard(r *http.Request) (*httputil.Response, error) {
+  return nil, problem.Unauthorized(r)
+}
+
+func newTestHandler(l *slog.Logger) httputil.Handler {
+  type params struct {
+    Test string `query:"test"`
+  }
+
+  type response struct {
+    Value string `json:"value"`
+  }
+
+  return httputil.NewJSONHandler(func(r httputil.RequestParams[params]) (*httputil.Response, error) {
+    l.Info("written")
+    return httputil.OK(response{Value: r.Params.Test})
+  })
+}
+
+func endpoints(l *slog.Logger) httputil.EndpointGroup {
+  return httputil.EndpointGroup{
+    httputil.ProtectEndpoint(httputil.Endpoint{
+      Method:  http.MethodGet,
+      Path:    "/balue",
+      Handler: newTestHandler(l),
+    }, newAuthGuard()),
+    httputil.ProtectEndpoint(httputil.Endpoint{
+      Method:  http.MethodPost,
+      Path:    "/test",
+      Handler: newTestHandler(l),
+    }, newAuthGuard()),
+  }
+}
+
 func main() {
-	logger := slogutil.NewJSONLogger()
-	server := httputil.NewServer(logger)
+  l := slogutil.NewJSONLogger()
+  server := httputil.NewServer(l)
 
-	server.Register(
-		httputil.EndpointsWithPrefix(
-			"/api",
-			httputil.EndpointsWithMiddleware(
-				httputil.NewPanicRecoveryMiddleware(logger),
-				newTestEndpoint(),
-			)...,
-		)...,
-	)
-
-	// GET http://localhost:8080/api/names
-	server.Serve(context.Background())
+  server.Register(endpoints(l).WithPrefix("/api").WithGuard(newAuthGuard())...)
+  server.Serve(context.Background())
 }
 
-func newTestEndpoint() httputil.Endpoint {
-	return httputil.Endpoint{
-		Method:  http.MethodGet,
-		Path:    "/names",
-		Handler: newTestHandler(),
-	}
-}
-
-func newTestHandler() http.Handler {
-	type response struct {
-		Names []string `json:"names"`
-	}
-
-	return httputil.NewJSONHandler(func(r httputil.RequestNoBody) (*httputil.Response[response], error) {
-		return httputil.NewResponse(http.StatusOK, response{Names: []string{"Dr Jones"}}), nil
-	})
-}
 ```
 
 ## TODO
-* [ ] Implement the remaining problem details for common errors.
-* [ ] Review the docs for problem details to ensure they are correct and sufficient.
-* [ ] Update handler code to return the correct problem when they are all defined (empty body for example).
-* [ ] Update README to highlight problem json as a feature and provide examples of usage.
-* [ ] How do we allow people to return a custom error payload if required so they are not locked to problem json?
-* [ ] Document how errors take priority over responses, if an error is returned no response will be written if one is also returned. 
-* [ ] Implement proper JSON pointer handling on validation errors as per https://datatracker.ietf.org/doc/html/rfc6901.
-* [ ] Test overwriting of base values in the problem json marshaling code.
-* [ ] Finish test existing code to achieve sensible coverage.
-* [ ] Decide on how to wrap logger, implement and test - use as is or clone the writeHandler so we can provide a static message and add the error as an attribute? Would also allow us to set pc?
+* [ ] See what guard API looks like if parameters can be passed as httputil.Request instead of http.Request.
+* [ ] Look at the parameter decoding code and finish it up properly.
+* [ ] Update handler code to return the correct problems.
+* [ ] Finish testing the existing code to achieve sensible coverage.
 * [ ] Add common middleware.
+* [ ] How do we allow people to return a custom error payload if required so they are not locked to problem json?
+* [ ] Implement proper JSON pointer handling on validation errors as per https://datatracker.ietf.org/doc/html/rfc6901.
+* [ ] Decide on how to wrap logger, implement and test - use as is or clone the writeHandler so we can provide a static message and add the error as an attribute? Would also allow us to set pc?
 * [ ] Write the client side.
-* [ ] Check compatibility with Orchestrion. 
-* [ ] Finalise all default values, ensure they are correct. 
-* [ ] This README needs filling out properly.
+* [ ] Finalise all default values, ensure they are correct.
+* [ ] This README needs filling out properly
+* [ ] Update README to highlight problem json as a feature and provide examples of usage.
+* [ ] Document how errors take priority over responses, if an error is returned no response will be written if one is also returned. y.
+* [ ] Check compatibility with Orchestrion.
 * [ ] Finalise all package documentation.

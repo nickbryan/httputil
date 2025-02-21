@@ -15,12 +15,67 @@ const (
 // API documentation or a different reference.
 var ErrorDocumentationLocation = DefaultErrorDocumentationLocation //nolint:gochecknoglobals // Global var improves API without degrading user experience.
 
+// ParameterType defines the type of the parameter that caused an error.
+// It is used to classify parameters into query parameters, header parameters,
+// or path parameters and to provide more context about the specific issue.
+type ParameterType string
+
+const (
+
+	// ParameterTypeQuery indicates that the parameter error is related to a query
+	// parameter. Query parameters are typically part of the URL and are used to
+	// pass data to the server.
+	ParameterTypeQuery ParameterType = "query"
+
+	// ParameterTypeHeader indicates that the parameter error is related to a header
+	// parameter. Header parameters are sent as part of the HTTP request headers and
+	// provide metadata about the request or additional information required by the
+	// server.
+	ParameterTypeHeader ParameterType = "header"
+
+	// ParameterTypePath indicates that the parameter error is related to a path
+	// parameter. Path parameters are used in the URL path and typically represent a
+	// resource identifier or dynamic data.
+	ParameterTypePath ParameterType = "path"
+)
+
+// Parameter represents a specific parameter that caused an error during request
+// validation. It provides details about the error, the parameter name, and its
+// type (query, header, path).
+type Parameter struct {
+	Parameter string        `json:"parameter"`
+	Detail    string        `json:"detail"`
+	Type      ParameterType `json:"type"`
+}
+
 // Property represents a specific property that caused a violation constraint. It
 // includes details about the error and a pointer to the field in the request
 // body.
 type Property struct {
 	Detail  string `json:"detail"`
 	Pointer string `json:"pointer"`
+}
+
+// BadParameters creates a DetailedError for invalid or malformed request
+// parameters. This function is used when the request contains query, header, or
+// path parameters that do not meet the expected requirements. You may provide
+// details about the specific violations using the parameters parameter. Each
+// parameter in the parameters slice holds information about the invalid
+// parameter, including its name, type, and a description of the issue.
+func BadParameters(r *http.Request, parameters ...Parameter) *DetailedError {
+	if parameters == nil {
+		parameters = []Parameter{}
+	}
+
+	return &DetailedError{
+		Type:             typeLocation("bad-parameters"),
+		Title:            "Bad Parameters",
+		Detail:           "The request parameters are invalid or malformed",
+		Status:           http.StatusBadRequest,
+		Code:             "400-02",
+		Instance:         r.URL.Path,
+		ExtensionMembers: map[string]any{"violations": parameters},
+	}
 }
 
 // BadRequest creates a DetailedError for bad request errors.
@@ -36,8 +91,31 @@ func BadRequest(r *http.Request) *DetailedError {
 	}
 }
 
-// ConstraintViolation creates a DetailedError for constraint violation errors.
-// The Property describe the specific properties that violated constraints.
+// BusinessRuleViolation creates a DetailedError for business rule violation errors.
+// This function is used when a request violates one or more business rules set by
+// the application. You may pass additional details about the specific violations
+// using the properties parameter.
+func BusinessRuleViolation(r *http.Request, properties ...Property) *DetailedError {
+	if properties == nil {
+		properties = []Property{}
+	}
+
+	return &DetailedError{
+		Type:             typeLocation("business-rule-violation"),
+		Title:            "Business Rule Violation",
+		Detail:           "The request violates one or more business rules",
+		Status:           http.StatusUnprocessableEntity,
+		Code:             "422-01",
+		Instance:         r.URL.Path,
+		ExtensionMembers: map[string]any{"violations": properties},
+	}
+}
+
+// ConstraintViolation creates a DetailedError for constraint validation errors.
+// This function is used when the request data violates one or more validation
+// constraints. You may provide additional details about the specific violations
+// using the properties parameter.
+// If no properties are provided, the violations field will be an empty array.
 func ConstraintViolation(r *http.Request, properties ...Property) *DetailedError {
 	if properties == nil {
 		properties = []Property{}

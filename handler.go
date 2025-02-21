@@ -309,12 +309,12 @@ func (h *jsonHandler[D, P]) writeValidationErr(w http.ResponseWriter, r *http.Re
 
 	var errs validator.ValidationErrors
 	if errors.As(err, &errs) {
-		fields := make([]problem.Property, 0, len(errs))
+		properties := make([]problem.Property, 0, len(errs))
 		for _, err := range errs {
-			fields = append(fields, problem.Property{Detail: explainValidationError(err), Pointer: "/" + strings.Join(strings.Split(err.Namespace(), ".")[1:], "/")})
+			properties = append(properties, problem.Property{Detail: explainValidationError(err), Pointer: "#/" + strings.Join(strings.Split(err.Namespace(), ".")[1:], "/")})
 		}
 
-		h.writeErrorResponse(r.Context(), w, problem.ConstraintViolation(r, fields...))
+		h.writeErrorResponse(r.Context(), w, problem.ConstraintViolation(r, properties...))
 
 		return
 	}

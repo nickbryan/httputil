@@ -141,7 +141,7 @@ func TestNewJSONHandler(t *testing.T) {
 			},
 			requestBody:            strings.NewReader("{}"),
 			wantHeader:             http.Header{"Content-Type": {"application/problem+json"}},
-			wantResponseBody:       `{"code":"422-02","detail":"The request data violated one or more validation constraints","instance":"/test","status":422,"title":"Constraint Violation","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/constraint-violation.md","violations":[{"detail":"thing is required","pointer":"/inner/thing"}]}`,
+			wantResponseBody:       `{"code":"422-02","detail":"The request data violated one or more validation constraints","instance":"/test","status":422,"title":"Constraint Violation","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/constraint-violation.md","violations":[{"detail":"thing is required","pointer":"#/inner/thing"}]}`,
 			wantResponseStatusCode: http.StatusUnprocessableEntity,
 		},
 		"the request body can be read again in the action after it has been decoded into the request data type": {
