@@ -184,6 +184,14 @@ linters-settings:
       - level
       - msg
       - source
+  tagalign:
+    order:
+      - json
+      - query
+      - path
+      - header
+      - default
+      - validate
   usestdlibvars:
     time-month: true
     time-layout: true

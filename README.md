@@ -85,7 +85,6 @@ func main() {
 ```
 
 ## TODO
-* [ ] See what guard API looks like if parameters can be passed as httputil.Request instead of http.Request.
 * [ ] Look at the parameter decoding code and finish it up properly.
 * [ ] Update handler code to return the correct problems.
 * [ ] Finish testing the existing code to achieve sensible coverage.

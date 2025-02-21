@@ -212,7 +212,7 @@ func (h *jsonHandler[D, P]) processRequest(req Request[D, P]) (Request[D, P], bo
 	}
 
 	if !isEmptyStruct(req.Params) {
-		if err = decodeParams(req.Request, &req.Params); err != nil {
+		if err = UnmarshalParams(req.Request, &req.Params); err != nil {
 			h.logger.WarnContext(req.Context(), "JSON handler failed to decode params data", slog.Any("error", err))
 			h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.BadRequest(req.Request)) // TODO: need custom errors for param validation.
 		}
