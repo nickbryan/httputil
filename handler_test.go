@@ -337,7 +337,7 @@ func TestNewJSONHandler(t *testing.T) {
 			wantResponseStatusCode: http.StatusTeapot,
 		},
 		"request data is transformed before the action is called": {
-			endpoint: func(t *testing.T) httputil.Endpoint {
+			endpoint: func(_ *testing.T) httputil.Endpoint {
 				return httputil.Endpoint{
 					Method: http.MethodGet,
 					Path:   "/test",
@@ -347,7 +347,7 @@ func TestNewJSONHandler(t *testing.T) {
 				}
 			},
 			request: httptest.NewRequestWithContext(
-				context.WithValue(context.Background(), "data", "overridden-data"),
+				context.WithValue(context.Background(), ctxKeyData{}, "overridden-data"),
 				http.MethodGet,
 				"/test",
 				strings.NewReader(`{"data":"some-data"}`),
@@ -378,7 +378,7 @@ func TestNewJSONHandler(t *testing.T) {
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"params data is transformed before the action is called": {
-			endpoint: func(t *testing.T) httputil.Endpoint {
+			endpoint: func(_ *testing.T) httputil.Endpoint {
 				return httputil.Endpoint{
 					Method: http.MethodGet,
 					Path:   "/test",
@@ -389,7 +389,7 @@ func TestNewJSONHandler(t *testing.T) {
 			},
 			request: func() *http.Request {
 				req := httptest.NewRequestWithContext(
-					context.WithValue(context.Background(), "data", "overridden-data"),
+					context.WithValue(context.Background(), ctxKeyData{}, "overridden-data"),
 					http.MethodGet,
 					"/test",
 					nil,
@@ -435,7 +435,7 @@ func TestNewJSONHandler(t *testing.T) {
 				}
 			},
 			request: httptest.NewRequestWithContext(
-				context.WithValue(context.Background(), "data", "overridden-data"),
+				context.WithValue(context.Background(), ctxKeyData{}, "overridden-data"),
 				http.MethodGet,
 				"/test",
 				nil,
@@ -463,6 +463,74 @@ func TestNewJSONHandler(t *testing.T) {
 			}},
 			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
 			wantResponseStatusCode: http.StatusInternalServerError,
+		},
+		"returns the response when a guard is set as nil": {
+			endpoint: func(t *testing.T) httputil.Endpoint {
+				t.Helper()
+				return httputil.NewEndpointWithGuard(httputil.Endpoint{
+					Method: http.MethodGet,
+					Path:   "/test",
+					Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+						return httputil.NoContent()
+					}),
+				}, nil)
+			},
+			wantResponseStatusCode: http.StatusNoContent,
+		},
+		"returns and logs an error when the guard returns an error": {
+			endpoint: func(t *testing.T) httputil.Endpoint {
+				t.Helper()
+				return httputil.NewEndpointWithGuard(httputil.Endpoint{
+					Method: http.MethodGet,
+					Path:   "/test",
+					Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+						return httputil.NoContent()
+					}),
+				}, errorGuard{})
+			},
+			wantLogs: []slogmem.RecordQuery{{
+				Message: "JSON handler received an unhandled error from guard",
+				Level:   slog.LevelError,
+				Attrs: map[string]slog.Value{
+					"error": slog.AnyValue("some error"),
+				},
+			}},
+			wantResponseBody:       "",
+			wantResponseStatusCode: http.StatusInternalServerError,
+		},
+		"returns a problem error when the guard returns an problem error type": {
+			endpoint: func(t *testing.T) httputil.Endpoint {
+				t.Helper()
+				return httputil.NewEndpointWithGuard(httputil.Endpoint{
+					Method: http.MethodGet,
+					Path:   "/test",
+					Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+						return httputil.NoContent()
+					}),
+				}, problemGuard{})
+			},
+			wantResponseBody:       `{"code":"400-01","detail":"The request is invalid or malformed","instance":"/test","status":400,"title":"Bad Request","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/bad-request.md"}`,
+			wantResponseStatusCode: http.StatusBadRequest,
+		},
+		"returns a response when the guard returns a response": {
+			endpoint: func(t *testing.T) httputil.Endpoint {
+				t.Helper()
+				return httputil.NewEndpointWithGuard(httputil.Endpoint{
+					Method: http.MethodGet,
+					Path:   "/test",
+					Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+						return httputil.NoContent()
+					}),
+				}, redirectToCtxGuard{})
+			},
+			request: httptest.NewRequestWithContext(
+				context.WithValue(context.Background(), ctxKeyRedirect{}, "http://example.com"),
+				http.MethodGet,
+				"/test",
+				nil,
+			),
+			wantHeader:             http.Header{"Content-Type": []string{"application/json"}, "Location": []string{"http://example.com"}},
+			wantResponseStatusCode: http.StatusPermanentRedirect,
 		},
 	}
 
@@ -519,13 +587,17 @@ type dataFromCtxTransformer struct {
 
 var _ httputil.Transformer = &dataFromCtxTransformer{}
 
+type ctxKeyData struct{}
+
 func (dft *dataFromCtxTransformer) Transform(ctx context.Context) error {
-	data := ctx.Value("data")
+	data := ctx.Value(ctxKeyData{})
 	if data == nil {
 		return errors.New("data was not set on the context")
 	}
 
-	dft.TransformedData = data.(string)
+	if stringData, ok := data.(string); ok {
+		dft.TransformedData = stringData
+	}
 
 	return nil
 }
@@ -534,6 +606,42 @@ type errorTransformer struct{}
 
 var _ httputil.Transformer = errorTransformer{}
 
-func (dft errorTransformer) Transform(_ context.Context) error {
+func (errorTransformer) Transform(_ context.Context) error {
 	return errors.New("some error")
+}
+
+type errorGuard struct{}
+
+var _ httputil.Guard = errorGuard{}
+
+func (errorGuard) Guard(_ *http.Request) (*httputil.Response, error) {
+	return nil, errors.New("some error")
+}
+
+type problemGuard struct{}
+
+var _ httputil.Guard = problemGuard{}
+
+func (problemGuard) Guard(r *http.Request) (*httputil.Response, error) {
+	return nil, problem.BadRequest(r)
+}
+
+type redirectToCtxGuard struct{}
+
+var _ httputil.Guard = redirectToCtxGuard{}
+
+type ctxKeyRedirect struct{}
+
+func (redirectToCtxGuard) Guard(r *http.Request) (*httputil.Response, error) {
+	location := r.Context().Value(ctxKeyRedirect{})
+	if location == nil {
+		return nil, errors.New("location was not set on the context")
+	}
+
+	locationString, ok := location.(string)
+	if !ok {
+		return nil, errors.New("location was not a string")
+	}
+
+	return httputil.Redirect(http.StatusPermanentRedirect, locationString)
 }

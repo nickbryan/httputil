@@ -200,6 +200,9 @@ linters-settings:
     sql-isolation-level: true
     tls-signature-scheme: true
     constant-kind: true
+  wrapcheck:
+    extra-ignore-sigs:
+      - httputil.Redirect
 issues:
   exclude-rules:
     - path: _test\.go

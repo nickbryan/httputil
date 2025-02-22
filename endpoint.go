@@ -23,7 +23,23 @@ type (
 	// EndpointGroup represents a group of Endpoint definitions
 	// allowing access to helper functions to define the group.
 	EndpointGroup []Endpoint
+
+	// GuardStack represents multiple Guard instances that will be run in order.
+	GuardStack []Guard
 )
+
+// Guard will run each Guard in order starting from 0. It will continue iteration
+// until a non nil Response or error is returned, it will then return the
+// Response and error of that call.
+func (s GuardStack) Guard(r *http.Request) (*Response, error) {
+	for _, g := range s {
+		if response, err := g.Guard(r); response != nil || err != nil {
+			return response, err //nolint:nilnil,wrapcheck // Allow guard to determine result.
+		}
+	}
+
+	return nil, nil //nolint:nilnil // nil, nil signals continue.
+}
 
 // NewEndpointWithGuard associates the given Guard with the specified Endpoint. It
 // returns a new Endpoint with the Guard applied. The original Endpoint remains
