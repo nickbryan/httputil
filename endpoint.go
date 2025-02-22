@@ -25,10 +25,10 @@ type (
 	EndpointGroup []Endpoint
 )
 
-// ProtectEndpoint associates the given Guard with the specified Endpoint. It
+// NewEndpointWithGuard associates the given Guard with the specified Endpoint. It
 // returns a new Endpoint with the Guard applied. The original Endpoint remains
 // unmodified.
-func ProtectEndpoint(e Endpoint, g Guard) Endpoint {
+func NewEndpointWithGuard(e Endpoint, g Guard) Endpoint {
 	return Endpoint{
 		Method:  e.Method,
 		Path:    e.Path,

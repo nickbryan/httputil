@@ -47,13 +47,13 @@ type (
 		ResponseWriter http.ResponseWriter
 	}
 
-	// RequestData represents a Request that expects Data but no Params.
+	// RequestData represents a Request that expects data but no Params.
 	RequestData[D any] = Request[D, struct{}]
 
-	// RequestEmpty represents an empty Request that expects no Prams or Data.
+	// RequestEmpty represents an empty Request that expects no Prams or data.
 	RequestEmpty = Request[struct{}, struct{}]
 
-	// RequestParams represents a Request that expects Params but no Data.
+	// RequestParams represents a Request that expects Params but no data.
 	RequestParams[P any] = Request[struct{}, P]
 
 	// Response represents an HTTP response that holds optional data and the
@@ -277,24 +277,24 @@ func (h *jsonHandler[D, P]) processResponse(req Request[D, P], res *Response) {
 		return
 	}
 
-	req.ResponseWriter.WriteHeader(res.code)
-
 	if res.data == nil {
+		req.ResponseWriter.WriteHeader(res.code)
 		return
 	}
 
-	if err := transform(req.Context(), &res.data); err != nil {
-		h.logger.WarnContext(req.Context(), "JSON handler failed to transform res data", slog.Any("error", err))
+	if err := transform(req.Context(), res.data); err != nil {
+		h.logger.WarnContext(req.Context(), "JSON handler failed to transform response data", slog.Any("error", err))
 		h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.ServerError(req.Request))
 
 		return
 	}
 
+	req.ResponseWriter.WriteHeader(res.code)
 	h.writeResponse(req.Context(), req.ResponseWriter, res.data)
 }
 
 func (h *jsonHandler[D, P]) writeValidationErr(w http.ResponseWriter, r *http.Request, err error) {
-	// This should never really happen as we validate if the expected request.Data is
+	// This should never really happen as we validate if the expected request.data is
 	// a struct which is a valid value for StructCtx. This error only gets returned
 	// on invalid types being passed to `Struct`, `StructExcept`, StructPartial` or
 	// `Property` and their context variants. This means there is unfortunately no way
