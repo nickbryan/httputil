@@ -105,7 +105,7 @@ func TestServerServe(t *testing.T) {
 				Attrs:   map[string]slog.Value{"error": slog.StringValue("shutdown error")},
 			}, shutdownLog},
 		},
-		"shut down times out if deadline is exceded": {
+		"shut down times out if deadline is exceeded": {
 			ctxFactory:           context.Background,
 			signal:               syscall.SIGINT,
 			listenAndServeErr:    nil,

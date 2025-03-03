@@ -1,11 +1,13 @@
 package httputil
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
 	"strconv"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 )
 
@@ -43,6 +45,22 @@ type UnsupportedFieldTypeError struct {
 // Error satisfies the error interface for UnsupportedFieldTypeError.
 func (e *UnsupportedFieldTypeError) Error() string {
 	return fmt.Sprintf("unsupported field type: %T", e.FieldType)
+}
+
+func UnmarshalParamsAndValidate(r *http.Request, output any, validator *validator.Validate) error {
+	if validator == nil {
+		return errors.New("validator is nil")
+	}
+
+	if err := UnmarshalParams(r, output); err != nil {
+		return err
+	}
+
+	if err := validator.Struct(output); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // UnmarshalParams extracts parameters from an *http.Request and populates the fields of the output struct.

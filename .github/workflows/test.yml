@@ -24,7 +24,7 @@ jobs:
         uses: vladopajic/go-test-coverage@v2
         with:
           profile: cover.out
-          local-prefix: github.com/nickbryan/slogutil
+          local-prefix: github.com/nickbryan/httputil
           threshold-total: 95
           git-token: ${{ github.ref_name == 'main' && secrets.GITHUB_TOKEN || '' }}
           git-branch: badges
@@ -39,4 +39,4 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.62
+          version: v1.64

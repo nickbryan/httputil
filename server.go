@@ -53,7 +53,7 @@ func NewServer(logger *slog.Logger, options ...ServerOption) *Server {
 		WriteTimeout:      opts.writeTimeout,
 		IdleTimeout:       opts.idleTimeout,
 		MaxHeaderBytes:    http.DefaultMaxHeaderBytes,
-		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
+		ErrorLog:          slog.NewLogLogger(netHTTPServerLogAdapter{handler: logger.Handler()}, slog.LevelError),
 	}
 
 	return server
@@ -102,4 +102,29 @@ func (s *Server) Serve(ctx context.Context) {
 // ServeHTTP allows endpoints to be tested without a running server.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	newPanicRecoveryMiddleware(s.logger)(s.router).ServeHTTP(w, r)
+}
+
+type netHTTPServerLogAdapter struct {
+	handler slog.Handler
+}
+
+func (n netHTTPServerLogAdapter) Enabled(ctx context.Context, level slog.Level) bool {
+	return n.handler.Enabled(ctx, level)
+}
+
+func (n netHTTPServerLogAdapter) Handle(ctx context.Context, record slog.Record) error {
+	rec := record.Clone()
+
+	rec.Message = "Listener logged error"
+	rec.AddAttrs(slog.Any("error", record.Message))
+
+	return n.handler.Handle(ctx, rec)
+}
+
+func (n netHTTPServerLogAdapter) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return n.WithAttrs(attrs)
+}
+
+func (n netHTTPServerLogAdapter) WithGroup(name string) slog.Handler {
+	return n.WithGroup(name)
 }

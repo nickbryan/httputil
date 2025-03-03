@@ -85,8 +85,8 @@ func main() {
 ```
 
 ## TODO
-* [ ] Add a MustString or something similar to problem details to make them easier to test in responses.
 * [ ] Look at the parameter decoding code and finish it up properly.
+* [ ] Add a MustString or something similar to problem details to make them easier to test in responses.
 * [ ] Update handler code to return the correct problems.
 * [ ] Finish testing the existing code to achieve sensible coverage.
 * [ ] Add common middleware.
