@@ -3,17 +3,77 @@ package httputil_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-
 	"github.com/nickbryan/httputil"
 )
 
-func TestEndpointsWithMiddleware(t *testing.T) {
+type funcGuard func(r *http.Request) (*httputil.Response, error)
+
+func (f funcGuard) Guard(r *http.Request) (*httputil.Response, error) {
+	return f(r)
+}
+
+func TestGuardStackGuard(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns nil, nil when there is a single handler in the stack that also returns nil, nil", func(t *testing.T) {
+		guardStack := httputil.GuardStack{
+			funcGuard(func(_ *http.Request) (*httputil.Response, error) { return nil, nil }),
+		}
+
+		res, err := guardStack.Guard(nil)
+		if err != nil {
+			t.Errorf("want err: nil, got: %v", err)
+		}
+
+		if res != nil {
+			t.Errorf("want res: nil, got: %v", res)
+		}
+	})
+
+	t.Run("returns non-nil, nil when there is a single handler in the stack that returns non-nil, nil", func(t *testing.T) {
+		guardStack := httputil.GuardStack{
+			funcGuard(func(_ *http.Request) (*httputil.Response, error) {
+				return httputil.NewResponse(http.StatusTeapot, nil), nil
+			}),
+		}
+
+		res, err := guardStack.Guard(nil)
+		if err != nil {
+			t.Errorf("want err: nil, got: %v", err)
+		}
+
+		if res == nil {
+			t.Error("want res: non-nil, got: nil")
+		}
+	})
+
+	t.Run("returns nil, nil when there multiple handlers in the stack and the first handler returns non-nil, nil", func(t *testing.T) {
+		guardStack := httputil.GuardStack{
+			funcGuard(func(_ *http.Request) (*httputil.Response, error) {
+				return httputil.NewResponse(http.StatusTeapot, nil), nil
+			}),
+			funcGuard(func(_ *http.Request) (*httputil.Response, error) { return nil, errors.New("some error") }),
+		}
+
+		res, err := guardStack.Guard(nil)
+		if err != nil {
+			t.Errorf("want err: nil, got: %v", err)
+		}
+
+		if res == nil {
+			t.Error("want res: non-nil, got: nil")
+		}
+	})
+}
+
+func TestEndpointGroupWithMiddleware(t *testing.T) {
 	t.Parallel()
 
 	type ctxKey struct{}

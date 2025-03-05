@@ -28,6 +28,9 @@ type (
 	GuardStack []Guard
 )
 
+// Ensure that GuardStack implements the Guard interface.
+var _ Guard = GuardStack{}
+
 // Guard will run each Guard in order starting from 0. It will continue iteration
 // until a non nil Response or error is returned, it will then return the
 // Response and error of that call.
