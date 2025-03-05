@@ -32,8 +32,8 @@ type (
 	// Handler wraps a http.Handler with the ability to initialize
 	// the implementation with the Server logger and validator.
 	Handler interface {
-		http.Handler
 		init(l *slog.Logger, v *validator.Validate, g Guard)
+		http.Handler
 	}
 
 	// Request represents an HTTP request that expects Prams and Data.
@@ -130,11 +130,11 @@ func Redirect(code int, url string) (*Response, error) {
 }
 
 type jsonHandler[D, P any] struct {
-	action                              Action[D, P]
-	guard                               Guard
-	logger                              *slog.Logger
-	validator                           *validator.Validate
-	reqIsStructType, paramsIsStructType bool
+	action                      Action[D, P]
+	guard                       Guard
+	logger                      *slog.Logger
+	validator                   *validator.Validate
+	reqTypeKind, paramsTypeKind reflect.Kind
 }
 
 // NewJSONHandler creates a new Handler that wraps the provided [Action] to
@@ -145,10 +145,14 @@ func NewJSONHandler[D, P any](action Action[D, P]) Handler {
 		guard:     nil,
 		logger:    nil,
 		validator: nil,
-		// Cache this early to save on reflection calls.
-		reqIsStructType:    reflect.TypeFor[D]().Kind() == reflect.Struct,
-		paramsIsStructType: reflect.TypeFor[P]().Kind() == reflect.Struct,
+		// Cache these early to save on reflection calls.
+		reqTypeKind:    reflect.TypeFor[D]().Kind(),
+		paramsTypeKind: reflect.TypeFor[P]().Kind(),
 	}
+}
+
+func (h *jsonHandler[D, P]) init(l *slog.Logger, v *validator.Validate, g Guard) {
+	h.logger, h.validator, h.guard = l, v, g
 }
 
 // ServeHTTP implements the http.Handler interface. It reads the request body,
@@ -161,7 +165,7 @@ func (h *jsonHandler[D, P]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if request, ok := h.processRequest(Request[D, P]{Request: r, ResponseWriter: w}); ok {
 		response, err := h.action(request)
 		if err != nil {
-			h.writeErrorResponse(r.Context(), w, err)
+			h.writeErrorResponse(r.Context(), w, fmt.Errorf("calling action: %w", err))
 			return
 		}
 
@@ -169,25 +173,11 @@ func (h *jsonHandler[D, P]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *jsonHandler[D, P]) init(l *slog.Logger, v *validator.Validate, g Guard) {
-	h.logger, h.validator, h.guard = l, v, g
-}
-
 func (h *jsonHandler[D, P]) processRequest(req Request[D, P]) (Request[D, P], bool) {
 	if h.guard != nil {
 		response, err := h.guard.Guard(req.Request)
 		if err != nil {
-			var problemDetails *problem.DetailedError
-			if errors.As(err, &problemDetails) {
-				req.ResponseWriter.Header().Set("Content-Type", "application/problem+json")
-				req.ResponseWriter.WriteHeader(problemDetails.Status)
-				h.writeResponse(req.Context(), req.ResponseWriter, problemDetails)
-
-				return req, false
-			}
-
-			h.logger.ErrorContext(req.Context(), "JSON handler received an unhandled error from guard", slog.Any("error", err))
-			req.ResponseWriter.WriteHeader(http.StatusInternalServerError)
+			h.writeErrorResponse(req.Context(), req.ResponseWriter, fmt.Errorf("calling guard: %w", err))
 
 			return req, false
 		}
@@ -206,17 +196,19 @@ func (h *jsonHandler[D, P]) processRequest(req Request[D, P]) (Request[D, P], bo
 		return req, false
 	}
 
-	if !isEmptyStruct(req.Params) {
+	if h.paramsTypeKind != reflect.Struct {
+		h.logger.WarnContext(req.Context(), "JSON handler params type is not a struct", slog.String("type", h.paramsTypeKind.String()))
+	}
+
+	if h.paramsTypeKind == reflect.Struct && !isEmptyStruct(req.Params) {
 		if err = UnmarshalParams(req.Request, &req.Params); err != nil {
 			h.logger.WarnContext(req.Context(), "JSON handler failed to decode params data", slog.Any("error", err))
 			h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.BadRequest(req.Request)) // TODO: need custom errors for param validation.
 		}
 
-		if h.paramsIsStructType {
-			if err = h.validator.StructCtx(req.Context(), &req.Params); err != nil {
-				h.writeValidationErr(req.ResponseWriter, req.Request, err) // TODO: need custom errors for param validation.
-				return req, false
-			}
+		if err = h.validator.StructCtx(req.Context(), &req.Params); err != nil {
+			h.writeValidationErr(req.ResponseWriter, req.Request, err) // TODO: need custom errors for param validation.
+			return req, false
 		}
 
 		if err = transform(req.Context(), &req.Params); err != nil {
@@ -240,7 +232,7 @@ func (h *jsonHandler[D, P]) processRequest(req Request[D, P]) (Request[D, P], bo
 			return req, false
 		}
 
-		if h.reqIsStructType {
+		if h.reqTypeKind == reflect.Struct {
 			if err = h.validator.StructCtx(req.Context(), &req.Data); err != nil {
 				h.writeValidationErr(req.ResponseWriter, req.Request, err)
 				return req, false
@@ -289,19 +281,6 @@ func (h *jsonHandler[D, P]) processResponse(req Request[D, P], res *Response) {
 }
 
 func (h *jsonHandler[D, P]) writeValidationErr(w http.ResponseWriter, r *http.Request, err error) {
-	// This should never really happen as we validate if the expected request.data is
-	// a struct which is a valid value for StructCtx. This error only gets returned
-	// on invalid types being passed to `Struct`, `StructExcept`, StructPartial` or
-	// `Property` and their context variants. This means there is unfortunately no way
-	// to test this.
-	var invalidValidationError *validator.InvalidValidationError
-	if errors.As(err, &invalidValidationError) {
-		h.logger.ErrorContext(r.Context(), "JSON handler failed to validate request data", slog.Any("error", err))
-		h.writeErrorResponse(r.Context(), w, problem.ServerError(r))
-
-		return
-	}
-
 	var errs validator.ValidationErrors
 	if errors.As(err, &errs) {
 		properties := make([]problem.Property, 0, len(errs))
@@ -314,10 +293,7 @@ func (h *jsonHandler[D, P]) writeValidationErr(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// The validator should never return an unknown error type based in its current
-	// implementation, but we handle it anyway in case that ever changes.
-	// Unfortunately, like above, there is no way to test this.
-	h.logger.ErrorContext(r.Context(), "JSON handler received an unknown validation error", slog.Any("error", err))
+	h.logger.ErrorContext(r.Context(), "JSON handler failed to validate request data", slog.Any("error", err))
 	h.writeErrorResponse(r.Context(), w, problem.ServerError(r))
 }
 
@@ -331,7 +307,7 @@ func (h *jsonHandler[D, P]) writeErrorResponse(ctx context.Context, w http.Respo
 		return
 	}
 
-	h.logger.ErrorContext(ctx, "JSON handler received an unhandled error from action", slog.Any("error", err))
+	h.logger.ErrorContext(ctx, "JSON handler received an unhandled error", slog.Any("error", err))
 	w.WriteHeader(http.StatusInternalServerError)
 }
 

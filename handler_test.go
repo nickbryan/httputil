@@ -58,10 +58,10 @@ func TestNewJSONHandler(t *testing.T) {
 			},
 			wantHeader: http.Header{"Content-Type": {"application/json"}},
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler received an unhandled error from action",
+				Message: "JSON handler received an unhandled error",
 				Level:   slog.LevelError,
 				Attrs: map[string]slog.Value{
-					"error": slog.AnyValue("some error"),
+					"error": slog.AnyValue("calling action: some error"),
 				},
 			}},
 			wantResponseStatusCode: http.StatusInternalServerError,
@@ -227,10 +227,10 @@ func TestNewJSONHandler(t *testing.T) {
 			},
 			wantHeader: http.Header{"Content-Type": {"application/json"}},
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler received an unhandled error from action",
+				Message: "JSON handler received an unhandled error",
 				Level:   slog.LevelError,
 				Attrs: map[string]slog.Value{
-					"error": slog.AnyValue("some error"),
+					"error": slog.AnyValue("calling action: some error"),
 				},
 			}},
 			wantResponseStatusCode: http.StatusInternalServerError,
@@ -297,10 +297,10 @@ func TestNewJSONHandler(t *testing.T) {
 			},
 			wantHeader: http.Header{"Content-Type": {"application/json"}},
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler received an unhandled error from action",
+				Message: "JSON handler received an unhandled error",
 				Level:   slog.LevelError,
 				Attrs: map[string]slog.Value{
-					"error": slog.AnyValue("some error"),
+					"error": slog.AnyValue("calling action: some error"),
 				},
 			}},
 			wantResponseStatusCode: http.StatusInternalServerError,
@@ -489,10 +489,10 @@ func TestNewJSONHandler(t *testing.T) {
 				}, errorGuard{})
 			},
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler received an unhandled error from guard",
+				Message: "JSON handler received an unhandled error",
 				Level:   slog.LevelError,
 				Attrs: map[string]slog.Value{
-					"error": slog.AnyValue("some error"),
+					"error": slog.AnyValue("calling guard: some error"),
 				},
 			}},
 			wantResponseBody:       "",
