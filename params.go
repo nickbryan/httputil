@@ -1,7 +1,6 @@
 package httputil
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -9,8 +8,6 @@ import (
 
 	"github.com/google/uuid"
 )
-
-var ErrNilValidator = errors.New("validator cannot be nil")
 
 // InvalidOutputTypeError is a custom error type for invalid output types.
 type InvalidOutputTypeError struct {

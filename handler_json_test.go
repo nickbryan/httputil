@@ -347,7 +347,7 @@ func TestNewJSONHandler(t *testing.T) {
 				}
 			},
 			request: httptest.NewRequestWithContext(
-				context.WithValue(context.Background(), ctxKeyData{}, "overridden-data"),
+				context.WithValue(t.Context(), ctxKeyData{}, "overridden-data"),
 				http.MethodGet,
 				"/test",
 				strings.NewReader(`{"data":"some-data"}`),
@@ -389,7 +389,7 @@ func TestNewJSONHandler(t *testing.T) {
 			},
 			request: func() *http.Request {
 				req := httptest.NewRequestWithContext(
-					context.WithValue(context.Background(), ctxKeyData{}, "overridden-data"),
+					context.WithValue(t.Context(), ctxKeyData{}, "overridden-data"),
 					http.MethodGet,
 					"/test",
 					nil,
@@ -435,7 +435,7 @@ func TestNewJSONHandler(t *testing.T) {
 				}
 			},
 			request: httptest.NewRequestWithContext(
-				context.WithValue(context.Background(), ctxKeyData{}, "overridden-data"),
+				context.WithValue(t.Context(), ctxKeyData{}, "overridden-data"),
 				http.MethodGet,
 				"/test",
 				nil,
@@ -524,7 +524,7 @@ func TestNewJSONHandler(t *testing.T) {
 				}, redirectToCtxGuard{})
 			},
 			request: httptest.NewRequestWithContext(
-				context.WithValue(context.Background(), ctxKeyRedirect{}, "http://example.com"),
+				context.WithValue(t.Context(), ctxKeyRedirect{}, "http://example.com"),
 				http.MethodGet,
 				"/test",
 				nil,

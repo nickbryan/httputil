@@ -23,6 +23,7 @@ linters:
     - errorlint
     - exhaustive
     - exhaustruct
+    - exptostd
     - fatcontext
 #   - forbidigo # Will be enabled if something needs to be forbidden.
     - forcetypeassert
@@ -69,6 +70,7 @@ linters:
     - nakedret
     - nestif
     - nilerr
+    - nilnesserr
     - nilnil
     - nlreturn
     - noctx
@@ -92,7 +94,6 @@ linters:
     - stylecheck
     - tagalign
     - tagliatelle
-    - tenv
     - testableexamples
 #   - testifylint # No plans to use Testify for testing, prefer using std "testing".
     - testpackage
@@ -102,6 +103,7 @@ linters:
     - unparam
     - unused
     - usestdlibvars
+    - usetesting
 #   - varnamelen # Too strict in most cases hindering expressiveness.
     - wastedassign
     - whitespace
@@ -200,6 +202,8 @@ linters-settings:
     sql-isolation-level: true
     tls-signature-scheme: true
     constant-kind: true
+  usetesting:
+    os-temp-dir: true
   wrapcheck:
     extra-ignore-sigs:
       - httputil.Redirect

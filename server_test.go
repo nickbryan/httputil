@@ -45,7 +45,7 @@ func TestServerServe(t *testing.T) {
 		wantLogs             []slogmem.RecordQuery
 	}{
 		"shuts down successfully after receiving SIGINT": {
-			ctxFactory:           context.Background,
+			ctxFactory:           t.Context,
 			signal:               syscall.SIGINT,
 			listenAndServeErr:    nil,
 			shutdownErr:          nil,
@@ -53,7 +53,7 @@ func TestServerServe(t *testing.T) {
 			wantLogs:             []slogmem.RecordQuery{startedLog, shutdownLog},
 		},
 		"shuts down successfully after receiving SIGTERM": {
-			ctxFactory:           context.Background,
+			ctxFactory:           t.Context,
 			signal:               syscall.SIGTERM,
 			listenAndServeErr:    nil,
 			shutdownErr:          nil,
@@ -61,7 +61,7 @@ func TestServerServe(t *testing.T) {
 			wantLogs:             []slogmem.RecordQuery{startedLog, shutdownLog},
 		},
 		"shuts down successfully after receiving SIGQUIT": {
-			ctxFactory:           context.Background,
+			ctxFactory:           t.Context,
 			signal:               syscall.SIGQUIT,
 			listenAndServeErr:    nil,
 			shutdownErr:          nil,
@@ -70,7 +70,7 @@ func TestServerServe(t *testing.T) {
 		},
 		"shuts down successfully if the context is canceled": {
 			ctxFactory: func() context.Context {
-				ctx, cancel := context.WithCancel(context.Background())
+				ctx, cancel := context.WithCancel(t.Context())
 				cancel()
 
 				return ctx
@@ -82,7 +82,7 @@ func TestServerServe(t *testing.T) {
 			wantLogs:             []slogmem.RecordQuery{startedLog, shutdownLog},
 		},
 		"shuts down with an error log if listening and serving fails": {
-			ctxFactory:           context.Background,
+			ctxFactory:           t.Context,
 			signal:               nil,
 			listenAndServeErr:    errors.New("listen and serve error"),
 			shutdownErr:          nil,
@@ -94,7 +94,7 @@ func TestServerServe(t *testing.T) {
 			}, shutdownLog},
 		},
 		"shuts down with an error log if shutdown returns an error": {
-			ctxFactory:           context.Background,
+			ctxFactory:           t.Context,
 			signal:               syscall.SIGINT,
 			listenAndServeErr:    nil,
 			shutdownErr:          errors.New("shutdown error"),
@@ -106,7 +106,7 @@ func TestServerServe(t *testing.T) {
 			}, shutdownLog},
 		},
 		"shut down times out if deadline is exceeded": {
-			ctxFactory:           context.Background,
+			ctxFactory:           t.Context,
 			signal:               syscall.SIGINT,
 			listenAndServeErr:    nil,
 			shutdownErr:          nil,

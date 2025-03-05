@@ -4,6 +4,7 @@ package httputil
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os/signal"
@@ -118,13 +119,17 @@ func (n netHTTPServerLogAdapter) Handle(ctx context.Context, record slog.Record)
 	rec.Message = "Listener logged error"
 	rec.AddAttrs(slog.Any("error", record.Message))
 
-	return n.handler.Handle(ctx, rec)
+	if err := n.handler.Handle(ctx, rec); err != nil {
+		return fmt.Errorf("calling inner handler from netHTTPServerLogAdapter: %w", err)
+	}
+
+	return nil
 }
 
 func (n netHTTPServerLogAdapter) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return n.WithAttrs(attrs)
+	return n.handler.WithAttrs(attrs)
 }
 
 func (n netHTTPServerLogAdapter) WithGroup(name string) slog.Handler {
-	return n.WithGroup(name)
+	return n.handler.WithGroup(name)
 }

@@ -1,7 +1,6 @@
 package problem_test
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -150,7 +149,7 @@ type details struct {
 func newRequest(t *testing.T, method, path string) *http.Request {
 	t.Helper()
 
-	req, err := http.NewRequestWithContext(context.Background(), method, "http://localhost"+path, nil)
+	req, err := http.NewRequestWithContext(t.Context(), method, "http://localhost"+path, nil)
 	if err != nil {
 		t.Fatalf("unable to create request object: %+v", err)
 	}
