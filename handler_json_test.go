@@ -643,7 +643,7 @@ type nilnilGuard struct{}
 var _ httputil.Guard = nilnilGuard{}
 
 func (nilnilGuard) Guard(_ *http.Request) (*httputil.Response, error) {
-	return httputil.NothingToProcess()
+	return httputil.NothingToHandle()
 }
 
 type errorGuard struct{}

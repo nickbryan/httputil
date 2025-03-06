@@ -102,9 +102,11 @@ func NoContent() (*Response, error) {
 	}, nil
 }
 
-// NothingToProcess returns a nil Response and a nil error, intentionally representing
-// a scenario with no response output so the Handler does not attempt
-func NothingToProcess() (*Response, error) {
+// NothingToHandle returns a nil Response and a nil error, intentionally
+// representing a scenario with no response output so the Handler does not
+// attempt to process a response. This adds clarity when a Guard does not block
+// the request or when acting on Request.ResponseWriter directly.
+func NothingToHandle() (*Response, error) {
 	return nil, nil //nolint:nilnil // Intentional.
 }
 
