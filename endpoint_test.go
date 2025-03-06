@@ -20,161 +20,143 @@ import (
 func TestEndpointGroupWithGuard(t *testing.T) {
 	t.Parallel()
 
-	t.Run("does nothing when the guard is nil", func(t *testing.T) {
-		endpoints := httputil.EndpointGroup{
-			httputil.Endpoint{
-				Method: http.MethodGet,
-				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
-					return httputil.NewResponse(http.StatusOK, nil), nil
+	type testRequest struct {
+		path         string
+		method       string
+		expectedCode int
+	}
+
+	testCases := map[string]struct {
+		endpoints httputil.EndpointGroup
+		guards    []httputil.Guard
+		requests  []testRequest
+	}{
+		"nil guard does nothing": {
+			endpoints: httputil.EndpointGroup{
+				httputil.Endpoint{
+					Method: http.MethodGet,
+					Path:   "/test",
+					Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+						return httputil.NewResponse(http.StatusOK, nil), nil
+					}),
+				},
+			},
+			guards: nil,
+			requests: []testRequest{
+				{path: "/test", method: http.MethodGet, expectedCode: http.StatusOK},
+			},
+		},
+		"multiple nil guards do nothing": {
+			endpoints: httputil.EndpointGroup{
+				httputil.Endpoint{
+					Method: http.MethodGet,
+					Path:   "/test",
+					Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+						return httputil.NewResponse(http.StatusOK, nil), nil
+					}),
+				},
+			},
+			guards: []httputil.Guard{nil, nil},
+			requests: []testRequest{
+				{path: "/test", method: http.MethodGet, expectedCode: http.StatusOK},
+			},
+		},
+		"single guard modifies response": {
+			endpoints: httputil.EndpointGroup{
+				httputil.Endpoint{
+					Method: http.MethodGet,
+					Path:   "/test",
+					Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+						return httputil.NewResponse(http.StatusOK, nil), nil
+					}),
+				},
+			},
+			guards: []httputil.Guard{funcGuard(func(_ *http.Request) (*httputil.Response, error) {
+				return httputil.NewResponse(http.StatusTeapot, nil), nil
+			})},
+			requests: []testRequest{
+				{path: "/test", method: http.MethodGet, expectedCode: http.StatusTeapot},
+			},
+		},
+		"single guard applies to multiple endpoints": {
+			endpoints: httputil.EndpointGroup{
+				httputil.Endpoint{
+					Method: http.MethodGet,
+					Path:   "/testA",
+					Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+						return httputil.NewResponse(http.StatusOK, nil), nil
+					}),
+				},
+				httputil.Endpoint{
+					Method: http.MethodGet,
+					Path:   "/testB",
+					Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+						return httputil.NewResponse(http.StatusOK, nil), nil
+					}),
+				},
+			},
+			guards: []httputil.Guard{funcGuard(func(_ *http.Request) (*httputil.Response, error) {
+				return httputil.NewResponse(http.StatusTeapot, nil), nil
+			})},
+			requests: []testRequest{
+				{path: "/testA", method: http.MethodGet, expectedCode: http.StatusTeapot},
+				{path: "/testB", method: http.MethodGet, expectedCode: http.StatusTeapot},
+			},
+		},
+		"multiple guards are stacked": {
+			endpoints: httputil.EndpointGroup{
+				httputil.Endpoint{
+					Method: http.MethodGet,
+					Path:   "/testA",
+					Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+						return httputil.NewResponse(http.StatusOK, nil), nil
+					}),
+				},
+				httputil.Endpoint{
+					Method: http.MethodGet,
+					Path:   "/testB",
+					Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+						return httputil.NewResponse(http.StatusOK, nil), nil
+					}),
+				},
+			},
+			guards: []httputil.Guard{
+				noopGuard{},
+				funcGuard(func(_ *http.Request) (*httputil.Response, error) {
+					return httputil.NewResponse(http.StatusTeapot, nil), nil
 				}),
 			},
-		}.WithGuard(nil)
-
-		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
-		server := httputil.NewServer(logger)
-		server.Register(endpoints...)
-
-		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		resp := httptest.NewRecorder()
-		server.ServeHTTP(resp, req)
-
-		if resp.Code != http.StatusOK {
-			t.Errorf("incorrect status code got: %d, want: %d", resp.Code, http.StatusInternalServerError)
-		}
-	})
-
-	t.Run("does nothing when multiple guards are nil", func(t *testing.T) {
-		endpoints := httputil.EndpointGroup{
-			httputil.Endpoint{
-				Method: http.MethodGet,
-				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
-					return httputil.NewResponse(http.StatusOK, nil), nil
-				}),
+			requests: []testRequest{
+				{path: "/testA", method: http.MethodGet, expectedCode: http.StatusTeapot},
+				{path: "/testB", method: http.MethodGet, expectedCode: http.StatusTeapot},
 			},
-		}.WithGuard(nil).WithGuard(nil)
+		},
+	}
 
-		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
-		server := httputil.NewServer(logger)
-		server.Register(endpoints...)
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
 
-		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		resp := httptest.NewRecorder()
-		server.ServeHTTP(resp, req)
+			guardedEndpoints := testCase.endpoints
+			for _, guard := range testCase.guards {
+				guardedEndpoints = guardedEndpoints.WithGuard(guard)
+			}
 
-		if resp.Code != http.StatusOK {
-			t.Errorf("incorrect status code got: %d, want: %d", resp.Code, http.StatusInternalServerError)
-		}
-	})
+			logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+			server := httputil.NewServer(logger)
+			server.Register(guardedEndpoints...)
 
-	t.Run("adds the guard to a single endpoint", func(t *testing.T) {
-		endpoints := httputil.EndpointGroup{
-			httputil.Endpoint{
-				Method: http.MethodGet,
-				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
-					return httputil.NewResponse(http.StatusOK, nil), nil
-				}),
-			},
-		}.WithGuard(funcGuard(func(_ *http.Request) (*httputil.Response, error) {
-			return httputil.NewResponse(http.StatusTeapot, nil), nil
-		}))
+			for _, req := range testCase.requests {
+				httpReq := httptest.NewRequest(req.method, req.path, nil)
+				resp := httptest.NewRecorder()
+				server.ServeHTTP(resp, httpReq)
 
-		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
-		server := httputil.NewServer(logger)
-		server.Register(endpoints...)
-
-		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		resp := httptest.NewRecorder()
-		server.ServeHTTP(resp, req)
-
-		if resp.Code != http.StatusTeapot {
-			t.Errorf("incorrect status code got: %d, want: %d", resp.Code, http.StatusInternalServerError)
-		}
-	})
-
-	t.Run("adds the guard to multiple endpoints", func(t *testing.T) {
-		endpoints := httputil.EndpointGroup{
-			httputil.Endpoint{
-				Method: http.MethodGet,
-				Path:   "/testA",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
-					return httputil.NewResponse(http.StatusOK, nil), nil
-				}),
-			},
-			httputil.Endpoint{
-				Method: http.MethodGet,
-				Path:   "/testB",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
-					return httputil.NewResponse(http.StatusOK, nil), nil
-				}),
-			},
-		}.WithGuard(funcGuard(func(_ *http.Request) (*httputil.Response, error) {
-			return httputil.NewResponse(http.StatusTeapot, nil), nil
-		}))
-
-		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
-		server := httputil.NewServer(logger)
-		server.Register(endpoints...)
-
-		req := httptest.NewRequest(http.MethodGet, "/testA", nil)
-		resp := httptest.NewRecorder()
-		server.ServeHTTP(resp, req)
-
-		if resp.Code != http.StatusTeapot {
-			t.Errorf("incorrect testA status code got: %d, want: %d", resp.Code, http.StatusInternalServerError)
-		}
-
-		req = httptest.NewRequest(http.MethodGet, "/testB", nil)
-		resp = httptest.NewRecorder()
-		server.ServeHTTP(resp, req)
-
-		if resp.Code != http.StatusTeapot {
-			t.Errorf("incorrect testB status code got: %d, want: %d", resp.Code, http.StatusInternalServerError)
-		}
-	})
-
-	t.Run("stacks the guards when multiple calls are made", func(t *testing.T) {
-		endpoints := httputil.EndpointGroup{
-			httputil.Endpoint{
-				Method: http.MethodGet,
-				Path:   "/testA",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
-					return httputil.NewResponse(http.StatusOK, nil), nil
-				}),
-			},
-			httputil.Endpoint{
-				Method: http.MethodGet,
-				Path:   "/testB",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
-					return httputil.NewResponse(http.StatusOK, nil), nil
-				}),
-			},
-		}.WithGuard(noopGuard{}).WithGuard(funcGuard(func(_ *http.Request) (*httputil.Response, error) {
-			return httputil.NewResponse(http.StatusTeapot, nil), nil
-		}))
-
-		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
-		server := httputil.NewServer(logger)
-		server.Register(endpoints...)
-
-		req := httptest.NewRequest(http.MethodGet, "/testA", nil)
-		resp := httptest.NewRecorder()
-		server.ServeHTTP(resp, req)
-
-		if resp.Code != http.StatusTeapot {
-			t.Errorf("incorrect testA status code got: %d, want: %d", resp.Code, http.StatusInternalServerError)
-		}
-
-		req = httptest.NewRequest(http.MethodGet, "/testB", nil)
-		resp = httptest.NewRecorder()
-		server.ServeHTTP(resp, req)
-
-		if resp.Code != http.StatusTeapot {
-			t.Errorf("incorrect testB status code got: %d, want: %d", resp.Code, http.StatusInternalServerError)
-		}
-	})
+				if resp.Code != req.expectedCode {
+					t.Errorf("path %q: incorrect status code got: %d, want: %d", req.path, resp.Code, req.expectedCode)
+				}
+			}
+		})
+	}
 }
 
 func TestEndpointGroupWithMiddleware(t *testing.T) {
