@@ -204,6 +204,36 @@ func TestServerServeHTTP(t *testing.T) {
 	})
 }
 
+func TestNetHTTPServerLogAdapter(t *testing.T) {
+	t.Parallel()
+
+	logger, logs := slogutil.NewInMemoryLogger(slog.LevelDebug)
+	server := httputil.NewServer(logger)
+
+	netHTTPServer, ok := server.Listener.(*http.Server)
+	if !ok {
+		t.Fatalf("listener is not a http.Server")
+	}
+
+	netHTTPServer.ErrorLog.Print("some internal server error message")
+
+	if logs.Len() != 1 {
+		t.Errorf("unexpected number of logs produced, want: 1, got: %d", logs.Len())
+	}
+
+	query := slogmem.RecordQuery{
+		Level:   slog.LevelError,
+		Message: "Internal error logged by net/http server",
+		Attrs: map[string]slog.Value{
+			"error": slog.AnyValue("some internal server error message"),
+		},
+	}
+
+	if ok, diff := logs.Contains(query); !ok {
+		t.Errorf("logs does not contain query, want: %+v, got:\n%s", query, diff)
+	}
+}
+
 func sendFutureSignalNotification(ctx context.Context, t *testing.T, sig os.Signal) (returnErr error) {
 	t.Helper()
 

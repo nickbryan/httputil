@@ -209,7 +209,7 @@ linters-settings:
       - httputil.Accepted
       - httputil.Created
       - httputil.NoContent
-      - httputil.NothingToProcess
+      - httputil.NothingToHandle
       - httputil.OK
       - httputil.Redirect
 issues:

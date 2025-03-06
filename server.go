@@ -54,7 +54,7 @@ func NewServer(logger *slog.Logger, options ...ServerOption) *Server {
 		WriteTimeout:      opts.writeTimeout,
 		IdleTimeout:       opts.idleTimeout,
 		MaxHeaderBytes:    http.DefaultMaxHeaderBytes,
-		ErrorLog:          slog.NewLogLogger(netHTTPServerLogAdapter{handler: logger.Handler()}, slog.LevelError),
+		ErrorLog:          slog.NewLogLogger(netHTTPServerLogAdapter{Handler: logger.Handler()}, slog.LevelError),
 	}
 
 	return server
@@ -106,30 +106,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type netHTTPServerLogAdapter struct {
-	handler slog.Handler
-}
-
-func (n netHTTPServerLogAdapter) Enabled(ctx context.Context, level slog.Level) bool {
-	return n.handler.Enabled(ctx, level)
+	slog.Handler
 }
 
 func (n netHTTPServerLogAdapter) Handle(ctx context.Context, record slog.Record) error {
 	rec := record.Clone()
 
-	rec.Message = "Listener logged error"
+	rec.Message = "Internal error logged by net/http server"
 	rec.AddAttrs(slog.Any("error", record.Message))
 
-	if err := n.handler.Handle(ctx, rec); err != nil {
+	if err := n.Handler.Handle(ctx, rec); err != nil {
 		return fmt.Errorf("calling inner handler from netHTTPServerLogAdapter: %w", err)
 	}
 
 	return nil
-}
-
-func (n netHTTPServerLogAdapter) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return n.handler.WithAttrs(attrs)
-}
-
-func (n netHTTPServerLogAdapter) WithGroup(name string) slog.Handler {
-	return n.handler.WithGroup(name)
 }
