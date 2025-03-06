@@ -174,7 +174,7 @@ linters-settings:
     require-specific: true
   rowserrcheck:
     packages:
-      github.com/jackc/pgx
+      - github.com/jackc/pgx
   sloglint:
     attr-only: true
     no-global: "all"
@@ -206,6 +206,11 @@ linters-settings:
     os-temp-dir: true
   wrapcheck:
     extra-ignore-sigs:
+      - httputil.Accepted
+      - httputil.Created
+      - httputil.NoContent
+      - httputil.NothingToProcess
+      - httputil.OK
       - httputil.Redirect
 issues:
   exclude-rules:

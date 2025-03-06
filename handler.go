@@ -102,6 +102,12 @@ func NoContent() (*Response, error) {
 	}, nil
 }
 
+// NothingToProcess returns a nil Response and a nil error, intentionally representing
+// a scenario with no response output so the Handler does not attempt
+func NothingToProcess() (*Response, error) {
+	return nil, nil //nolint:nilnil // Intentional.
+}
+
 // OK creates a new Response with HTTP status code 200 (OK) containing the
 // provided data.
 func OK(data any) (*Response, error) {

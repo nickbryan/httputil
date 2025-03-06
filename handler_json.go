@@ -211,7 +211,7 @@ func (h *jsonHandler[D, P]) writeValidationErr(w http.ResponseWriter, r *http.Re
 
 		return
 	}
-	
+
 	h.logger.ErrorContext(r.Context(), "JSON handler failed to validate request data", slog.Any("error", err))
 	h.writeErrorResponse(r.Context(), w, problem.ServerError(r))
 }

@@ -486,7 +486,7 @@ func TestNewJSONHandler(t *testing.T) {
 					Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 						return httputil.NoContent()
 					}),
-				}, noopGuard{})
+				}, nilnilGuard{})
 			},
 			wantResponseStatusCode: http.StatusNoContent,
 		},
@@ -632,11 +632,19 @@ func (errorTransformer) Transform(_ context.Context) error {
 	return errors.New("some error")
 }
 
-type noopGuard struct{}
+type funcGuard func(r *http.Request) (*httputil.Response, error)
 
-var _ httputil.Guard = noopGuard{}
+func (f funcGuard) Guard(r *http.Request) (*httputil.Response, error) {
+	return f(r)
+}
 
-func (noopGuard) Guard(_ *http.Request) (*httputil.Response, error) { return nil, nil }
+type nilnilGuard struct{}
+
+var _ httputil.Guard = nilnilGuard{}
+
+func (nilnilGuard) Guard(_ *http.Request) (*httputil.Response, error) {
+	return httputil.NothingToProcess()
+}
 
 type errorGuard struct{}
 

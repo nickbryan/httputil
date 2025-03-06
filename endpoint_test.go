@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"github.com/nickbryan/slogutil"
 
 	"github.com/nickbryan/httputil"
@@ -121,7 +122,7 @@ func TestEndpointGroupWithGuard(t *testing.T) {
 				},
 			},
 			guards: []httputil.Guard{
-				noopGuard{},
+				nilnilGuard{},
 				funcGuard(func(_ *http.Request) (*httputil.Response, error) {
 					return httputil.NewResponse(http.StatusTeapot, nil), nil
 				}),
@@ -353,11 +354,9 @@ func TestGuardStackGuard(t *testing.T) {
 			wantErr:    nil,
 		},
 		"single guard: returns nil response and nil error": {
-			guardStack: httputil.GuardStack{
-				funcGuard(func(_ *http.Request) (*httputil.Response, error) { return nil, nil }),
-			},
-			wantRes: nil,
-			wantErr: nil,
+			guardStack: httputil.GuardStack{nilnilGuard{}},
+			wantRes:    nil,
+			wantErr:    nil,
 		},
 		"single guard: returns non-nil response and nil error": {
 			guardStack: httputil.GuardStack{
@@ -402,16 +401,13 @@ func TestGuardStackGuard(t *testing.T) {
 			wantErr: errors.New("first handler error"),
 		},
 		"multiple guards: all return nil response and nil error": {
-			guardStack: httputil.GuardStack{
-				funcGuard(func(_ *http.Request) (*httputil.Response, error) { return nil, nil }),
-				funcGuard(func(_ *http.Request) (*httputil.Response, error) { return nil, nil }),
-			},
-			wantRes: nil,
-			wantErr: nil,
+			guardStack: httputil.GuardStack{nilnilGuard{}, nilnilGuard{}},
+			wantRes:    nil,
+			wantErr:    nil,
 		},
 		"multiple guards: second guard returns non-nil response and nil error": {
 			guardStack: httputil.GuardStack{
-				funcGuard(func(_ *http.Request) (*httputil.Response, error) { return nil, nil }),
+				nilnilGuard{},
 				funcGuard(func(_ *http.Request) (*httputil.Response, error) {
 					return httputil.NewResponse(http.StatusOK, map[string]interface{}{
 						"key": "value",
@@ -425,7 +421,7 @@ func TestGuardStackGuard(t *testing.T) {
 		},
 		"multiple guards: last returns nil response and non-nil error": {
 			guardStack: httputil.GuardStack{
-				funcGuard(func(_ *http.Request) (*httputil.Response, error) { return nil, nil }),
+				nilnilGuard{},
 				funcGuard(func(_ *http.Request) (*httputil.Response, error) { return nil, errors.New("last guard error") }),
 			},
 			wantRes: nil,
@@ -452,10 +448,4 @@ func TestGuardStackGuard(t *testing.T) {
 			}
 		})
 	}
-}
-
-type funcGuard func(r *http.Request) (*httputil.Response, error)
-
-func (f funcGuard) Guard(r *http.Request) (*httputil.Response, error) {
-	return f(r)
 }
