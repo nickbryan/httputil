@@ -477,6 +477,19 @@ func TestNewJSONHandler(t *testing.T) {
 			},
 			wantResponseStatusCode: http.StatusNoContent,
 		},
+		"returns the response when the guard returns nil": {
+			endpoint: func(t *testing.T) httputil.Endpoint {
+				t.Helper()
+				return httputil.NewEndpointWithGuard(httputil.Endpoint{
+					Method: http.MethodGet,
+					Path:   "/test",
+					Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+						return httputil.NoContent()
+					}),
+				}, noopGuard{})
+			},
+			wantResponseStatusCode: http.StatusNoContent,
+		},
 		"returns and logs an error when the guard returns an error": {
 			endpoint: func(t *testing.T) httputil.Endpoint {
 				t.Helper()
@@ -547,7 +560,16 @@ func TestNewJSONHandler(t *testing.T) {
 
 			response := httptest.NewRecorder()
 
-			server.Register(testCase.endpoint(t))
+			server.Register(
+				httputil.EndpointGroup{testCase.endpoint(t)}.
+					WithMiddleware(func(next http.Handler) http.Handler {
+						// We wrap with middleware here to ensure that the middleware doesn't block any
+						// dependencies that the handler requires.
+						return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+							next.ServeHTTP(w, r)
+						})
+					})...,
+			)
 			server.ServeHTTP(response, testCase.request)
 
 			if response.Code != testCase.wantResponseStatusCode {
@@ -609,6 +631,12 @@ var _ httputil.Transformer = errorTransformer{}
 func (errorTransformer) Transform(_ context.Context) error {
 	return errors.New("some error")
 }
+
+type noopGuard struct{}
+
+var _ httputil.Guard = noopGuard{}
+
+func (noopGuard) Guard(_ *http.Request) (*httputil.Response, error) { return nil, nil }
 
 type errorGuard struct{}
 

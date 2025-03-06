@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -11,134 +12,169 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/nickbryan/slogutil"
 
 	"github.com/nickbryan/httputil"
 )
 
-func TestGuardStackGuard(t *testing.T) {
+func TestEndpointGroupWithGuard(t *testing.T) {
 	t.Parallel()
 
-	testCases := map[string]struct {
-		guardStack httputil.GuardStack
-		wantRes    *httputil.Response
-		wantErr    error
-	}{
-		"nil stack returns nil response and nil error": {
-			guardStack: nil,
-			wantRes:    nil,
-			wantErr:    nil,
-		},
-		"no handlers in stack returns nil response and nil error": {
-			guardStack: httputil.GuardStack{},
-			wantRes:    nil,
-			wantErr:    nil,
-		},
-		"single guard: returns nil response and nil error": {
-			guardStack: httputil.GuardStack{
-				funcGuard(func(_ *http.Request) (*httputil.Response, error) { return nil, nil }),
-			},
-			wantRes: nil,
-			wantErr: nil,
-		},
-		"single guard: returns non-nil response and nil error": {
-			guardStack: httputil.GuardStack{
-				funcGuard(func(_ *http.Request) (*httputil.Response, error) {
-					return httputil.NewResponse(http.StatusTeapot, nil), nil
+	t.Run("does nothing when the guard is nil", func(t *testing.T) {
+		endpoints := httputil.EndpointGroup{
+			httputil.Endpoint{
+				Method: http.MethodGet,
+				Path:   "/test",
+				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+					return httputil.NewResponse(http.StatusOK, nil), nil
 				}),
 			},
-			wantRes: httputil.NewResponse(http.StatusTeapot, nil),
-			wantErr: nil,
-		},
-		"single guard: returns nil response and non-nil error": {
-			guardStack: httputil.GuardStack{
-				funcGuard(func(_ *http.Request) (*httputil.Response, error) {
-					return nil, errors.New("some error")
+		}.WithGuard(nil)
+
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+		server := httputil.NewServer(logger)
+		server.Register(endpoints...)
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		resp := httptest.NewRecorder()
+		server.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Errorf("incorrect status code got: %d, want: %d", resp.Code, http.StatusInternalServerError)
+		}
+	})
+
+	t.Run("does nothing when multiple guards are nil", func(t *testing.T) {
+		endpoints := httputil.EndpointGroup{
+			httputil.Endpoint{
+				Method: http.MethodGet,
+				Path:   "/test",
+				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+					return httputil.NewResponse(http.StatusOK, nil), nil
 				}),
 			},
-			wantRes: nil,
-			wantErr: errors.New("some error"),
-		},
-		"multiple guards: first returns non-nil response and nil error, skips subsequent guards": {
-			guardStack: httputil.GuardStack{
-				funcGuard(func(_ *http.Request) (*httputil.Response, error) {
-					return httputil.NewResponse(http.StatusTeapot, nil), nil
-				}),
-				funcGuard(func(_ *http.Request) (*httputil.Response, error) {
-					return nil, errors.New("should not be called")
-				}),
-			},
-			wantRes: httputil.NewResponse(http.StatusTeapot, nil),
-			wantErr: nil,
-		},
-		"multiple guards: first returns nil response and non-nil error, skips subsequent guards": {
-			guardStack: httputil.GuardStack{
-				funcGuard(func(_ *http.Request) (*httputil.Response, error) {
-					return nil, errors.New("first handler error")
-				}),
-				funcGuard(func(_ *http.Request) (*httputil.Response, error) {
-					return httputil.NewResponse(http.StatusTeapot, nil), nil
-				}),
-			},
-			wantRes: nil,
-			wantErr: errors.New("first handler error"),
-		},
-		"multiple guards: all return nil response and nil error": {
-			guardStack: httputil.GuardStack{
-				funcGuard(func(_ *http.Request) (*httputil.Response, error) { return nil, nil }),
-				funcGuard(func(_ *http.Request) (*httputil.Response, error) { return nil, nil }),
-			},
-			wantRes: nil,
-			wantErr: nil,
-		},
-		"multiple guards: second guard returns non-nil response and nil error": {
-			guardStack: httputil.GuardStack{
-				funcGuard(func(_ *http.Request) (*httputil.Response, error) { return nil, nil }),
-				funcGuard(func(_ *http.Request) (*httputil.Response, error) {
-					return httputil.NewResponse(http.StatusOK, map[string]interface{}{
-						"key": "value",
-					}), nil
+		}.WithGuard(nil).WithGuard(nil)
+
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+		server := httputil.NewServer(logger)
+		server.Register(endpoints...)
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		resp := httptest.NewRecorder()
+		server.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Errorf("incorrect status code got: %d, want: %d", resp.Code, http.StatusInternalServerError)
+		}
+	})
+
+	t.Run("adds the guard to a single endpoint", func(t *testing.T) {
+		endpoints := httputil.EndpointGroup{
+			httputil.Endpoint{
+				Method: http.MethodGet,
+				Path:   "/test",
+				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+					return httputil.NewResponse(http.StatusOK, nil), nil
 				}),
 			},
-			wantRes: httputil.NewResponse(http.StatusOK, map[string]interface{}{
-				"key": "value",
-			}),
-			wantErr: nil,
-		},
-		"multiple guards: last returns nil response and non-nil error": {
-			guardStack: httputil.GuardStack{
-				funcGuard(func(_ *http.Request) (*httputil.Response, error) { return nil, nil }),
-				funcGuard(func(_ *http.Request) (*httputil.Response, error) { return nil, errors.New("last guard error") }),
+		}.WithGuard(funcGuard(func(_ *http.Request) (*httputil.Response, error) {
+			return httputil.NewResponse(http.StatusTeapot, nil), nil
+		}))
+
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+		server := httputil.NewServer(logger)
+		server.Register(endpoints...)
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		resp := httptest.NewRecorder()
+		server.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusTeapot {
+			t.Errorf("incorrect status code got: %d, want: %d", resp.Code, http.StatusInternalServerError)
+		}
+	})
+
+	t.Run("adds the guard to multiple endpoints", func(t *testing.T) {
+		endpoints := httputil.EndpointGroup{
+			httputil.Endpoint{
+				Method: http.MethodGet,
+				Path:   "/testA",
+				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+					return httputil.NewResponse(http.StatusOK, nil), nil
+				}),
 			},
-			wantRes: nil,
-			wantErr: errors.New("last guard error"),
-		},
-	}
+			httputil.Endpoint{
+				Method: http.MethodGet,
+				Path:   "/testB",
+				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+					return httputil.NewResponse(http.StatusOK, nil), nil
+				}),
+			},
+		}.WithGuard(funcGuard(func(_ *http.Request) (*httputil.Response, error) {
+			return httputil.NewResponse(http.StatusTeapot, nil), nil
+		}))
 
-	for testName, testCase := range testCases {
-		t.Run(testName, func(t *testing.T) {
-			t.Parallel()
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+		server := httputil.NewServer(logger)
+		server.Register(endpoints...)
 
-			res, err := testCase.guardStack.Guard(nil)
+		req := httptest.NewRequest(http.MethodGet, "/testA", nil)
+		resp := httptest.NewRecorder()
+		server.ServeHTTP(resp, req)
 
-			if (testCase.wantErr != nil && err == nil) || (testCase.wantErr == nil && err != nil) {
-				t.Errorf("want error: %v, got: %v", testCase.wantErr, err)
-			}
+		if resp.Code != http.StatusTeapot {
+			t.Errorf("incorrect testA status code got: %d, want: %d", resp.Code, http.StatusInternalServerError)
+		}
 
-			if testCase.wantErr != nil && err != nil && err.Error() != testCase.wantErr.Error() {
-				t.Errorf("want error string: %v, got: %v", testCase.wantErr, err)
-			}
+		req = httptest.NewRequest(http.MethodGet, "/testB", nil)
+		resp = httptest.NewRecorder()
+		server.ServeHTTP(resp, req)
 
-			if !reflect.DeepEqual(res, testCase.wantRes) {
-				t.Errorf("want response: %v, got: %v", testCase.wantRes, res)
-			}
-		})
-	}
-}
+		if resp.Code != http.StatusTeapot {
+			t.Errorf("incorrect testB status code got: %d, want: %d", resp.Code, http.StatusInternalServerError)
+		}
+	})
 
-type funcGuard func(r *http.Request) (*httputil.Response, error)
+	t.Run("stacks the guards when multiple calls are made", func(t *testing.T) {
+		endpoints := httputil.EndpointGroup{
+			httputil.Endpoint{
+				Method: http.MethodGet,
+				Path:   "/testA",
+				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+					return httputil.NewResponse(http.StatusOK, nil), nil
+				}),
+			},
+			httputil.Endpoint{
+				Method: http.MethodGet,
+				Path:   "/testB",
+				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+					return httputil.NewResponse(http.StatusOK, nil), nil
+				}),
+			},
+		}.WithGuard(noopGuard{}).WithGuard(funcGuard(func(_ *http.Request) (*httputil.Response, error) {
+			return httputil.NewResponse(http.StatusTeapot, nil), nil
+		}))
 
-func (f funcGuard) Guard(r *http.Request) (*httputil.Response, error) {
-	return f(r)
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+		server := httputil.NewServer(logger)
+		server.Register(endpoints...)
+
+		req := httptest.NewRequest(http.MethodGet, "/testA", nil)
+		resp := httptest.NewRecorder()
+		server.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusTeapot {
+			t.Errorf("incorrect testA status code got: %d, want: %d", resp.Code, http.StatusInternalServerError)
+		}
+
+		req = httptest.NewRequest(http.MethodGet, "/testB", nil)
+		resp = httptest.NewRecorder()
+		server.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusTeapot {
+			t.Errorf("incorrect testB status code got: %d, want: %d", resp.Code, http.StatusInternalServerError)
+		}
+	})
 }
 
 func TestEndpointGroupWithMiddleware(t *testing.T) {
@@ -314,4 +350,130 @@ func TestEndpointGroupWithPrefix(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGuardStackGuard(t *testing.T) {
+	t.Parallel()
+
+	testCases := map[string]struct {
+		guardStack httputil.GuardStack
+		wantRes    *httputil.Response
+		wantErr    error
+	}{
+		"nil stack returns nil response and nil error": {
+			guardStack: nil,
+			wantRes:    nil,
+			wantErr:    nil,
+		},
+		"no handlers in stack returns nil response and nil error": {
+			guardStack: httputil.GuardStack{},
+			wantRes:    nil,
+			wantErr:    nil,
+		},
+		"single guard: returns nil response and nil error": {
+			guardStack: httputil.GuardStack{
+				funcGuard(func(_ *http.Request) (*httputil.Response, error) { return nil, nil }),
+			},
+			wantRes: nil,
+			wantErr: nil,
+		},
+		"single guard: returns non-nil response and nil error": {
+			guardStack: httputil.GuardStack{
+				funcGuard(func(_ *http.Request) (*httputil.Response, error) {
+					return httputil.NewResponse(http.StatusTeapot, nil), nil
+				}),
+			},
+			wantRes: httputil.NewResponse(http.StatusTeapot, nil),
+			wantErr: nil,
+		},
+		"single guard: returns nil response and non-nil error": {
+			guardStack: httputil.GuardStack{
+				funcGuard(func(_ *http.Request) (*httputil.Response, error) {
+					return nil, errors.New("some error")
+				}),
+			},
+			wantRes: nil,
+			wantErr: errors.New("some error"),
+		},
+		"multiple guards: first returns non-nil response and nil error, skips subsequent guards": {
+			guardStack: httputil.GuardStack{
+				funcGuard(func(_ *http.Request) (*httputil.Response, error) {
+					return httputil.NewResponse(http.StatusTeapot, nil), nil
+				}),
+				funcGuard(func(_ *http.Request) (*httputil.Response, error) {
+					return nil, errors.New("should not be called")
+				}),
+			},
+			wantRes: httputil.NewResponse(http.StatusTeapot, nil),
+			wantErr: nil,
+		},
+		"multiple guards: first returns nil response and non-nil error, skips subsequent guards": {
+			guardStack: httputil.GuardStack{
+				funcGuard(func(_ *http.Request) (*httputil.Response, error) {
+					return nil, errors.New("first handler error")
+				}),
+				funcGuard(func(_ *http.Request) (*httputil.Response, error) {
+					return httputil.NewResponse(http.StatusTeapot, nil), nil
+				}),
+			},
+			wantRes: nil,
+			wantErr: errors.New("first handler error"),
+		},
+		"multiple guards: all return nil response and nil error": {
+			guardStack: httputil.GuardStack{
+				funcGuard(func(_ *http.Request) (*httputil.Response, error) { return nil, nil }),
+				funcGuard(func(_ *http.Request) (*httputil.Response, error) { return nil, nil }),
+			},
+			wantRes: nil,
+			wantErr: nil,
+		},
+		"multiple guards: second guard returns non-nil response and nil error": {
+			guardStack: httputil.GuardStack{
+				funcGuard(func(_ *http.Request) (*httputil.Response, error) { return nil, nil }),
+				funcGuard(func(_ *http.Request) (*httputil.Response, error) {
+					return httputil.NewResponse(http.StatusOK, map[string]interface{}{
+						"key": "value",
+					}), nil
+				}),
+			},
+			wantRes: httputil.NewResponse(http.StatusOK, map[string]interface{}{
+				"key": "value",
+			}),
+			wantErr: nil,
+		},
+		"multiple guards: last returns nil response and non-nil error": {
+			guardStack: httputil.GuardStack{
+				funcGuard(func(_ *http.Request) (*httputil.Response, error) { return nil, nil }),
+				funcGuard(func(_ *http.Request) (*httputil.Response, error) { return nil, errors.New("last guard error") }),
+			},
+			wantRes: nil,
+			wantErr: errors.New("last guard error"),
+		},
+	}
+
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := testCase.guardStack.Guard(nil)
+
+			if (testCase.wantErr != nil && err == nil) || (testCase.wantErr == nil && err != nil) {
+				t.Errorf("want error: %v, got: %v", testCase.wantErr, err)
+			}
+
+			if testCase.wantErr != nil && err != nil && err.Error() != testCase.wantErr.Error() {
+				t.Errorf("want error string: %v, got: %v", testCase.wantErr, err)
+			}
+
+			if !reflect.DeepEqual(res, testCase.wantRes) {
+				t.Errorf("want response: %v, got: %v", testCase.wantRes, res)
+			}
+		})
+	}
+}
+
+type funcGuard func(r *http.Request) (*httputil.Response, error)
+
+func (f funcGuard) Guard(r *http.Request) (*httputil.Response, error) {
+	return f(r)
 }
