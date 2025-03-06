@@ -104,22 +104,41 @@ func TestUnmarshalParams(t *testing.T) {
 			},
 			expectErr: false,
 		},
-		"should fail when the value type is valid but cannot be parsed": {
+		"should fail when the value type is valid but cannot be parsed (float64)": {
 			request: &http.Request{
 				URL: &url.URL{
-					RawQuery: "price=invalid", // Price is float64
+					RawQuery: "price=invalid", // Price is supposed to be float64
 				},
 			},
 			output:      &testStruct{},
 			expectErr:   true,
 			expectedErr: `setting field value: failed to convert parameter "price" to float64: strconv.ParseFloat: parsing "invalid": invalid syntax`,
 		},
+		"should fail when the value type is valid but cannot be parsed (int)": {
+			request: &http.Request{
+				URL: &url.URL{
+					RawQuery: "page=invalid", // Page is supposed to be int
+				},
+			},
+			output:      &testStruct{},
+			expectErr:   true,
+			expectedErr: `setting field value: failed to convert parameter "page" to int: strconv.Atoi: parsing "invalid": invalid syntax`,
+		},
+		"should fail when the value type is valid but cannot be parsed (bool)": {
+			request: &http.Request{
+				URL: &url.URL{
+					RawQuery: "is_active=notabool", // Active is supposed to be bool
+				},
+			},
+			output:      &testStruct{},
+			expectErr:   true,
+			expectedErr: `setting field value: failed to convert parameter "is_active" to bool: strconv.ParseBool: parsing "notabool": invalid syntax`,
+		},
+
 		"should fail gracefully when an invalid UUID is provided": {
 			request: func() *http.Request {
 				r := &http.Request{
-					URL: &url.URL{
-						RawQuery: "", // Empty raw query
-					},
+					URL: &url.URL{RawQuery: ""},
 				}
 				r.SetPathValue("id", "invalid-uuid")
 
