@@ -42,7 +42,7 @@ func NewJSONHandler[D, P any](action Action[D, P]) Handler {
 	}
 }
 
-func (h *jsonHandler[D, P]) init(l *slog.Logger, v *validator.Validate, g Guard) {
+func (h *jsonHandler[D, P]) use(l *slog.Logger, v *validator.Validate, g Guard) {
 	h.logger, h.validator, h.guard = l, v, g
 }
 
@@ -55,27 +55,27 @@ func (h *jsonHandler[D, P]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	//nolint:exhaustruct // Zero value for D and P is unknown.
 	request := Request[D, P]{Request: r, ResponseWriter: w}
 
-	if h.requestInterceptedByGuard(request) || !h.requestHydratedOK(&request) {
+	if h.requestInterceptedByGuard(&request) || !h.requestHydratedOK(&request) {
 		return
 	}
 
 	response, err := h.action(request)
 	if err != nil {
-		h.writeErrorResponse(r.Context(), w, fmt.Errorf("calling action: %w", err))
+		h.writeErrorResponse(r.Context(), &request, fmt.Errorf("calling action: %w", err))
 		return
 	}
 
-	h.writeSuccessfulResponse(request, response) //nolint:contextcheck // Context is part of the request struct.
+	h.writeSuccessfulResponse(&request, response) //nolint:contextcheck // Context is part of the request struct.
 }
 
-func (h *jsonHandler[D, P]) requestInterceptedByGuard(req Request[D, P]) bool {
+func (h *jsonHandler[D, P]) requestInterceptedByGuard(req *Request[D, P]) bool {
 	if h.guard == nil {
 		return false
 	}
 
 	response, err := h.guard.Guard(req.Request)
 	if err != nil {
-		h.writeErrorResponse(req.Context(), req.ResponseWriter, fmt.Errorf("calling guard: %w", err))
+		h.writeErrorResponse(req.Context(), req, fmt.Errorf("calling guard: %w", err))
 		return true
 	}
 
@@ -105,7 +105,7 @@ func (h *jsonHandler[D, P]) requestHydratedOK(req *Request[D, P]) bool {
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		h.logger.WarnContext(req.Context(), "JSON handler failed to read request body", slog.Any("error", err))
-		h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.ServerError(req.Request))
+		h.writeErrorResponse(req.Context(), req, problem.ServerError(req.Request))
 
 		return false
 	}
@@ -124,6 +124,8 @@ func (h *jsonHandler[D, P]) requestHydratedOK(req *Request[D, P]) bool {
 func (h *jsonHandler[D, P]) paramsHydratedOK(req *Request[D, P]) bool {
 	if h.paramsTypeKind != reflect.Struct {
 		h.logger.WarnContext(req.Context(), "JSON handler params type is not a struct", slog.String("type", h.paramsTypeKind.String()))
+		h.writeErrorResponse(req.Context(), req, problem.ServerError(req.Request))
+
 		return false
 	}
 
@@ -131,21 +133,23 @@ func (h *jsonHandler[D, P]) paramsHydratedOK(req *Request[D, P]) bool {
 		return true
 	}
 
-	if err := UnmarshalParams(req.Request, &req.Params); err != nil {
-		h.logger.WarnContext(req.Context(), "JSON handler failed to decode params data", slog.Any("error", err))
-		h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.BadRequest(req.Request)) // TODO: need custom errors for param validation.
+	if err := BindValidParameters(req.Request, h.validator, &req.Params); err != nil {
+		var detailedError *problem.DetailedError
+		if !errors.As(err, &detailedError) {
+			h.logger.WarnContext(req.Context(), "JSON handler failed to decode params data", slog.Any("error", err))
+			h.writeErrorResponse(req.Context(), req, problem.ServerError(req.Request))
 
-		return false
-	}
+			return false
+		}
 
-	if err := h.validator.StructCtx(req.Context(), &req.Params); err != nil {
-		h.writeValidationErr(req.ResponseWriter, req.Request, err) // TODO: need custom errors for param validation.
+		h.writeErrorResponse(req.Context(), req, err)
+
 		return false
 	}
 
 	if err := transform(req.Context(), &req.Params); err != nil {
 		h.logger.WarnContext(req.Context(), "JSON handler failed to transform params data", slog.Any("error", err))
-		h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.ServerError(req.Request))
+		h.writeErrorResponse(req.Context(), req, problem.ServerError(req.Request))
 
 		return false
 	}
@@ -159,27 +163,27 @@ func (h *jsonHandler[D, P]) dataHydratedOK(req *Request[D, P], body []byte) bool
 	}
 
 	if len(body) == 0 {
-		h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.BadRequest(req.Request).WithDetail("The server received an unexpected empty request body"))
+		h.writeErrorResponse(req.Context(), req, problem.BadRequest(req.Request).WithDetail("The server received an unexpected empty request body"))
 		return false
 	}
 
 	if err := json.Unmarshal(body, &req.Data); err != nil {
 		h.logger.WarnContext(req.Context(), "JSON handler failed to decode request data", slog.Any("error", err))
-		h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.BadRequest(req.Request))
+		h.writeErrorResponse(req.Context(), req, problem.BadRequest(req.Request))
 
 		return false
 	}
 
 	if h.reqTypeKind == reflect.Struct {
 		if err := h.validator.StructCtx(req.Context(), &req.Data); err != nil {
-			h.writeValidationErr(req.ResponseWriter, req.Request, err)
+			h.writeValidationErr(req, err)
 			return false
 		}
 	}
 
 	if err := transform(req.Context(), &req.Data); err != nil {
 		h.logger.WarnContext(req.Context(), "JSON handler failed to transform request data", slog.Any("error", err))
-		h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.ServerError(req.Request))
+		h.writeErrorResponse(req.Context(), req, problem.ServerError(req.Request))
 
 		return false
 	}
@@ -187,7 +191,7 @@ func (h *jsonHandler[D, P]) dataHydratedOK(req *Request[D, P], body []byte) bool
 	return true
 }
 
-func (h *jsonHandler[D, P]) writeSuccessfulResponse(req Request[D, P], res *Response) {
+func (h *jsonHandler[D, P]) writeSuccessfulResponse(req *Request[D, P], res *Response) {
 	if res == nil {
 		return
 	}
@@ -204,7 +208,7 @@ func (h *jsonHandler[D, P]) writeSuccessfulResponse(req Request[D, P], res *Resp
 
 	if err := transform(req.Context(), res.data); err != nil {
 		h.logger.WarnContext(req.Context(), "JSON handler failed to transform response data", slog.Any("error", err))
-		h.writeErrorResponse(req.Context(), req.ResponseWriter, problem.ServerError(req.Request))
+		h.writeErrorResponse(req.Context(), req, problem.ServerError(req.Request))
 
 		return
 	}
@@ -213,7 +217,7 @@ func (h *jsonHandler[D, P]) writeSuccessfulResponse(req Request[D, P], res *Resp
 	h.writeResponse(req.Context(), req.ResponseWriter, res.data)
 }
 
-func (h *jsonHandler[D, P]) writeValidationErr(w http.ResponseWriter, r *http.Request, err error) {
+func (h *jsonHandler[D, P]) writeValidationErr(req *Request[D, P], err error) {
 	var errs validator.ValidationErrors
 	if errors.As(err, &errs) {
 		properties := make([]problem.Property, 0, len(errs))
@@ -221,27 +225,26 @@ func (h *jsonHandler[D, P]) writeValidationErr(w http.ResponseWriter, r *http.Re
 			properties = append(properties, problem.Property{Detail: explainValidationError(err), Pointer: "#/" + strings.Join(strings.Split(err.Namespace(), ".")[1:], "/")})
 		}
 
-		h.writeErrorResponse(r.Context(), w, problem.ConstraintViolation(r, properties...))
+		h.writeErrorResponse(req.Context(), req, problem.ConstraintViolation(req.Request, properties...))
 
 		return
 	}
 
-	h.logger.ErrorContext(r.Context(), "JSON handler failed to validate request data", slog.Any("error", err))
-	h.writeErrorResponse(r.Context(), w, problem.ServerError(r))
+	h.logger.ErrorContext(req.Context(), "JSON handler failed to validate request data", slog.Any("error", err))
+	h.writeErrorResponse(req.Context(), req, problem.ServerError(req.Request))
 }
 
-func (h *jsonHandler[D, P]) writeErrorResponse(ctx context.Context, w http.ResponseWriter, err error) {
-	var problemDetails *problem.DetailedError
-	if errors.As(err, &problemDetails) {
-		w.Header().Set("Content-Type", "application/problem+json")
-		w.WriteHeader(problemDetails.Status)
-		h.writeResponse(ctx, w, problemDetails)
+func (h *jsonHandler[D, P]) writeErrorResponse(ctx context.Context, req *Request[D, P], err error) {
+	req.ResponseWriter.Header().Set("Content-Type", "application/problem+json")
 
-		return
+	var problemDetails *problem.DetailedError
+	if !errors.As(err, &problemDetails) {
+		problemDetails = problem.ServerError(req.Request)
+		h.logger.ErrorContext(ctx, "JSON handler received an unhandled error", slog.Any("error", err))
 	}
 
-	h.logger.ErrorContext(ctx, "JSON handler received an unhandled error", slog.Any("error", err))
-	w.WriteHeader(http.StatusInternalServerError)
+	req.ResponseWriter.WriteHeader(problemDetails.Status)
+	h.writeResponse(ctx, req.ResponseWriter, problemDetails)
 }
 
 func (h *jsonHandler[D, P]) writeResponse(ctx context.Context, w http.ResponseWriter, data any) {

@@ -30,4 +30,4 @@ func (h netHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.handler.ServeHTTP(w, r)
 }
 
-func (h netHTTPHandler) init(_ *slog.Logger, _ *validator.Validate, _ Guard) {}
+func (h netHTTPHandler) use(_ *slog.Logger, _ *validator.Validate, _ Guard) {}

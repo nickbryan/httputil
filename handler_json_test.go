@@ -42,7 +42,7 @@ func TestNewJSONHandler(t *testing.T) {
 			wantHeader:             http.Header{"Content-Type": {"application/json"}},
 			wantResponseStatusCode: http.StatusNoContent,
 		},
-		"the response content type is application/json when an error response is returned": {
+		"the response content type is application/problem+json when an error response is returned": {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
@@ -50,7 +50,7 @@ func TestNewJSONHandler(t *testing.T) {
 					return nil, errors.New("some error")
 				}),
 			},
-			wantHeader: http.Header{"Content-Type": {"application/json"}},
+			wantHeader: http.Header{"Content-Type": {"application/problem+json"}},
 			wantLogs: []slogmem.RecordQuery{{
 				Message: "JSON handler received an unhandled error",
 				Level:   slog.LevelError,
@@ -58,6 +58,7 @@ func TestNewJSONHandler(t *testing.T) {
 					"error": slog.AnyValue("calling action: some error"),
 				},
 			}},
+			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"the response content type is application/problem+json when a problem response is returned": {
@@ -197,7 +198,7 @@ func TestNewJSONHandler(t *testing.T) {
 					return nil, errors.New("some error")
 				}),
 			},
-			wantHeader: http.Header{"Content-Type": {"application/json"}},
+			wantHeader: http.Header{"Content-Type": {"application/problem+json"}},
 			wantLogs: []slogmem.RecordQuery{{
 				Message: "JSON handler received an unhandled error",
 				Level:   slog.LevelError,
@@ -205,6 +206,7 @@ func TestNewJSONHandler(t *testing.T) {
 					"error": slog.AnyValue("calling action: some error"),
 				},
 			}},
+			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"status code is used from the response on successful request": {
@@ -255,7 +257,7 @@ func TestNewJSONHandler(t *testing.T) {
 					return httputil.NewResponse(http.StatusNoContent, nil), errors.New("some error") //nolint:nilnil // Requires both to be set for test.
 				}),
 			},
-			wantHeader: http.Header{"Content-Type": {"application/json"}},
+			wantHeader: http.Header{"Content-Type": {"application/problem+json"}},
 			wantLogs: []slogmem.RecordQuery{{
 				Message: "JSON handler received an unhandled error",
 				Level:   slog.LevelError,
@@ -263,6 +265,7 @@ func TestNewJSONHandler(t *testing.T) {
 					"error": slog.AnyValue("calling action: some error"),
 				},
 			}},
+			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"redirects the request when a redirect response is returned": {
@@ -437,7 +440,7 @@ func TestNewJSONHandler(t *testing.T) {
 					"error": slog.AnyValue("calling guard: some error"),
 				},
 			}},
-			wantResponseBody:       "",
+			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"returns a problem error when the guard returns an problem error type": {
@@ -502,6 +505,147 @@ func TestNewJSONHandler(t *testing.T) {
 				return req
 			}(),
 			wantResponseStatusCode: http.StatusTeapot,
+		},
+
+		"sets zero values when request params are missing and there is no validation": {
+			endpoint: func() httputil.Endpoint {
+				type params struct {
+					Name          string `query:"name"`
+					CorrelationID string `header:"X-Correlation-Id"`
+					User          string `path:"user"`
+				}
+
+				return httputil.Endpoint{
+					Method: http.MethodGet,
+					Path:   "/test",
+					Handler: httputil.NewJSONHandler(func(r httputil.RequestParams[params]) (*httputil.Response, error) {
+						return httputil.OK(map[string]string{
+							"name":          r.Params.Name,
+							"correlationId": r.Params.CorrelationID,
+							"user":          r.Params.User,
+						})
+					}),
+				}
+			}(),
+			request:                httptest.NewRequest(http.MethodGet, "/test", nil),
+			wantResponseBody:       `{"correlationId":"","name":"","user":""}`,
+			wantResponseStatusCode: http.StatusOK,
+		},
+		"sets default values when request params are missing and there is no validation": {
+			endpoint: func() httputil.Endpoint {
+				type params struct {
+					Name          string `query:"name"              default:"some-name"`
+					CorrelationID string `header:"X-Correlation-Id" default:"some-correlation-id"`
+					User          string `path:"user"               default:"some-user"`
+				}
+
+				return httputil.Endpoint{
+					Method: http.MethodGet,
+					Path:   "/test",
+					Handler: httputil.NewJSONHandler(func(r httputil.RequestParams[params]) (*httputil.Response, error) {
+						return httputil.OK(map[string]string{
+							"name":          r.Params.Name,
+							"correlationId": r.Params.CorrelationID,
+							"user":          r.Params.User,
+						})
+					}),
+				}
+			}(),
+			request:                httptest.NewRequest(http.MethodGet, "/test", nil),
+			wantResponseBody:       `{"correlationId":"some-correlation-id","name":"some-name","user":"some-user"}`,
+			wantResponseStatusCode: http.StatusOK,
+		},
+		"sets default values when request params are missing and there is validation requiring fields to be set": {
+			endpoint: func() httputil.Endpoint {
+				type params struct {
+					Name          string `query:"name"              default:"some-name"           validate:"required"`
+					CorrelationID string `header:"X-Correlation-Id" default:"some-correlation-id" validate:"required"`
+					User          string `path:"user"               default:"some-user"           validate:"required"`
+				}
+
+				return httputil.Endpoint{
+					Method: http.MethodGet,
+					Path:   "/test",
+					Handler: httputil.NewJSONHandler(func(r httputil.RequestParams[params]) (*httputil.Response, error) {
+						return httputil.OK(map[string]string{
+							"name":          r.Params.Name,
+							"correlationId": r.Params.CorrelationID,
+							"user":          r.Params.User,
+						})
+					}),
+				}
+			}(),
+			request:                httptest.NewRequest(http.MethodGet, "/test", nil),
+			wantResponseBody:       `{"correlationId":"some-correlation-id","name":"some-name","user":"some-user"}`,
+			wantResponseStatusCode: http.StatusOK,
+		},
+		"returns an error when request params are missing and there is validation but no defaults set": {
+			endpoint: func() httputil.Endpoint {
+				type params struct {
+					Name          string `query:"name"              validate:"required"`
+					CorrelationID string `header:"X-Correlation-Id" validate:"required"`
+					User          string `path:"user"               validate:"required"`
+				}
+
+				return httputil.Endpoint{
+					Method: http.MethodGet,
+					Path:   "/test",
+					Handler: httputil.NewJSONHandler(func(r httputil.RequestParams[params]) (*httputil.Response, error) {
+						return httputil.OK(map[string]string{
+							"name":          r.Params.Name,
+							"correlationId": r.Params.CorrelationID,
+							"user":          r.Params.User,
+						})
+					}),
+				}
+			}(),
+			request:                httptest.NewRequest(http.MethodGet, "/test", nil),
+			wantResponseBody:       `{"code":"400-02","detail":"The request parameters are invalid or malformed","instance":"/test","status":400,"title":"Bad Parameters","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/bad-parameters.md","violations":[{"parameter":"name","detail":"name is required","type":"required"},{"parameter":"X-Correlation-Id","detail":"X-Correlation-Id is required","type":"required"},{"parameter":"user","detail":"user is required","type":"required"}]}`,
+			wantResponseStatusCode: http.StatusBadRequest,
+		},
+		"returns an error when trying to unmarshal into a value that is not a struct": {
+			endpoint: httputil.Endpoint{
+				Method: http.MethodGet,
+				Path:   "/test",
+				Handler: httputil.NewJSONHandler(func(r httputil.RequestParams[map[string]string]) (*httputil.Response, error) {
+					return httputil.NoContent()
+				}),
+			},
+			request: httptest.NewRequest(http.MethodGet, "/test", nil),
+			wantLogs: []slogmem.RecordQuery{{
+				Message: "JSON handler params type is not a struct",
+				Level:   slog.LevelWarn,
+				Attrs: map[string]slog.Value{
+					"type": slog.StringValue("map"),
+				},
+			}},
+			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
+			wantResponseStatusCode: http.StatusInternalServerError,
+		},
+		"logs and returns an error when params extraction fails unexpectedly": {
+			endpoint: func() httputil.Endpoint {
+				type params struct {
+					Name int `query:"name" default:"not an int"`
+				}
+
+				return httputil.Endpoint{
+					Method: http.MethodGet,
+					Path:   "/test",
+					Handler: httputil.NewJSONHandler(func(_ httputil.RequestParams[params]) (*httputil.Response, error) {
+						return httputil.NoContent()
+					}),
+				}
+			}(),
+			request: httptest.NewRequest(http.MethodGet, "/test", nil),
+			wantLogs: []slogmem.RecordQuery{{
+				Message: "JSON handler failed to decode params data",
+				Level:   slog.LevelWarn,
+				Attrs: map[string]slog.Value{
+					"error": slog.AnyValue(`setting field value: failed to convert parameter "default" to int: strconv.Atoi: parsing "not an int": invalid syntax`),
+				},
+			}},
+			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
+			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 	}
 

@@ -24,7 +24,7 @@ type (
 	// Handler wraps a http.Handler with the ability to initialize
 	// the implementation with the Server logger and validator.
 	Handler interface {
-		init(l *slog.Logger, v *validator.Validate, g Guard)
+		use(l *slog.Logger, v *validator.Validate, g Guard)
 		http.Handler
 	}
 

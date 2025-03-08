@@ -79,8 +79,8 @@ type handlerMiddlewareWrapper struct {
 	middleware MiddlewareFunc
 }
 
-func (h handlerMiddlewareWrapper) init(l *slog.Logger, v *validator.Validate, g Guard) {
-	h.handler.init(l, v, g)
+func (h handlerMiddlewareWrapper) use(l *slog.Logger, v *validator.Validate, g Guard) {
+	h.handler.use(l, v, g)
 }
 
 func (h handlerMiddlewareWrapper) ServeHTTP(w http.ResponseWriter, r *http.Request) {

@@ -85,19 +85,15 @@ func main() {
 ```
 
 ## TODO
-* [ ] Look at the parameter decoding code and finish it up properly.
-* [ ] Add a MustString or something similar to problem details to make them easier to test in responses. Might have to make the payload more static to allow unmashaling for test or something.
-* [ ] Update handler code to return the correct problems.
 * [ ] Finish testing the existing code to achieve sensible coverage.
+* [ ] Add a MustString or something similar to problem details to make them easier to test in responses. Might have to make the payload more static to allow unmashaling for test or something.
 * [ ] Add common middleware.
 * [ ] How do we allow people to return a custom error payload if required so they are not locked to problem json?
 * [ ] Implement proper JSON pointer handling on validation errors as per https://datatracker.ietf.org/doc/html/rfc6901.
-* [ ] Decide on how to wrap logger, implement and test - use as is or clone the writeHandler so we can provide a static message and add the error as an attribute? Would also allow us to set pc?
 * [ ] Write the client side.
 * [ ] Finalise all default values, ensure they are correct.
 * [ ] This README needs filling out properly
 * [ ] Update README to highlight problem json as a feature and provide examples of usage.
 * [ ] Document how errors take priority over responses, if an error is returned no response will be written if one is also returned. y.
-* [ ] Check compatibility with Orchestrion.
 * [ ] Finalise all package documentation.
 * [ ] Do I move internal/testutil to its own package too?

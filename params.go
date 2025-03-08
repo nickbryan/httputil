@@ -1,12 +1,24 @@
 package httputil
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
 	"strconv"
+	"strings"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
+
+	"github.com/nickbryan/httputil/problem"
+)
+
+const (
+	tagQuery   = "query"
+	tagHeader  = "header"
+	tagPath    = "path"
+	tagDefault = "default"
 )
 
 // InvalidOutputTypeError is a custom error type for invalid output types.
@@ -20,9 +32,10 @@ func (e *InvalidOutputTypeError) Error() string {
 
 // ParamConversionError represents an error that occurs during parameter conversion.
 type ParamConversionError struct {
-	ParamName  string
-	TargetType string
-	Err        error
+	ParameterType problem.ParameterType
+	ParamName     string
+	TargetType    string
+	Err           error
 }
 
 // Error satisfies the error interface for ParamConversionError.
@@ -45,7 +58,7 @@ func (e *UnsupportedFieldTypeError) Error() string {
 	return fmt.Sprintf("unsupported field type: %T", e.FieldType)
 }
 
-// UnmarshalParams extracts parameters from an *http.Request and populates the fields of the output struct.
+// BindValidParameters extracts parameters from an *http.Request and populates the fields of the output struct.
 // The output parameter must be a pointer to a struct, and the struct fields can be annotated with struct tags
 // to specify the source of the parameters. Supported struct tags and their meanings are:
 //
@@ -64,7 +77,7 @@ func (e *UnsupportedFieldTypeError) Error() string {
 //		  ID		uuid.UUID `path:"id"`
 //	 }
 //	 var params Params
-//	 if err := UnmarshalParams(r, &params); err != nil {
+//	 if err := BindValidParameters(r, &params); err != nil {
 //		  return fmt.Errorf("failed to unmarshal params: %v", err)
 //	 }
 //
@@ -81,23 +94,65 @@ func (e *UnsupportedFieldTypeError) Error() string {
 // - `output` is not a pointer to a struct.
 // - A parameter value cannot be converted to the target field type.
 // - A field type in the struct is unsupported.
-func UnmarshalParams(r *http.Request, output any) error {
+func BindValidParameters(r *http.Request, v *validator.Validate, output any) error {
 	outputVal, err := validateOutputType(output)
 	if err != nil {
 		return fmt.Errorf("validating output type: %w", err)
 	}
 
+	var paramErrors []problem.Parameter
+
 	for i := range outputVal.NumField() {
 		field := outputVal.Type().Field(i)
 
-		paramName, paramValue := resolveParamValue(r, field)
+		paramName, paramValue, paramType := resolveParamValue(r, field)
 		if paramValue == "" {
 			continue
 		}
 
-		if err := setFieldValue(outputVal.Field(i), paramName, paramValue); err != nil {
+		// TODO: update documentation for function.
+		// TODO: thoroughly test validation and v being nil.
+		// TODO: try this out in a guard or something to see how dealing with errors feels.
+		// TODO: update params_test.go to cover this properly.
+		// TODO: revisit handler_json_test.go to see what needs to be complete for params handling.
+		if err := setFieldValue(outputVal.Field(i), paramName, paramValue, paramType); err != nil {
+			var paramConversionError *ParamConversionError
+			if paramName != tagDefault && errors.As(err, &paramConversionError) {
+				paramErrors = append(paramErrors, problem.Parameter{
+					Parameter: paramConversionError.ParamName,
+					Detail:    paramConversionError.Err.Error(),
+					Type:      paramConversionError.ParameterType,
+				})
+
+				continue
+			}
+
+			// If the paramName == "default" then the error was on the developer setting the
+			// default value so we don't want to show that in the response, treat it as an
+			// error instead of a problem with the request.
 			return fmt.Errorf("setting field value: %w", err)
 		}
+	}
+
+	if v != nil {
+		if err := v.StructCtx(r.Context(), output); err != nil {
+			var errs validator.ValidationErrors
+			if errors.As(err, &errs) {
+				for _, err := range errs {
+					paramErrors = append(paramErrors, problem.Parameter{
+						Parameter: strings.Join(strings.Split(err.Namespace(), ".")[1:], "."),
+						Detail:    explainValidationError(err),
+						Type:      problem.ParameterType(err.Tag()),
+					})
+				}
+			} else {
+				return fmt.Errorf("validating struct: %w", err)
+			}
+		}
+	}
+
+	if len(paramErrors) > 0 {
+		return problem.BadParameters(r, paramErrors...)
 	}
 
 	return nil
@@ -112,69 +167,70 @@ func validateOutputType(output any) (reflect.Value, error) {
 	return outputVal.Elem(), nil
 }
 
-func resolveParamValue(r *http.Request, field reflect.StructField) (string, string) {
-	const (
-		tagQuery   = "query"
-		tagHeader  = "header"
-		tagPath    = "path"
-		tagDefault = "default"
-	)
+func resolveParamValue(r *http.Request, field reflect.StructField) (string, string, string) {
+	var paramName, paramValue, paramType string
 
-	var paramName, paramValue string
-
-	queryTag := field.Tag.Get(tagQuery)
-	headerTag := field.Tag.Get(tagHeader)
-	pathTag := field.Tag.Get(tagPath)
-	defaultTag := field.Tag.Get(tagDefault)
-
-	if queryTag != "" {
-		paramName, paramValue = queryTag, r.URL.Query().Get(queryTag)
+	if key := field.Tag.Get(tagQuery); key != "" {
+		paramName, paramValue, paramType = key, r.URL.Query().Get(key), tagQuery
 	}
 
-	if paramValue == "" && headerTag != "" {
-		paramName, paramValue = headerTag, r.Header.Get(headerTag)
+	if paramValue != "" {
+		return paramName, paramValue, paramType
 	}
 
-	if paramValue == "" && pathTag != "" {
-		paramName, paramValue = pathTag, r.PathValue(pathTag)
+	if key := field.Tag.Get(tagHeader); key != "" {
+		paramName, paramValue, paramType = key, r.Header.Get(key), tagHeader
 	}
 
-	if paramValue == "" && defaultTag != "" {
-		paramName, paramValue = tagDefault, defaultTag
+	if paramValue != "" {
+		return paramName, paramValue, paramType
 	}
 
-	return paramName, paramValue
+	if key := field.Tag.Get(tagPath); key != "" {
+		paramName, paramValue, paramType = key, r.PathValue(key), tagPath
+	}
+
+	if paramValue != "" {
+		return paramName, paramValue, paramType
+	}
+
+	if value := field.Tag.Get(tagDefault); value != "" {
+		paramName, paramValue = tagDefault, value
+	}
+
+	return paramName, paramValue, paramType
 }
 
-func setFieldValue(fieldVal reflect.Value, paramName, paramValue string) error {
+func setFieldValue(fieldVal reflect.Value, paramName, paramValue, paramType string) error {
 	switch fieldVal.Interface().(type) {
 	case string:
-		return setStringField(fieldVal, paramName, paramValue)
+		return setStringField(fieldVal, paramValue)
 	case int:
-		return setIntField(fieldVal, paramName, paramValue)
+		return setIntField(fieldVal, paramName, paramValue, paramType)
 	case bool:
-		return setBoolField(fieldVal, paramName, paramValue)
+		return setBoolField(fieldVal, paramName, paramValue, paramType)
 	case float64:
-		return setFloatField(fieldVal, paramName, paramValue)
+		return setFloatField(fieldVal, paramName, paramValue, paramType)
 	case uuid.UUID:
-		return setUUIDField(fieldVal, paramName, paramValue)
+		return setUUIDField(fieldVal, paramName, paramValue, paramType)
 	default:
 		return &UnsupportedFieldTypeError{FieldType: fieldVal.Interface()}
 	}
 }
 
-func setStringField(fieldVal reflect.Value, _, paramValue string) error {
+func setStringField(fieldVal reflect.Value, paramValue string) error {
 	fieldVal.SetString(paramValue)
 	return nil
 }
 
-func setIntField(fieldVal reflect.Value, paramName, paramValue string) error {
+func setIntField(fieldVal reflect.Value, paramName, paramValue, paramType string) error {
 	v, err := strconv.Atoi(paramValue)
 	if err != nil {
 		return &ParamConversionError{
-			ParamName:  paramName,
-			TargetType: "int",
-			Err:        err,
+			ParameterType: problem.ParameterType(paramType),
+			ParamName:     paramName,
+			TargetType:    "int",
+			Err:           err,
 		}
 	}
 
@@ -183,13 +239,14 @@ func setIntField(fieldVal reflect.Value, paramName, paramValue string) error {
 	return nil
 }
 
-func setBoolField(fieldVal reflect.Value, paramName, paramValue string) error {
+func setBoolField(fieldVal reflect.Value, paramName, paramValue, paramType string) error {
 	v, err := strconv.ParseBool(paramValue)
 	if err != nil {
 		return &ParamConversionError{
-			ParamName:  paramName,
-			TargetType: "bool",
-			Err:        err,
+			ParameterType: problem.ParameterType(paramType),
+			ParamName:     paramName,
+			TargetType:    "bool",
+			Err:           err,
 		}
 	}
 
@@ -198,13 +255,14 @@ func setBoolField(fieldVal reflect.Value, paramName, paramValue string) error {
 	return nil
 }
 
-func setFloatField(fieldVal reflect.Value, paramName, paramValue string) error {
+func setFloatField(fieldVal reflect.Value, paramName, paramValue, paramType string) error {
 	v, err := strconv.ParseFloat(paramValue, 64)
 	if err != nil {
 		return &ParamConversionError{
-			ParamName:  paramName,
-			TargetType: "float64",
-			Err:        err,
+			ParameterType: problem.ParameterType(paramType),
+			ParamName:     paramName,
+			TargetType:    "float64",
+			Err:           err,
 		}
 	}
 
@@ -213,13 +271,14 @@ func setFloatField(fieldVal reflect.Value, paramName, paramValue string) error {
 	return nil
 }
 
-func setUUIDField(fieldVal reflect.Value, paramName, paramValue string) error {
+func setUUIDField(fieldVal reflect.Value, paramName, paramValue, paramType string) error {
 	v, err := uuid.Parse(paramValue)
 	if err != nil {
 		return &ParamConversionError{
-			ParamName:  paramName,
-			TargetType: "uuid.UUID",
-			Err:        err,
+			ParameterType: problem.ParameterType(paramType),
+			ParamName:     paramName,
+			TargetType:    "uuid.UUID",
+			Err:           err,
 		}
 	}
 

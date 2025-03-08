@@ -5,13 +5,14 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 
 	"github.com/nickbryan/httputil"
 )
 
-func TestUnmarshalParams(t *testing.T) {
+func TestBindValidParameters(t *testing.T) {
 	t.Parallel()
 
 	type testStruct struct {
@@ -95,7 +96,7 @@ func TestUnmarshalParams(t *testing.T) {
 		"should ignore untagged fields in the struct": {
 			request: &http.Request{
 				URL: &url.URL{
-					RawQuery: "untagged_field=value", // Shouldn't match
+					RawQuery: "UntaggedField=value",
 				},
 			},
 			output: &emptyTagsStruct{},
@@ -112,7 +113,7 @@ func TestUnmarshalParams(t *testing.T) {
 			},
 			output:      &testStruct{},
 			expectErr:   true,
-			expectedErr: `setting field value: failed to convert parameter "price" to float64: strconv.ParseFloat: parsing "invalid": invalid syntax`,
+			expectedErr: `400 Bad Parameters: The request parameters are invalid or malformed`,
 		},
 		"should fail when the value type is valid but cannot be parsed (int)": {
 			request: &http.Request{
@@ -122,7 +123,7 @@ func TestUnmarshalParams(t *testing.T) {
 			},
 			output:      &testStruct{},
 			expectErr:   true,
-			expectedErr: `setting field value: failed to convert parameter "page" to int: strconv.Atoi: parsing "invalid": invalid syntax`,
+			expectedErr: `400 Bad Parameters: The request parameters are invalid or malformed`,
 		},
 		"should fail when the value type is valid but cannot be parsed (bool)": {
 			request: &http.Request{
@@ -132,7 +133,7 @@ func TestUnmarshalParams(t *testing.T) {
 			},
 			output:      &testStruct{},
 			expectErr:   true,
-			expectedErr: `setting field value: failed to convert parameter "is_active" to bool: strconv.ParseBool: parsing "notabool": invalid syntax`,
+			expectedErr: `400 Bad Parameters: The request parameters are invalid or malformed`,
 		},
 
 		"should fail gracefully when an invalid UUID is provided": {
@@ -146,9 +147,9 @@ func TestUnmarshalParams(t *testing.T) {
 			}(),
 			output:      &testStruct{},
 			expectErr:   true,
-			expectedErr: `setting field value: failed to convert parameter "id" to uuid.UUID: invalid UUID length: 12`,
+			expectedErr: `400 Bad Parameters: The request parameters are invalid or malformed`,
 		},
-		"should not fail when no value is present for a required parameter": {
+		"should not fail when no value is present": {
 			request: &http.Request{
 				URL: &url.URL{
 					RawQuery: "", // Empty raw query
@@ -182,13 +183,13 @@ func TestUnmarshalParams(t *testing.T) {
 			},
 			output: &testStruct{},
 			expected: &testStruct{
-				Sort:      "",    // Should remain empty
-				Page:      1,     // Default value
-				IsActive:  false, // Default value
-				Price:     0,     // Default for float64
+				Sort:      "",
+				Page:      1,
+				IsActive:  false,
+				Price:     0,
 				AuthToken: "",
 				ID:        uuid.UUID{},
-				Unknown:   "", // Untouched since no value matches
+				Unknown:   "",
 			},
 			expectErr: false,
 		},
@@ -215,26 +216,26 @@ func TestUnmarshalParams(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
-			err := httputil.UnmarshalParams(testCase.request, testCase.output)
+			err := httputil.BindValidParameters(testCase.request, validator.New(), testCase.output)
 
 			if testCase.expectErr {
 				if err == nil {
-					t.Fatalf("expected error but got none")
+					t.Fatalf("want: error, got: nil")
 				}
 
 				if err.Error() != testCase.expectedErr {
-					t.Fatalf("unexpected error message: got %q, want %q", err.Error(), testCase.expectedErr)
+					t.Fatalf("unexpected error message, got: %q, want: %q", err.Error(), testCase.expectedErr)
 				}
 
 				return
 			}
 
 			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+				t.Fatalf("unexpected error, got: %v, want: nil", err)
 			}
 
 			if !cmp.Equal(testCase.output, testCase.expected) {
-				t.Errorf("unexpected output: got %+v, want %+v", testCase.output, testCase.expected)
+				t.Errorf("unexpected output, got: %+v, want: %+v", testCase.output, testCase.expected)
 			}
 		})
 	}
