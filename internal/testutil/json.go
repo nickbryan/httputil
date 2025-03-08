@@ -4,12 +4,14 @@ package testutil
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/go-cmp/cmp"
 )
 
 // DiffJSON compares two JSON strings and returns a diff string highlighting the differences.
 func DiffJSON(x, y string) string {
+	x, y = strings.TrimSpace(x), strings.TrimSpace(y)
 	return cmp.Diff(x, y, cmp.FilterValues(isValidJSON, cmp.Transformer("JSON", asJSON)))
 }
 

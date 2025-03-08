@@ -88,6 +88,20 @@ func (h *jsonHandler[D, P]) requestInterceptedByGuard(req Request[D, P]) bool {
 }
 
 func (h *jsonHandler[D, P]) requestHydratedOK(req *Request[D, P]) bool {
+	if !h.paramsHydratedOK(req) {
+		return false
+	}
+
+	if req.Body == nil {
+		return true
+	}
+
+	defer func(body io.Closer) {
+		if err := body.Close(); err != nil {
+			h.logger.WarnContext(req.Context(), "JSON handler failed to close request body", slog.Any("error", err))
+		}
+	}(req.Body)
+
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		h.logger.WarnContext(req.Context(), "JSON handler failed to read request body", slog.Any("error", err))
@@ -96,7 +110,7 @@ func (h *jsonHandler[D, P]) requestHydratedOK(req *Request[D, P]) bool {
 		return false
 	}
 
-	if !h.paramsHydratedOK(req) || !h.dataHydratedOK(req, body) {
+	if !h.dataHydratedOK(req, body) {
 		return false
 	}
 

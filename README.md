@@ -86,7 +86,7 @@ func main() {
 
 ## TODO
 * [ ] Look at the parameter decoding code and finish it up properly.
-* [ ] Add a MustString or something similar to problem details to make them easier to test in responses.
+* [ ] Add a MustString or something similar to problem details to make them easier to test in responses. Might have to make the payload more static to allow unmashaling for test or something.
 * [ ] Update handler code to return the correct problems.
 * [ ] Finish testing the existing code to achieve sensible coverage.
 * [ ] Add common middleware.
@@ -100,3 +100,4 @@ func main() {
 * [ ] Document how errors take priority over responses, if an error is returned no response will be written if one is also returned. y.
 * [ ] Check compatibility with Orchestrion.
 * [ ] Finalise all package documentation.
+* [ ] Do I move internal/testutil to its own package too?

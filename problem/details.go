@@ -15,19 +15,19 @@ import (
 // accordance with RFC 9457 (Problem Details for HTTP APIs).
 type DetailedError struct {
 	// Type is a URI reference that identifies the specific problem.
-	Type string
+	Type string `json:"type"`
 	// Title is a short, human-readable summary of the problem type.
-	Title string
+	Title string `json:"title"`
 	// Detail is a human-readable explanation specific to the occurrence of the problem.
-	Detail string
+	Detail string `json:"detail"`
 	// Status is the HTTP status code associated with the problem.
-	Status int
+	Status int `json:"status"`
 	// Code is the domain-specific error code associated with the problem.
-	Code string
+	Code string `json:"code"`
 	// Instance is a URI reference that identifies the specific occurrence of the problem.
-	Instance string
+	Instance string `json:"instance"`
 	// ExtensionMembers is a key-value map for vendor-specific extension members.
-	ExtensionMembers map[string]any
+	ExtensionMembers map[string]any `json:"-"`
 }
 
 // WithDetail creates a new DetailedError instance with the provided detail
@@ -68,23 +68,76 @@ func (d *DetailedError) Error() string { return fmt.Sprintf("%d %s: %s", d.Statu
 // MarshalJSON implements the `json.Marshaler` interface for DetailedError. It
 // marshals the DetailedError object into a JSON byte slice.
 func (d *DetailedError) MarshalJSON() ([]byte, error) {
-	deets := make(map[string]any)
+	fields := make(map[string]any)
 
 	for k, v := range d.ExtensionMembers {
-		deets[k] = v
+		fields[k] = v
 	}
 
-	deets["type"] = d.Type
-	deets["title"] = d.Title
-	deets["detail"] = d.Detail
-	deets["status"] = d.Status
-	deets["code"] = d.Code
-	deets["instance"] = d.Instance
+	fields["type"] = d.Type
+	fields["title"] = d.Title
+	fields["detail"] = d.Detail
+	fields["status"] = d.Status
+	fields["code"] = d.Code
+	fields["instance"] = d.Instance
 
-	bytes, err := json.Marshal(deets)
+	bytes, err := json.Marshal(fields)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling DetailedError as JSON: %w", err)
 	}
 
 	return bytes, nil
+}
+
+// MustMarshalJSON marshals the DetailedError into JSON and panics if an error
+// occurs during the marshaling process. This is useful for testing the
+// comparison of error responses.
+func (d *DetailedError) MustMarshalJSON() []byte {
+	bytes, err := d.MarshalJSON()
+	if err != nil {
+		panic(err)
+	}
+
+	return bytes
+}
+
+// UnmarshalJSON implements the `json.Unmarshaler` interface for DetailedError,
+// handling known and unknown fields gracefully.
+func (d *DetailedError) UnmarshalJSON(data []byte) error {
+	//nolint:exhaustruct // Zero value to unmarshal known fields into.
+	known := struct {
+		Type     string `json:"type"`
+		Title    string `json:"title"`
+		Detail   string `json:"detail"`
+		Status   int    `json:"status"`
+		Code     string `json:"code"`
+		Instance string `json:"instance"`
+	}{}
+
+	if err := json.Unmarshal(data, &known); err != nil {
+		return fmt.Errorf("unmarshaling DetailedError known fields: %w", err)
+	}
+
+	*d = DetailedError{
+		Type:             known.Type,
+		Title:            known.Title,
+		Detail:           known.Detail,
+		Status:           known.Status,
+		Code:             known.Code,
+		Instance:         known.Instance,
+		ExtensionMembers: nil,
+	}
+
+	var fields map[string]any
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return fmt.Errorf("unmarshaling DetailedError fields: %w", err)
+	}
+
+	maps.DeleteFunc(fields, func(k string, _ any) bool {
+		return k == "type" || k == "title" || k == "detail" || k == "status" || k == "code" || k == "instance"
+	})
+
+	d.ExtensionMembers = fields
+
+	return nil
 }
