@@ -95,7 +95,7 @@ func TestNewJSONHandler(t *testing.T) {
 		"returns a bad request status code with errors if the payload is empty but request data is expected": {
 			endpoint: func() httputil.Endpoint {
 				type request struct {
-					Name string `json:"name" validate:"required"`
+					Name string `json:"name"`
 				}
 
 				return httputil.Endpoint{
@@ -153,6 +153,30 @@ func TestNewJSONHandler(t *testing.T) {
 			request:                httptest.NewRequest(http.MethodGet, "/test", strings.NewReader("{}")),
 			wantHeader:             http.Header{"Content-Type": {"application/problem+json"}},
 			wantResponseBody:       `{"code":"422-02","detail":"The request data violated one or more validation constraints","instance":"/test","status":422,"title":"Constraint Violation","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/constraint-violation.md","violations":[{"detail":"thing is required","pointer":"#/inner/thing"}]}`,
+			wantResponseStatusCode: http.StatusUnprocessableEntity,
+		},
+		"describes the validation errors appropriately": {
+			endpoint: func() httputil.Endpoint {
+				type request struct {
+					Required string `json:"required" validate:"required"`
+					Email    string `json:"email"    validate:"email"`
+					UUID     string `json:"uuid"     validate:"uuid"`
+					UUID4    string `json:"uuid4"    validate:"uuid4"`
+					Phone    string `json:"phone"    validate:"e164"`
+					Field    string `json:"field"    validate:"min=3"`
+				}
+
+				return httputil.Endpoint{
+					Method: http.MethodGet,
+					Path:   "/test",
+					Handler: httputil.NewJSONHandler(func(_ httputil.RequestData[request]) (*httputil.Response, error) {
+						return httputil.NoContent()
+					}),
+				}
+			}(),
+			request:                httptest.NewRequest(http.MethodGet, "/test", strings.NewReader("{}")),
+			wantHeader:             http.Header{"Content-Type": {"application/problem+json"}},
+			wantResponseBody:       `{"code":"422-02","detail":"The request data violated one or more validation constraints","instance":"/test","status":422,"title":"Constraint Violation","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/constraint-violation.md","violations":[{"detail":"required is required","pointer":"#/required"},{"detail":"email should be a valid email","pointer":"#/email"},{"detail":"uuid should be a valid UUID","pointer":"#/uuid"},{"detail":"uuid4 should be a valid UUID4","pointer":"#/uuid4"},{"detail":"phone should be a valid international phone number (e.g. +33 6 06 06 06 06)","pointer":"#/phone"},{"detail":"field should be min=3","pointer":"#/field"}]}`,
 			wantResponseStatusCode: http.StatusUnprocessableEntity,
 		},
 		"the request body can be read again in the action after it has been decoded into the request data type": {

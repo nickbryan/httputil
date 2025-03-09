@@ -24,7 +24,6 @@ type jsonHandler[D, P any] struct {
 	action                      Action[D, P]
 	guard                       Guard
 	logger                      *slog.Logger
-	validator                   *validator.Validate
 	reqTypeKind, paramsTypeKind reflect.Kind
 }
 
@@ -32,18 +31,17 @@ type jsonHandler[D, P any] struct {
 // deserialize JSON request bodies and serialize JSON response bodies.
 func NewJSONHandler[D, P any](action Action[D, P]) Handler {
 	return &jsonHandler[D, P]{
-		action:    action,
-		guard:     nil,
-		logger:    nil,
-		validator: nil,
+		action: action,
+		guard:  nil,
+		logger: nil,
 		// Cache these early to save on reflection calls.
 		reqTypeKind:    reflect.TypeFor[D]().Kind(),
 		paramsTypeKind: reflect.TypeFor[P]().Kind(),
 	}
 }
 
-func (h *jsonHandler[D, P]) use(l *slog.Logger, v *validator.Validate, g Guard) {
-	h.logger, h.validator, h.guard = l, v, g
+func (h *jsonHandler[D, P]) use(l *slog.Logger, g Guard) {
+	h.logger, h.guard = l, g
 }
 
 // ServeHTTP implements the http.Handler interface. It reads the request body,
@@ -133,7 +131,7 @@ func (h *jsonHandler[D, P]) paramsHydratedOK(req *Request[D, P]) bool {
 		return true
 	}
 
-	if err := BindValidParameters(req.Request, h.validator, &req.Params); err != nil {
+	if err := BindValidParameters(req.Request, &req.Params); err != nil {
 		var detailedError *problem.DetailedError
 		if !errors.As(err, &detailedError) {
 			h.logger.WarnContext(req.Context(), "JSON handler failed to decode params data", slog.Any("error", err))
@@ -175,7 +173,7 @@ func (h *jsonHandler[D, P]) dataHydratedOK(req *Request[D, P], body []byte) bool
 	}
 
 	if h.reqTypeKind == reflect.Struct {
-		if err := h.validator.StructCtx(req.Context(), &req.Data); err != nil {
+		if err := validate.StructCtx(req.Context(), &req.Data); err != nil {
 			h.writeValidationErr(req, err)
 			return false
 		}
@@ -222,7 +220,7 @@ func (h *jsonHandler[D, P]) writeValidationErr(req *Request[D, P], err error) {
 	if errors.As(err, &errs) {
 		properties := make([]problem.Property, 0, len(errs))
 		for _, err := range errs {
-			properties = append(properties, problem.Property{Detail: explainValidationError(err), Pointer: "#/" + strings.Join(strings.Split(err.Namespace(), ".")[1:], "/")})
+			properties = append(properties, problem.Property{Detail: describeValidationError(err), Pointer: "#/" + strings.Join(strings.Split(err.Namespace(), ".")[1:], "/")})
 		}
 
 		h.writeErrorResponse(req.Context(), req, problem.ConstraintViolation(req.Request, properties...))
@@ -240,6 +238,7 @@ func (h *jsonHandler[D, P]) writeErrorResponse(ctx context.Context, req *Request
 	var problemDetails *problem.DetailedError
 	if !errors.As(err, &problemDetails) {
 		problemDetails = problem.ServerError(req.Request)
+
 		h.logger.ErrorContext(ctx, "JSON handler received an unhandled error", slog.Any("error", err))
 	}
 

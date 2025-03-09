@@ -2,10 +2,10 @@ package httputil_test
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 
-	"github.com/go-playground/validator/v10"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 
@@ -26,6 +26,14 @@ func TestBindValidParameters(t *testing.T) {
 		Untagged  string    // Untagged field, should be ignored
 	}
 
+	type validateTestStruct struct {
+		RequiredString string `query:"required_string" validate:"required"`
+	}
+
+	type validateTestStructDefault struct {
+		RequiredString string `query:"required_string" default:"default" validate:"required"`
+	}
+
 	type emptyTagsStruct struct {
 		UntaggedField string
 	}
@@ -35,7 +43,7 @@ func TestBindValidParameters(t *testing.T) {
 		output      any
 		expected    any
 		expectErr   bool
-		expectedErr string
+		expectedErr string // TODO: better testing of the returned errors
 	}{
 		"should extract query params, headers, and path variable correctly": {
 			request: func() *http.Request {
@@ -210,13 +218,53 @@ func TestBindValidParameters(t *testing.T) {
 			},
 			expectErr: false,
 		},
+		"should return an error when the default value on a struct field is invalid for the type": {
+			request: httptest.NewRequest(http.MethodGet, "/tests", nil),
+			output: &struct {
+				Test int `default:"not an int"`
+			}{},
+			expectErr:   true,
+			expectedErr: `setting field value: failed to convert parameter "default" to int: strconv.Atoi: parsing "not an int": invalid syntax`,
+		},
+		"validates the struct fields when the validate tag is present": {
+			request: &http.Request{
+				URL: &url.URL{
+					RawQuery: "required_string=",
+				},
+			},
+			output:      &validateTestStruct{},
+			expectErr:   true,
+			expectedErr: `400 Bad Parameters: The request parameters are invalid or malformed`,
+		},
+		"passes validation when the validate tag is present and the field is valid": {
+			request: &http.Request{
+				URL: &url.URL{
+					RawQuery: "required_string=mystring",
+				},
+			},
+			output: &validateTestStruct{},
+			expected: &validateTestStruct{
+				RequiredString: "mystring",
+			},
+		},
+		"default value takes precedence over the validation when set": {
+			request: &http.Request{
+				URL: &url.URL{
+					RawQuery: "required_string=",
+				},
+			},
+			output: &validateTestStructDefault{},
+			expected: &validateTestStructDefault{
+				RequiredString: "default",
+			},
+		},
 	}
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
-			err := httputil.BindValidParameters(testCase.request, validator.New(), testCase.output)
+			err := httputil.BindValidParameters(testCase.request, testCase.output)
 
 			if testCase.expectErr {
 				if err == nil {

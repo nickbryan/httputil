@@ -58,19 +58,22 @@ func (e *UnsupportedFieldTypeError) Error() string {
 	return fmt.Sprintf("unsupported field type: %T", e.FieldType)
 }
 
-// BindValidParameters extracts parameters from an *http.Request and populates the fields of the output struct.
-// The output parameter must be a pointer to a struct, and the struct fields can be annotated with struct tags
-// to specify the source of the parameters. Supported struct tags and their meanings are:
+// BindValidParameters extracts parameters from an *http.Request, populates the
+// fields of the output struct and validates the struct. The output parameter
+// must be a pointer to a struct, and the struct fields can be annotated with
+// struct tags to specify the source of the parameters. Supported struct tags
+// and their meanings are:
 //
 // - `query`: Specifies a query parameter to extract from the URL.
 // - `header`: Specifies an HTTP header to extract from the request.
 // - `path`: Specifies a path parameter to extract. Requires an implementation of r.PathValue().
 // - `default`: Provides a default value for the parameter if it's not found in the request.
+// - `validate`: Provides rules for the validator.
 //
 // Example:
 //
 //	 type Params struct {
-//		  Sort	string  `query:"user_id"`
+//		  Sort	string  `query:"user_id" validate:"required"`
 //		  AuthToken string  `header:"Authorization"`
 //		  Page	  int	 `query:"page" default:"1"`
 //		  IsActive  bool	`query:"is_active" default:"false"`
@@ -90,11 +93,15 @@ func (e *UnsupportedFieldTypeError) Error() string {
 // - float64
 // - uuid.UUID
 //
+// Returns problem.BadParameters if:
+// - A value cannot be converted to the target field type.
+// - Validation fails.
+//
 // Returns an error if:
 // - `output` is not a pointer to a struct.
-// - A parameter value cannot be converted to the target field type.
+// - A default value cannot be converted to the target field type.
 // - A field type in the struct is unsupported.
-func BindValidParameters(r *http.Request, v *validator.Validate, output any) error {
+func BindValidParameters(r *http.Request, output any) error {
 	outputVal, err := validateOutputType(output)
 	if err != nil {
 		return fmt.Errorf("validating output type: %w", err)
@@ -110,11 +117,6 @@ func BindValidParameters(r *http.Request, v *validator.Validate, output any) err
 			continue
 		}
 
-		// TODO: update documentation for function.
-		// TODO: thoroughly test validation and v being nil.
-		// TODO: try this out in a guard or something to see how dealing with errors feels.
-		// TODO: update params_test.go to cover this properly.
-		// TODO: revisit handler_json_test.go to see what needs to be complete for params handling.
 		if err := setFieldValue(outputVal.Field(i), paramName, paramValue, paramType); err != nil {
 			var paramConversionError *ParamConversionError
 			if paramName != tagDefault && errors.As(err, &paramConversionError) {
@@ -134,20 +136,18 @@ func BindValidParameters(r *http.Request, v *validator.Validate, output any) err
 		}
 	}
 
-	if v != nil {
-		if err := v.StructCtx(r.Context(), output); err != nil {
-			var errs validator.ValidationErrors
-			if errors.As(err, &errs) {
-				for _, err := range errs {
-					paramErrors = append(paramErrors, problem.Parameter{
-						Parameter: strings.Join(strings.Split(err.Namespace(), ".")[1:], "."),
-						Detail:    explainValidationError(err),
-						Type:      problem.ParameterType(err.Tag()),
-					})
-				}
-			} else {
-				return fmt.Errorf("validating struct: %w", err)
+	if err := validate.StructCtx(r.Context(), output); err != nil {
+		var errs validator.ValidationErrors
+		if errors.As(err, &errs) {
+			for _, err := range errs {
+				paramErrors = append(paramErrors, problem.Parameter{
+					Parameter: strings.Join(strings.Split(err.Namespace(), ".")[1:], "."),
+					Detail:    describeValidationError(err),
+					Type:      problem.ParameterType(err.Tag()),
+				})
 			}
+		} else {
+			return fmt.Errorf("validating struct: %w", err)
 		}
 	}
 

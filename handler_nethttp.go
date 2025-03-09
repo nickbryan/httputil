@@ -3,8 +3,6 @@ package httputil
 import (
 	"log/slog"
 	"net/http"
-
-	"github.com/go-playground/validator/v10"
 )
 
 // Ensure that our netHTTPHandler implements the Handler interface.
@@ -30,4 +28,4 @@ func (h netHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.handler.ServeHTTP(w, r)
 }
 
-func (h netHTTPHandler) use(_ *slog.Logger, _ *validator.Validate, _ Guard) {}
+func (h netHTTPHandler) use(_ *slog.Logger, _ Guard) {}

@@ -85,8 +85,10 @@ func main() {
 ```
 
 ## TODO
-* [ ] Finish testing the existing code to achieve sensible coverage.
+* [ ] Should guard return the request and errpr instead of a response? It seems to make sense and would allow setting context.
+* [ ] If doing the above, should guard be renamed to RequestHook or RequestInterceptor or Interceptor
 * [ ] Add a MustString or something similar to problem details to make them easier to test in responses. Might have to make the payload more static to allow unmashaling for test or something.
+* [ ] Depending on what is done above, test the unmarshal behaviour of problem.
 * [ ] Add common middleware.
 * [ ] How do we allow people to return a custom error payload if required so they are not locked to problem json?
 * [ ] Implement proper JSON pointer handling on validation errors as per https://datatracker.ietf.org/doc/html/rfc6901.

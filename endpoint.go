@@ -3,8 +3,6 @@ package httputil
 import (
 	"log/slog"
 	"net/http"
-
-	"github.com/go-playground/validator/v10"
 )
 
 type (
@@ -79,8 +77,8 @@ type handlerMiddlewareWrapper struct {
 	middleware MiddlewareFunc
 }
 
-func (h handlerMiddlewareWrapper) use(l *slog.Logger, v *validator.Validate, g Guard) {
-	h.handler.use(l, v, g)
+func (h handlerMiddlewareWrapper) use(l *slog.Logger, g Guard) {
+	h.handler.use(l, g)
 }
 
 func (h handlerMiddlewareWrapper) ServeHTTP(w http.ResponseWriter, r *http.Request) {

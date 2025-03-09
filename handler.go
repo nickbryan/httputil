@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-
-	"github.com/go-playground/validator/v10"
 )
 
 type (
@@ -24,7 +22,7 @@ type (
 	// Handler wraps a http.Handler with the ability to initialize
 	// the implementation with the Server logger and validator.
 	Handler interface {
-		use(l *slog.Logger, v *validator.Validate, g Guard)
+		use(l *slog.Logger, g Guard)
 		http.Handler
 	}
 

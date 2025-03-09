@@ -10,8 +10,6 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
-
-	"github.com/go-playground/validator/v10"
 )
 
 // Server is an HTTP server with graceful shutdown capabilities.
@@ -22,9 +20,8 @@ type Server struct {
 		Shutdown(ctx context.Context) error
 	}
 
-	logger    *slog.Logger
-	router    *http.ServeMux
-	validator *validator.Validate
+	logger *slog.Logger
+	router *http.ServeMux
 
 	address         string
 	shutdownTimeout time.Duration
@@ -40,7 +37,6 @@ func NewServer(logger *slog.Logger, options ...ServerOption) *Server {
 		Listener:        nil, // We need to set Listener after we have a server as we pass server as the handler.
 		logger:          logger,
 		router:          http.NewServeMux(),
-		validator:       defaultValidator(),
 		shutdownTimeout: opts.shutdownTimeout,
 		address:         opts.address,
 	}
@@ -64,7 +60,7 @@ func NewServer(logger *slog.Logger, options ...ServerOption) *Server {
 // underlying router.
 func (s *Server) Register(endpoints ...Endpoint) {
 	for _, endpoint := range endpoints {
-		endpoint.Handler.use(s.logger, s.validator, endpoint.guard)
+		endpoint.Handler.use(s.logger, endpoint.guard)
 		s.router.Handle(endpoint.Method+" "+endpoint.Path, endpoint.Handler)
 	}
 }
