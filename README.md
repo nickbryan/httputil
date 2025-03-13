@@ -23,10 +23,12 @@ removing boilerplate code required to build web services.
 
 ## Quick Start
 ```go
+// Package main is a test example.
 package main
 
 import (
   "context"
+  "fmt"
   "log/slog"
   "net/http"
 
@@ -36,12 +38,21 @@ import (
   "github.com/nickbryan/httputil/problem"
 )
 
-type authGuard struct{}
+func newAuthInterceptor() httputil.RequestInterceptorFunc {
+  return func(r *http.Request) (*http.Request, error) {
+    params := struct {
+      Token string `header:"Bearer" validate:"required"`
+    }{}
+    if err := httputil.BindValidParameters(r, &params); err != nil {
+      return nil, fmt.Errorf("binding parameters: %w", err)
+    }
 
-func newAuthGuard() authGuard { return authGuard{} }
+    if params.Token == "valid" {
+      return r.WithContext(context.WithValue(r.Context(), "user", "123")), nil
+    }
 
-func (g authGuard) Guard(r *http.Request) (*httputil.Response, error) {
-  return nil, problem.Unauthorized(r)
+    return nil, problem.Unauthorized(r)
+  }
 }
 
 func newTestHandler(l *slog.Logger) httputil.Handler {
@@ -54,23 +65,23 @@ func newTestHandler(l *slog.Logger) httputil.Handler {
   }
 
   return httputil.NewJSONHandler(func(r httputil.RequestParams[params]) (*httputil.Response, error) {
-    l.Info("written")
+    l.InfoContext(r.Context(), "written")
     return httputil.OK(response{Value: r.Params.Test})
   })
 }
 
 func endpoints(l *slog.Logger) httputil.EndpointGroup {
   return httputil.EndpointGroup{
-    httputil.ProtectEndpoint(httputil.Endpoint{
-      Method:  http.MethodGet,
-      Path:    "/balue",
+    {
+      Method:  http.MethodPost,
+      Path:    "/login",
       Handler: newTestHandler(l),
-    }, newAuthGuard()),
-    httputil.ProtectEndpoint(httputil.Endpoint{
+    },
+    httputil.NewEndpointWithRequestInterceptor(httputil.Endpoint{
       Method:  http.MethodPost,
       Path:    "/test",
       Handler: newTestHandler(l),
-    }, newAuthGuard()),
+    }, newAuthInterceptor()),
   }
 }
 
@@ -78,10 +89,9 @@ func main() {
   l := slogutil.NewJSONLogger()
   server := httputil.NewServer(l)
 
-  server.Register(endpoints(l).WithPrefix("/api").WithGuard(newAuthGuard())...)
+  server.Register(endpoints(l).WithPrefix("/api")...)
   server.Serve(context.Background())
 }
-
 ```
 
 ## TODO
