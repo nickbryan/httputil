@@ -27,7 +27,7 @@ type DetailedError struct {
 	// Instance is a URI reference that identifies the specific occurrence of the problem.
 	Instance string `json:"instance"`
 	// ExtensionMembers is a key-value map for vendor-specific extension members.
-	ExtensionMembers map[string]any `json:"-"`
+	ExtensionMembers map[string]any `json:"-"` // See DetailedError.UnmarshalJSON for how this is mapped.
 }
 
 // WithDetail creates a new DetailedError instance with the provided detail
@@ -104,15 +104,14 @@ func (d *DetailedError) MustMarshalJSON() []byte {
 // UnmarshalJSON implements the `json.Unmarshaler` interface for DetailedError,
 // handling known and unknown fields gracefully.
 func (d *DetailedError) UnmarshalJSON(data []byte) error {
-	//nolint:exhaustruct // Zero value to unmarshal known fields into.
-	known := struct {
+	var known struct {
 		Type     string `json:"type"`
 		Title    string `json:"title"`
 		Detail   string `json:"detail"`
 		Status   int    `json:"status"`
 		Code     string `json:"code"`
 		Instance string `json:"instance"`
-	}{}
+	}
 
 	if err := json.Unmarshal(data, &known); err != nil {
 		return fmt.Errorf("unmarshaling DetailedError known fields: %w", err)

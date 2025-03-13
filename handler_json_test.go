@@ -429,8 +429,8 @@ func TestNewJSONHandler(t *testing.T) {
 			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
-		"returns the response when a guard is set as nil": {
-			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
+		"returns the response when a interceptor is set as nil": {
+			endpoint: httputil.NewEndpointWithRequestInterceptor(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
 				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
@@ -439,61 +439,90 @@ func TestNewJSONHandler(t *testing.T) {
 			}, nil),
 			wantResponseStatusCode: http.StatusNoContent,
 		},
-		"returns the response when the guard returns nil": {
-			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
+		"returns the response when the interceptor does not block the handler": {
+			endpoint: httputil.NewEndpointWithRequestInterceptor(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
 				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return httputil.NoContent()
 				}),
-			}, nilnilGuard{}),
+			}, noopRequestInterceptor{}),
 			wantResponseStatusCode: http.StatusNoContent,
 		},
-		"returns and logs an error when the guard returns an error": {
-			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
+		"returns and logs an error when the interceptor blocks the handler by returning an error": {
+			endpoint: httputil.NewEndpointWithRequestInterceptor(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
 				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return httputil.NoContent()
 				}),
-			}, errorGuard{}),
+			}, errorRequestInterceptor{}),
 			wantLogs: []slogmem.RecordQuery{{
 				Message: "JSON handler received an unhandled error",
 				Level:   slog.LevelError,
 				Attrs: map[string]slog.Value{
-					"error": slog.AnyValue("calling guard: some error"),
+					"error": slog.AnyValue("calling request interceptor: some error"),
 				},
 			}},
 			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
-		"returns a problem error when the guard returns an problem error type": {
-			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
+		"returns a problem error when the interceptor blocks the handler by returning a problem error type": {
+			endpoint: httputil.NewEndpointWithRequestInterceptor(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
 				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return httputil.NoContent()
 				}),
-			}, problemGuard{}),
+			}, problemRequestInterceptor{}),
 			wantResponseBody:       `{"code":"400-01","detail":"The request is invalid or malformed","instance":"/test","status":400,"title":"Bad Request","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/bad-request.md"}`,
 			wantResponseStatusCode: http.StatusBadRequest,
 		},
-		"returns a response when the guard returns a response": {
-			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
+		"allows the interceptor to add to the request context which is passed to the handler for consumption": {
+			endpoint: httputil.NewEndpointWithRequestInterceptor(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
-					return httputil.NoContent()
+				Handler: httputil.NewJSONHandler(func(r httputil.RequestEmpty) (*httputil.Response, error) {
+					ctxVal, ok := r.Context().Value(addToContextRequestInterceptorCtxKey{}).(addToContextRequestInterceptor)
+					if !ok {
+						return nil, problem.BusinessRuleViolation(r.Request).WithDetail("ctxVal not set")
+					}
+
+					return httputil.OK(map[string]string{"context": string(ctxVal)})
 				}),
-			}, redirectToCtxGuard{}),
+			}, addToContextRequestInterceptor("my context value")),
 			request: httptest.NewRequestWithContext(
-				context.WithValue(t.Context(), ctxKeyRedirect{}, "http://example.com"),
+				context.WithValue(t.Context(), addToContextRequestInterceptorCtxKey{}, "should not see this"),
 				http.MethodGet,
 				"/test",
 				nil,
 			),
-			wantHeader:             http.Header{"Content-Type": []string{"application/json"}, "Location": []string{"http://example.com"}},
-			wantResponseStatusCode: http.StatusPermanentRedirect,
+			wantResponseBody:       `{"context":"my context value"}`,
+			wantResponseStatusCode: http.StatusOK,
+		},
+		"uses the current request if the interceptor returns nil nil": {
+			endpoint: httputil.NewEndpointWithRequestInterceptor(httputil.Endpoint{
+				Method: http.MethodGet,
+				Path:   "/test",
+				Handler: httputil.NewJSONHandler(func(r httputil.RequestEmpty) (*httputil.Response, error) {
+					ctxVal, ok := r.Context().Value(addToContextRequestInterceptorCtxKey{}).(addToContextRequestInterceptor)
+					if !ok {
+						return nil, problem.BusinessRuleViolation(r.Request).WithDetail("ctxVal not set")
+					}
+
+					return httputil.OK(map[string]string{"context": string(ctxVal)})
+				}),
+			}, httputil.RequestInterceptorFunc(func(_ *http.Request) (*http.Request, error) {
+				return nil, nil
+			})),
+			request: httptest.NewRequestWithContext(
+				context.WithValue(t.Context(), addToContextRequestInterceptorCtxKey{}, addToContextRequestInterceptor("my original context value")),
+				http.MethodGet,
+				"/test",
+				nil,
+			),
+			wantResponseBody:       `{"context":"my original context value"}`,
+			wantResponseStatusCode: http.StatusOK,
 		},
 		"writes a log when closing the request body errors": {
 			endpoint: httputil.Endpoint{
@@ -772,52 +801,36 @@ func (errorTransformer) Transform(_ context.Context) error {
 	return errors.New("some error")
 }
 
-type funcGuard func(r *http.Request) (*httputil.Response, error)
+type noopRequestInterceptor struct{}
 
-func (f funcGuard) Guard(r *http.Request) (*httputil.Response, error) {
-	return f(r)
+var _ httputil.RequestInterceptor = noopRequestInterceptor{}
+
+func (noopRequestInterceptor) InterceptRequest(r *http.Request) (*http.Request, error) {
+	return r, nil
 }
 
-type nilnilGuard struct{}
+type errorRequestInterceptor struct{}
 
-var _ httputil.Guard = nilnilGuard{}
+var _ httputil.RequestInterceptor = errorRequestInterceptor{}
 
-func (nilnilGuard) Guard(_ *http.Request) (*httputil.Response, error) {
-	return httputil.NothingToHandle()
-}
-
-type errorGuard struct{}
-
-var _ httputil.Guard = errorGuard{}
-
-func (errorGuard) Guard(_ *http.Request) (*httputil.Response, error) {
+func (errorRequestInterceptor) InterceptRequest(_ *http.Request) (*http.Request, error) {
 	return nil, errors.New("some error")
 }
 
-type problemGuard struct{}
+type problemRequestInterceptor struct{}
 
-var _ httputil.Guard = problemGuard{}
+var _ httputil.RequestInterceptor = problemRequestInterceptor{}
 
-func (problemGuard) Guard(r *http.Request) (*httputil.Response, error) {
+func (problemRequestInterceptor) InterceptRequest(r *http.Request) (*http.Request, error) {
 	return nil, problem.BadRequest(r)
 }
 
-type redirectToCtxGuard struct{}
+type addToContextRequestInterceptor string
 
-var _ httputil.Guard = redirectToCtxGuard{}
+var _ httputil.RequestInterceptor = addToContextRequestInterceptor("")
 
-type ctxKeyRedirect struct{}
+type addToContextRequestInterceptorCtxKey struct{}
 
-func (redirectToCtxGuard) Guard(r *http.Request) (*httputil.Response, error) {
-	location := r.Context().Value(ctxKeyRedirect{})
-	if location == nil {
-		return nil, errors.New("location was not set on the context")
-	}
-
-	locationString, ok := location.(string)
-	if !ok {
-		return nil, errors.New("location was not a string")
-	}
-
-	return httputil.Redirect(http.StatusPermanentRedirect, locationString)
+func (ri addToContextRequestInterceptor) InterceptRequest(r *http.Request) (*http.Request, error) {
+	return r.WithContext(context.WithValue(r.Context(), addToContextRequestInterceptorCtxKey{}, ri)), nil
 }

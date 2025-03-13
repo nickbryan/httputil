@@ -22,7 +22,7 @@ var _ Handler = &jsonHandler[any, any]{} //nolint:exhaustruct // Compile time im
 
 type jsonHandler[D, P any] struct {
 	action                      Action[D, P]
-	guard                       Guard
+	requestInterceptor          RequestInterceptor
 	logger                      *slog.Logger
 	reqTypeKind, paramsTypeKind reflect.Kind
 }
@@ -31,17 +31,17 @@ type jsonHandler[D, P any] struct {
 // deserialize JSON request bodies and serialize JSON response bodies.
 func NewJSONHandler[D, P any](action Action[D, P]) Handler {
 	return &jsonHandler[D, P]{
-		action: action,
-		guard:  nil,
-		logger: nil,
+		action:             action,
+		requestInterceptor: nil,
+		logger:             nil,
 		// Cache these early to save on reflection calls.
 		reqTypeKind:    reflect.TypeFor[D]().Kind(),
 		paramsTypeKind: reflect.TypeFor[P]().Kind(),
 	}
 }
 
-func (h *jsonHandler[D, P]) use(l *slog.Logger, g Guard) {
-	h.logger, h.guard = l, g
+func (h *jsonHandler[D, P]) use(l *slog.Logger, g RequestInterceptor) {
+	h.logger, h.requestInterceptor = l, g
 }
 
 // ServeHTTP implements the http.Handler interface. It reads the request body,
@@ -53,7 +53,7 @@ func (h *jsonHandler[D, P]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	//nolint:exhaustruct // Zero value for D and P is unknown.
 	request := Request[D, P]{Request: r, ResponseWriter: w}
 
-	if h.requestInterceptedByGuard(&request) || !h.requestHydratedOK(&request) {
+	if h.requestInterceptBlocksHandler(&request) || !h.requestHydratedOK(&request) {
 		return
 	}
 
@@ -63,23 +63,22 @@ func (h *jsonHandler[D, P]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.writeSuccessfulResponse(&request, response) //nolint:contextcheck // Context is part of the request struct.
+	h.writeSuccessfulResponse(&request, response)
 }
 
-func (h *jsonHandler[D, P]) requestInterceptedByGuard(req *Request[D, P]) bool {
-	if h.guard == nil {
+func (h *jsonHandler[D, P]) requestInterceptBlocksHandler(req *Request[D, P]) bool {
+	if h.requestInterceptor == nil {
 		return false
 	}
 
-	response, err := h.guard.Guard(req.Request)
+	interceptedRequest, err := h.requestInterceptor.InterceptRequest(req.Request)
 	if err != nil {
-		h.writeErrorResponse(req.Context(), req, fmt.Errorf("calling guard: %w", err))
+		h.writeErrorResponse(req.Context(), req, fmt.Errorf("calling request interceptor: %w", err))
 		return true
 	}
 
-	if response != nil {
-		h.writeSuccessfulResponse(req, response)
-		return true
+	if interceptedRequest != nil {
+		req.Request = interceptedRequest
 	}
 
 	return false

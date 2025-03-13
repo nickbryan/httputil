@@ -12,18 +12,19 @@ type (
 	// has data of type D and params of type P and returns a Response or an error.
 	Action[D, P any] func(r Request[D, P]) (*Response, error)
 
-	// Guard will be called by the Handler before a request is handled to allow for
-	// processes such as auth to run. A Guard will not be called for a standard
-	// http.Handler.
-	Guard interface {
-		Guard(r *http.Request) (*Response, error)
-	}
-
 	// Handler wraps a http.Handler with the ability to initialize
 	// the implementation with the Server logger and validator.
 	Handler interface {
-		use(l *slog.Logger, g Guard)
+		use(l *slog.Logger, g RequestInterceptor)
 		http.Handler
+	}
+
+	// RequestInterceptor is an interface for modifying or inspecting HTTP requests
+	// before they are processed further. InterceptRequest takes an HTTP request as
+	// input, performs operations on it, and returns a modified request or an error.
+	// A Handler will format the error accordingly.
+	RequestInterceptor interface {
+		InterceptRequest(r *http.Request) (*http.Request, error)
 	}
 
 	// Transformer allows for operations to be performed on the Request, Response or
@@ -60,6 +61,14 @@ type (
 		redirect string
 	}
 )
+
+// RequestInterceptorFunc is a function type for modifying or inspecting an HTTP
+// request, potentially returning an altered request.
+type RequestInterceptorFunc func(r *http.Request) (*http.Request, error)
+
+func (rif RequestInterceptorFunc) InterceptRequest(r *http.Request) (*http.Request, error) {
+	return rif(r)
+}
 
 // NewResponse creates a new Response object with the given status code and data.
 func NewResponse(code int, data any) *Response {
@@ -102,7 +111,7 @@ func NoContent() (*Response, error) {
 
 // NothingToHandle returns a nil Response and a nil error, intentionally
 // representing a scenario with no response output so the Handler does not
-// attempt to process a response. This adds clarity when a Guard does not block
+// attempt to process a response. This adds clarity when a RequestInterceptor does not block
 // the request or when acting on Request.ResponseWriter directly.
 func NothingToHandle() (*Response, error) {
 	return nil, nil //nolint:nilnil // Intentional.

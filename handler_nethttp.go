@@ -28,4 +28,4 @@ func (h netHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.handler.ServeHTTP(w, r)
 }
 
-func (h netHTTPHandler) use(_ *slog.Logger, _ Guard) {}
+func (h netHTTPHandler) use(_ *slog.Logger, _ RequestInterceptor) {}
