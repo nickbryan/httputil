@@ -2,6 +2,7 @@
 package testutil
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -10,9 +11,29 @@ import (
 )
 
 // DiffJSON compares two JSON strings and returns a diff string highlighting the differences.
+// Invalid whitespace within JSON strings is removed before comparison.
 func DiffJSON(x, y string) string {
-	x, y = strings.TrimSpace(x), strings.TrimSpace(y)
-	return cmp.Diff(x, y, cmp.FilterValues(isValidJSON, cmp.Transformer("JSON", asJSON)))
+	return cmp.Diff(
+		compactJSON(x),
+		compactJSON(y),
+		cmp.FilterValues(isValidJSON, cmp.Transformer("JSON", asJSON)),
+	)
+}
+
+// compactJSON removes whitespace from a JSON string.
+// If the input is not valid JSON, it returns the original string trimmed.
+func compactJSON(in string) string {
+	trimmed := strings.TrimSpace(in)
+	if !json.Valid([]byte(trimmed)) {
+		return trimmed
+	}
+
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, []byte(trimmed)); err != nil {
+		return trimmed
+	}
+
+	return buf.String()
 }
 
 // isValidJSON checks if both provided byte slices represent valid JSON data.

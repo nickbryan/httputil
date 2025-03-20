@@ -95,10 +95,7 @@ func main() {
 ```
 
 ## TODO
-* [ ] Add a MustString or something similar to problem details to make them easier to test in responses. Might have to make the payload more static to allow unmashaling for test or something.
-* [ ] Depending on what is done above, test the unmarshal behaviour of problem.
 * [ ] Add common middleware.
-* [ ] How do we allow people to return a custom error payload if required so they are not locked to problem json?
 * [ ] Implement proper JSON pointer handling on validation errors as per https://datatracker.ietf.org/doc/html/rfc6901.
 * [ ] Write the client side.
 * [ ] Finalise all default values, ensure they are correct.

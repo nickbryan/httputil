@@ -18,6 +18,7 @@ import (
 	"github.com/nickbryan/httputil"
 	"github.com/nickbryan/httputil/internal/testutil"
 	"github.com/nickbryan/httputil/problem"
+	"github.com/nickbryan/httputil/problem/problemtest"
 )
 
 func TestNewJSONHandler(t *testing.T) {
@@ -58,7 +59,7 @@ func TestNewJSONHandler(t *testing.T) {
 					"error": slog.AnyValue("calling action: some error"),
 				},
 			}},
-			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
+			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"the response content type is application/problem+json when a problem response is returned": {
@@ -70,7 +71,7 @@ func TestNewJSONHandler(t *testing.T) {
 				}),
 			},
 			wantHeader:             http.Header{"Content-Type": {"application/problem+json"}},
-			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
+			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"returns an internal server error status code and logs a warning when the request body cannot be read": {
@@ -89,7 +90,7 @@ func TestNewJSONHandler(t *testing.T) {
 					"error": slog.AnyValue("the request body was invalid"),
 				},
 			}},
-			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
+			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"returns a bad request status code with errors if the payload is empty but request data is expected": {
@@ -108,7 +109,7 @@ func TestNewJSONHandler(t *testing.T) {
 			}(),
 			request:                httptest.NewRequest(http.MethodGet, "/test", strings.NewReader("")),
 			wantHeader:             http.Header{"Content-Type": {"application/problem+json"}},
-			wantResponseBody:       `{"code":"400-01","detail":"The server received an unexpected empty request body","instance":"/test","status":400,"title":"Bad Request","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/bad-request.md"}`,
+			wantResponseBody:       problem.BadRequest(problemtest.NewRequest("/test")).WithDetail("The server received an unexpected empty request body").MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusBadRequest,
 		},
 		"returns a bad request status code and logs a warning when the request body cannot be decoded as json": {
@@ -128,7 +129,7 @@ func TestNewJSONHandler(t *testing.T) {
 					"error": slog.AnyValue("unexpected end of JSON input"),
 				},
 			}},
-			wantResponseBody:       `{"code":"400-01","detail":"The request is invalid or malformed","instance":"/test","status":400,"title":"Bad Request","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/bad-request.md"}`,
+			wantResponseBody:       problem.BadRequest(problemtest.NewRequest("/test")).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusBadRequest,
 		},
 		"returns an unprocessable entity request status code with errors if the payload fails validation": {
@@ -150,9 +151,12 @@ func TestNewJSONHandler(t *testing.T) {
 					}),
 				}
 			}(),
-			request:                httptest.NewRequest(http.MethodGet, "/test", strings.NewReader("{}")),
-			wantHeader:             http.Header{"Content-Type": {"application/problem+json"}},
-			wantResponseBody:       `{"code":"422-02","detail":"The request data violated one or more validation constraints","instance":"/test","status":422,"title":"Constraint Violation","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/constraint-violation.md","violations":[{"detail":"thing is required","pointer":"#/inner/thing"}]}`,
+			request:    httptest.NewRequest(http.MethodGet, "/test", strings.NewReader("{}")),
+			wantHeader: http.Header{"Content-Type": {"application/problem+json"}},
+			wantResponseBody: problem.ConstraintViolation(
+				problemtest.NewRequest("/test"),
+				problem.Property{Detail: "thing is required", Pointer: "/inner/thing"},
+			).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusUnprocessableEntity,
 		},
 		"describes the validation errors appropriately": {
@@ -174,9 +178,17 @@ func TestNewJSONHandler(t *testing.T) {
 					}),
 				}
 			}(),
-			request:                httptest.NewRequest(http.MethodGet, "/test", strings.NewReader("{}")),
-			wantHeader:             http.Header{"Content-Type": {"application/problem+json"}},
-			wantResponseBody:       `{"code":"422-02","detail":"The request data violated one or more validation constraints","instance":"/test","status":422,"title":"Constraint Violation","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/constraint-violation.md","violations":[{"detail":"required is required","pointer":"#/required"},{"detail":"email should be a valid email","pointer":"#/email"},{"detail":"uuid should be a valid UUID","pointer":"#/uuid"},{"detail":"uuid4 should be a valid UUID4","pointer":"#/uuid4"},{"detail":"phone should be a valid international phone number (e.g. +33 6 06 06 06 06)","pointer":"#/phone"},{"detail":"field should be min=3","pointer":"#/field"}]}`,
+			request:    httptest.NewRequest(http.MethodGet, "/test", strings.NewReader("{}")),
+			wantHeader: http.Header{"Content-Type": {"application/problem+json"}},
+			wantResponseBody: problem.ConstraintViolation(
+				problemtest.NewRequest("/test"),
+				problem.Property{Detail: "required is required", Pointer: "/required"},
+				problem.Property{Detail: "email should be a valid email", Pointer: "/email"},
+				problem.Property{Detail: "uuid should be a valid UUID", Pointer: "/uuid"},
+				problem.Property{Detail: "uuid4 should be a valid UUID4", Pointer: "/uuid4"},
+				problem.Property{Detail: "phone should be a valid international phone number (e.g. +33 6 06 06 06 06)", Pointer: "/phone"},
+				problem.Property{Detail: "field should be min=3", Pointer: "/field"},
+			).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusUnprocessableEntity,
 		},
 		"the request body can be read again in the action after it has been decoded into the request data type": {
@@ -230,7 +242,7 @@ func TestNewJSONHandler(t *testing.T) {
 					"error": slog.AnyValue("calling action: some error"),
 				},
 			}},
-			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
+			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"status code is used from the response on successful request": {
@@ -289,7 +301,7 @@ func TestNewJSONHandler(t *testing.T) {
 					"error": slog.AnyValue("calling action: some error"),
 				},
 			}},
-			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
+			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"redirects the request when a redirect response is returned": {
@@ -350,7 +362,7 @@ func TestNewJSONHandler(t *testing.T) {
 					"error": slog.AnyValue("transforming data: some error"),
 				},
 			}},
-			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
+			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"params data is transformed before the action is called": {
@@ -391,7 +403,7 @@ func TestNewJSONHandler(t *testing.T) {
 					"error": slog.AnyValue("transforming data: some error"),
 				},
 			}},
-			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
+			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"response data is transformed after the action is called": {
@@ -426,7 +438,7 @@ func TestNewJSONHandler(t *testing.T) {
 					"error": slog.AnyValue("transforming data: some error"),
 				},
 			}},
-			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
+			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"returns the response when a interceptor is set as nil": {
@@ -464,7 +476,7 @@ func TestNewJSONHandler(t *testing.T) {
 					"error": slog.AnyValue("calling request interceptor: some error"),
 				},
 			}},
-			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
+			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"returns a problem error when the interceptor blocks the handler by returning a problem error type": {
@@ -475,7 +487,7 @@ func TestNewJSONHandler(t *testing.T) {
 					return httputil.NoContent()
 				}),
 			}, problemRequestInterceptor{}),
-			wantResponseBody:       `{"code":"400-01","detail":"The request is invalid or malformed","instance":"/test","status":400,"title":"Bad Request","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/bad-request.md"}`,
+			wantResponseBody:       problem.BadRequest(problemtest.NewRequest("/test")).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusBadRequest,
 		},
 		"allows the interceptor to add to the request context which is passed to the handler for consumption": {
@@ -500,7 +512,7 @@ func TestNewJSONHandler(t *testing.T) {
 			wantResponseBody:       `{"context":"my context value"}`,
 			wantResponseStatusCode: http.StatusOK,
 		},
-		"uses the current request if the interceptor returns nil nil": {
+		"uses the current request if the interceptor returns nil": {
 			endpoint: httputil.NewEndpointWithRequestInterceptor(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
@@ -513,7 +525,7 @@ func TestNewJSONHandler(t *testing.T) {
 					return httputil.OK(map[string]string{"context": string(ctxVal)})
 				}),
 			}, httputil.RequestInterceptorFunc(func(_ *http.Request) (*http.Request, error) {
-				return nil, nil
+				return nil, nil //nolint:nilnil // Required for test case.
 			})),
 			request: httptest.NewRequestWithContext(
 				context.WithValue(t.Context(), addToContextRequestInterceptorCtxKey{}, addToContextRequestInterceptor("my original context value")),
@@ -551,7 +563,7 @@ func TestNewJSONHandler(t *testing.T) {
 				}),
 			},
 			request: func() *http.Request {
-				// A nil body is replaced during creation of a new http.Request.
+				// A nil body is replaced during creation of a new http.NewRequest.
 				req := httptest.NewRequest(http.MethodGet, "/test", nil)
 				req.Body = nil
 
@@ -652,15 +664,20 @@ func TestNewJSONHandler(t *testing.T) {
 					}),
 				}
 			}(),
-			request:                httptest.NewRequest(http.MethodGet, "/test", nil),
-			wantResponseBody:       `{"code":"400-02","detail":"The request parameters are invalid or malformed","instance":"/test","status":400,"title":"Bad Parameters","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/bad-parameters.md","violations":[{"parameter":"name","detail":"name is required","type":"required"},{"parameter":"X-Correlation-Id","detail":"X-Correlation-Id is required","type":"required"},{"parameter":"user","detail":"user is required","type":"required"}]}`,
+			request: httptest.NewRequest(http.MethodGet, "/test", nil),
+			wantResponseBody: problem.BadParameters(
+				problemtest.NewRequest("/test"),
+				problem.Parameter{Parameter: "name", Detail: "name is required", Type: "query"},
+				problem.Parameter{Parameter: "X-Correlation-Id", Detail: "X-Correlation-Id is required", Type: "header"},
+				problem.Parameter{Parameter: "user", Detail: "user is required", Type: "path"},
+			).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusBadRequest,
 		},
 		"returns an error when trying to unmarshal into a value that is not a struct": {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(r httputil.RequestParams[map[string]string]) (*httputil.Response, error) {
+				Handler: httputil.NewJSONHandler(func(_ httputil.RequestParams[map[string]string]) (*httputil.Response, error) {
 					return httputil.NoContent()
 				}),
 			},
@@ -672,7 +689,7 @@ func TestNewJSONHandler(t *testing.T) {
 					"type": slog.StringValue("map"),
 				},
 			}},
-			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
+			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"logs and returns an error when params extraction fails unexpectedly": {
@@ -697,7 +714,7 @@ func TestNewJSONHandler(t *testing.T) {
 					"error": slog.AnyValue(`setting field value: failed to convert parameter "default" to int: strconv.Atoi: parsing "not an int": invalid syntax`),
 				},
 			}},
-			wantResponseBody:       `{"code":"500-01","detail":"The server encountered an unexpected internal error","instance":"/test","status":500,"title":"Server Error","type":"https://github.com/nickbryan/httputil/blob/main/docs/problems/server-error.md"}`,
+			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 	}

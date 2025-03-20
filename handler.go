@@ -66,6 +66,7 @@ type (
 // request, potentially returning an altered request.
 type RequestInterceptorFunc func(r *http.Request) (*http.Request, error)
 
+// InterceptRequest applies the RequestInterceptorFunc to modify or inspect the provided HTTP request.
 func (rif RequestInterceptorFunc) InterceptRequest(r *http.Request) (*http.Request, error) {
 	return rif(r)
 }

@@ -13,6 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"github.com/nickbryan/slogutil"
 	"github.com/nickbryan/slogutil/slogmem"
 
@@ -190,16 +193,16 @@ func TestServerServeHTTP(t *testing.T) {
 			t.Errorf("unexpected status code, want: %d, got: %d", http.StatusInternalServerError, response.Code)
 		}
 
-		query := slogmem.RecordQuery{
-			Level:   slog.LevelError,
-			Message: "Handler panicked",
-			Attrs: map[string]slog.Value{
-				"error": slog.AnyValue("panic from handler"),
-			},
-		}
+		want := []map[string]any{{
+			slog.LevelKey:   slog.LevelError,
+			slog.MessageKey: "Handler panicked",
+			"error":         "panic from handler",
+		}}
 
-		if ok, diff := records.Contains(query); !ok {
-			t.Errorf("logs does not contain query, want: %+v, got:\n%s", query, diff)
+		if diff := cmp.Diff(want, records.AsSliceOfNestedKeyValuePairs(), cmpopts.IgnoreMapEntries(func(k string, _ any) bool {
+			return k == slog.TimeKey || k == "stack" // Stack trace will be different on each machine so ignore its output.
+		})); diff != "" {
+			t.Errorf("logs does not contain query, want: %+v, got:\n%s", want, diff)
 		}
 	})
 }

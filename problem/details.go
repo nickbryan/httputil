@@ -101,6 +101,12 @@ func (d *DetailedError) MustMarshalJSON() []byte {
 	return bytes
 }
 
+// MustMarshalJSONString converts the DetailedError to a JSON string and panics
+// if an error occurs during marshaling.
+func (d *DetailedError) MustMarshalJSONString() string {
+	return string(d.MustMarshalJSON())
+}
+
 // UnmarshalJSON implements the `json.Unmarshaler` interface for DetailedError,
 // handling known and unknown fields gracefully.
 func (d *DetailedError) UnmarshalJSON(data []byte) error {
@@ -127,16 +133,14 @@ func (d *DetailedError) UnmarshalJSON(data []byte) error {
 		ExtensionMembers: nil,
 	}
 
-	var fields map[string]any
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return fmt.Errorf("unmarshaling DetailedError fields: %w", err)
+	if err := json.Unmarshal(data, &d.ExtensionMembers); err != nil {
+		// This shouldn't every happen because the first unmarshal will fail before this gets called.
+		return fmt.Errorf("unmarshaling DetailedError extension members: %w", err)
 	}
 
-	maps.DeleteFunc(fields, func(k string, _ any) bool {
+	maps.DeleteFunc(d.ExtensionMembers, func(k string, _ any) bool {
 		return k == "type" || k == "title" || k == "detail" || k == "status" || k == "code" || k == "instance"
 	})
-
-	d.ExtensionMembers = fields
 
 	return nil
 }

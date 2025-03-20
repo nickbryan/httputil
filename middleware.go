@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
 )
 
 // MiddlewareFunc defines a function type for HTTP middleware. A MiddlewareFunc
@@ -21,7 +22,7 @@ func newPanicRecoveryMiddleware(logger *slog.Logger) MiddlewareFunc {
 			defer func(ctx context.Context) {
 				if err := recover(); err != nil {
 					w.WriteHeader(http.StatusInternalServerError)
-					logger.ErrorContext(ctx, "Handler panicked", slog.Any("error", err))
+					logger.ErrorContext(ctx, "Handler panicked", slog.Any("error", err), slog.String("stack", string(debug.Stack())))
 				}
 			}(r.Context())
 

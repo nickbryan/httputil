@@ -43,7 +43,7 @@ func TestBindValidParameters(t *testing.T) {
 		output      any
 		expected    any
 		expectErr   bool
-		expectedErr string // TODO: better testing of the returned errors
+		expectedErr string
 	}{
 		"should extract query params, headers, and path variable correctly": {
 			request: func() *http.Request {

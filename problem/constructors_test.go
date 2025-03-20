@@ -10,7 +10,7 @@ import (
 func TestConstructors(t *testing.T) {
 	t.Parallel()
 
-	testDetailedError(t, map[string]detailedErrorTestCase{
+	testDetailedErrorMarshalJSON(t, map[string]detailedErrorTestCase{
 		"bad parameters sets the expected problem details for the resource instance when no fields are passed": {
 			newDetailedError: func(t *testing.T) *problem.DetailedError {
 				t.Helper()
@@ -100,7 +100,7 @@ func TestConstructors(t *testing.T) {
 				t.Helper()
 				return problem.BusinessRuleViolation(newRequest(t, http.MethodGet, "/tests"), problem.Property{
 					Detail:  "Invalid",
-					Pointer: "#/",
+					Pointer: "/",
 				})
 			},
 			want: details{
@@ -110,7 +110,7 @@ func TestConstructors(t *testing.T) {
 				code:           "422-01",
 				title:          "Business Rule Violation",
 				typeIdentifier: "business-rule-violation",
-				extensions:     `,"violations":[{"detail":"Invalid","pointer":"#/"}]`,
+				extensions:     `,"violations":[{"detail":"Invalid","pointer":"/"}]`,
 			},
 		},
 		"business rule violation sets the expected problem details for the resource instance when multiple fields are passed": {
@@ -118,8 +118,8 @@ func TestConstructors(t *testing.T) {
 				t.Helper()
 				return problem.BusinessRuleViolation(
 					newRequest(t, http.MethodGet, "/tests"),
-					problem.Property{Detail: "Invalid", Pointer: "#/thing"},
-					problem.Property{Detail: "Short", Pointer: "#/other"},
+					problem.Property{Detail: "Invalid", Pointer: "/thing"},
+					problem.Property{Detail: "Short", Pointer: "/other"},
 				)
 			},
 			want: details{
@@ -129,7 +129,7 @@ func TestConstructors(t *testing.T) {
 				code:           "422-01",
 				title:          "Business Rule Violation",
 				typeIdentifier: "business-rule-violation",
-				extensions:     `,"violations":[{"detail":"Invalid","pointer":"#/thing"},{"detail":"Short","pointer":"#/other"}]`,
+				extensions:     `,"violations":[{"detail":"Invalid","pointer":"/thing"},{"detail":"Short","pointer":"/other"}]`,
 			},
 		},
 		"constraint violation sets the expected problem details for the resource instance when no fields are passed": {
@@ -152,7 +152,7 @@ func TestConstructors(t *testing.T) {
 				t.Helper()
 				return problem.ConstraintViolation(newRequest(t, http.MethodGet, "/tests"), problem.Property{
 					Detail:  "Invalid",
-					Pointer: "#/",
+					Pointer: "/",
 				})
 			},
 			want: details{
@@ -162,7 +162,7 @@ func TestConstructors(t *testing.T) {
 				code:           "422-02",
 				title:          "Constraint Violation",
 				typeIdentifier: "constraint-violation",
-				extensions:     `,"violations":[{"detail":"Invalid","pointer":"#/"}]`,
+				extensions:     `,"violations":[{"detail":"Invalid","pointer":"/"}]`,
 			},
 		},
 		"constraint violation sets the expected problem details for the resource instance when multiple fields are passed": {
@@ -170,8 +170,8 @@ func TestConstructors(t *testing.T) {
 				t.Helper()
 				return problem.ConstraintViolation(
 					newRequest(t, http.MethodGet, "/tests"),
-					problem.Property{Detail: "Invalid", Pointer: "#/thing"},
-					problem.Property{Detail: "Short", Pointer: "#/other"},
+					problem.Property{Detail: "Invalid", Pointer: "/thing"},
+					problem.Property{Detail: "Short", Pointer: "/other"},
 				)
 			},
 			want: details{
@@ -181,7 +181,7 @@ func TestConstructors(t *testing.T) {
 				code:           "422-02",
 				title:          "Constraint Violation",
 				typeIdentifier: "constraint-violation",
-				extensions:     `,"violations":[{"detail":"Invalid","pointer":"#/thing"},{"detail":"Short","pointer":"#/other"}]`,
+				extensions:     `,"violations":[{"detail":"Invalid","pointer":"/thing"},{"detail":"Short","pointer":"/other"}]`,
 			},
 		},
 		"forbidden sets the expected problem details for the resource instance": {

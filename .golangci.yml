@@ -222,6 +222,7 @@ issues:
         - exhaustruct
         - funlen
         - gocognit
+        - gocyclo
         - maintidx
         - nestif
   exclude-use-default: false

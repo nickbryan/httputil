@@ -1,6 +1,7 @@
 package httputil
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -109,10 +110,14 @@ func BindValidParameters(r *http.Request, output any) error {
 
 	var paramErrors []problem.Parameter
 
+	paramTypes := make(map[string]string)
+
 	for i := range outputVal.NumField() {
 		field := outputVal.Type().Field(i)
 
 		paramName, paramValue, paramType := resolveParamValue(r, field)
+		paramTypes[paramName] = paramType
+
 		if paramValue == "" {
 			continue
 		}
@@ -136,19 +141,9 @@ func BindValidParameters(r *http.Request, output any) error {
 		}
 	}
 
-	if err := validate.StructCtx(r.Context(), output); err != nil {
-		var errs validator.ValidationErrors
-		if errors.As(err, &errs) {
-			for _, err := range errs {
-				paramErrors = append(paramErrors, problem.Parameter{
-					Parameter: strings.Join(strings.Split(err.Namespace(), ".")[1:], "."),
-					Detail:    describeValidationError(err),
-					Type:      problem.ParameterType(err.Tag()),
-				})
-			}
-		} else {
-			return fmt.Errorf("validating struct: %w", err)
-		}
+	paramErrors, err = validateStruct(r.Context(), output, paramTypes, paramErrors)
+	if err != nil {
+		return err
 	}
 
 	if len(paramErrors) > 0 {
@@ -156,6 +151,38 @@ func BindValidParameters(r *http.Request, output any) error {
 	}
 
 	return nil
+}
+
+// validateStruct performs validation on the struct and processes any errors.
+func validateStruct(ctx context.Context, output any, paramTypes map[string]string, paramErrors []problem.Parameter) ([]problem.Parameter, error) {
+	if err := validate.StructCtx(ctx, output); err != nil {
+		var errs validator.ValidationErrors
+
+		if errors.As(err, &errs) {
+			paramErrors = append(paramErrors, processValidationErrors(errs, paramTypes)...)
+		} else {
+			return nil, fmt.Errorf("validating struct: %w", err)
+		}
+	}
+
+	return paramErrors, nil
+}
+
+// processValidationErrors converts validator errors to problem parameters.
+func processValidationErrors(errs validator.ValidationErrors, paramTypes map[string]string) []problem.Parameter {
+	validationErrors := make([]problem.Parameter, 0, len(errs))
+
+	for _, err := range errs {
+		fieldName := strings.Join(strings.Split(err.Namespace(), ".")[1:], ".")
+
+		validationErrors = append(validationErrors, problem.Parameter{
+			Parameter: fieldName,
+			Detail:    describeValidationError(err),
+			Type:      problem.ParameterType(paramTypes[fieldName]),
+		})
+	}
+
+	return validationErrors
 }
 
 func validateOutputType(output any) (reflect.Value, error) {

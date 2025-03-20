@@ -219,7 +219,7 @@ func (h *jsonHandler[D, P]) writeValidationErr(req *Request[D, P], err error) {
 	if errors.As(err, &errs) {
 		properties := make([]problem.Property, 0, len(errs))
 		for _, err := range errs {
-			properties = append(properties, problem.Property{Detail: describeValidationError(err), Pointer: "#/" + strings.Join(strings.Split(err.Namespace(), ".")[1:], "/")})
+			properties = append(properties, problem.Property{Detail: describeValidationError(err), Pointer: "/" + strings.Join(strings.Split(err.Namespace(), ".")[1:], "/")})
 		}
 
 		h.writeErrorResponse(req.Context(), req, problem.ConstraintViolation(req.Request, properties...))
