@@ -32,25 +32,30 @@ func TestServerOptionsDefaults(t *testing.T) {
 		t.Fatalf("listener is not a http.Server")
 	}
 
-	const defaultTimeout = time.Minute
+	const (
+		defaultIdleTimeout       = 30 * time.Second
+		defaultReadTimeout       = 60 * time.Second
+		defaultReadHeaderTimeout = 5 * time.Second
+		defaultWriteTimeout      = 30 * time.Second
+	)
 
 	if got, want := netHTTPServer.Addr, ":8080"; got != want {
 		t.Errorf("default address not set, got: %s, want: %s", got, want)
 	}
 
-	if got, want := netHTTPServer.IdleTimeout, defaultTimeout; got != want {
+	if got, want := netHTTPServer.IdleTimeout, defaultIdleTimeout; got != want {
 		t.Errorf("default idle timeout not set, got: %s, want: %s", got, want)
 	}
 
-	if got, want := netHTTPServer.ReadHeaderTimeout, defaultTimeout; got != want {
+	if got, want := netHTTPServer.ReadHeaderTimeout, defaultReadHeaderTimeout; got != want {
 		t.Errorf("default read header timeout not set, got: %s, want: %s", got, want)
 	}
 
-	if got, want := netHTTPServer.ReadTimeout, defaultTimeout; got != want {
+	if got, want := netHTTPServer.ReadTimeout, defaultReadTimeout; got != want {
 		t.Errorf("default read timeout not set, got: %s, want: %s", got, want)
 	}
 
-	if got, want := netHTTPServer.WriteTimeout, defaultTimeout; got != want {
+	if got, want := netHTTPServer.WriteTimeout, defaultWriteTimeout; got != want {
 		t.Errorf("default write timeout not set, got: %s, want: %s", got, want)
 	}
 }

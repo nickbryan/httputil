@@ -95,12 +95,9 @@ func main() {
 ```
 
 ## TODO
-* [ ] Add common middleware.
 * [ ] Implement proper JSON pointer handling on validation errors as per https://datatracker.ietf.org/doc/html/rfc6901.
+* Finalise all package documentation.
 * [ ] Write the client side.
-* [ ] Finalise all default values, ensure they are correct.
 * [ ] This README needs filling out properly
-* [ ] Update README to highlight problem json as a feature and provide examples of usage.
 * [ ] Document how errors take priority over responses, if an error is returned no response will be written if one is also returned. y.
-* [ ] Finalise all package documentation.
 * [ ] Do I move internal/testutil to its own package too?

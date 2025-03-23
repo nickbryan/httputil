@@ -24,6 +24,7 @@ type Server struct {
 	router *http.ServeMux
 
 	address         string
+	maxBodySize     int64
 	shutdownTimeout time.Duration
 }
 
@@ -37,8 +38,9 @@ func NewServer(logger *slog.Logger, options ...ServerOption) *Server {
 		Listener:        nil, // We need to set Listener after we have a server as we pass server as the handler.
 		logger:          logger,
 		router:          http.NewServeMux(),
-		shutdownTimeout: opts.shutdownTimeout,
 		address:         opts.address,
+		maxBodySize:     opts.maxBodySize,
+		shutdownTimeout: opts.shutdownTimeout,
 	}
 
 	//nolint:exhaustruct // Accept defaults for fields we do not set.
@@ -98,7 +100,11 @@ func (s *Server) Serve(ctx context.Context) {
 // ServeHTTP delegates the request handling to the underlying router. Exposing
 // ServeHTTP allows endpoints to be tested without a running server.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	newPanicRecoveryMiddleware(s.logger)(s.router).ServeHTTP(w, r)
+	newPanicRecoveryMiddleware(s.logger)(
+		newMaxBodySizeMiddleware(s.logger, s.maxBodySize)(
+			s.router,
+		),
+	).ServeHTTP(w, r)
 }
 
 type netHTTPServerLogAdapter struct {

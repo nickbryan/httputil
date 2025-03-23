@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -203,6 +205,44 @@ func TestServerServeHTTP(t *testing.T) {
 			return k == slog.TimeKey || k == "stack" // Stack trace will be different on each machine so ignore its output.
 		})); diff != "" {
 			t.Errorf("logs does not contain query, want: %+v, got:\n%s", want, diff)
+		}
+	})
+
+	t.Run("limits the request body", func(t *testing.T) {
+		t.Parallel()
+
+		logger, records := slogutil.NewInMemoryLogger(slog.LevelDebug)
+		svr := httputil.NewServer(logger, httputil.WithMaxBodySize(0))
+
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("some request body"))
+
+		svr.Register(httputil.Endpoint{
+			Method: http.MethodPost,
+			Path:   "/",
+			Handler: httputil.NewNetHTTPHandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				if _, err := io.ReadAll(r.Body); err != nil {
+					t.Fatalf("unexpected error reading request body: %s", err.Error())
+				}
+			}),
+		})
+
+		svr.ServeHTTP(response, request)
+
+		if response.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("unexpected status code, want: %d, got: %d", http.StatusRequestEntityTooLarge, response.Code)
+		}
+
+		query := slogmem.RecordQuery{
+			Level:   slog.LevelWarn,
+			Message: "Request body exceeds max bytes limit",
+			Attrs: map[string]slog.Value{
+				"max_bytes": slog.Int64Value(0),
+			},
+		}
+
+		if ok, diff := records.Contains(query); !ok {
+			t.Errorf("logs does not contain query, diff:\n%s", diff)
 		}
 	})
 }

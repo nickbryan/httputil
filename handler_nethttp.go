@@ -40,7 +40,7 @@ func (h *netHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if !errors.As(err, &problemDetails) {
 				problemDetails = problem.ServerError(r)
 				err = fmt.Errorf("calling request interceptor: %w", err)
-				h.logger.ErrorContext(r.Context(), "JSON handler received an unhandled error", slog.Any("error", err))
+				h.logger.ErrorContext(r.Context(), "net/http handler received an unhandled error", slog.Any("error", err))
 			}
 
 			w.WriteHeader(problemDetails.Status)
@@ -48,7 +48,7 @@ func (h *netHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			_, err = w.Write([]byte(problemDetails.Error()))
 			if err != nil {
 				err = fmt.Errorf("writing request intercept error: %w", err)
-				h.logger.ErrorContext(r.Context(), "JSON handler failed to write error", slog.Any("error", err))
+				h.logger.ErrorContext(r.Context(), "net/http handler failed to write error", slog.Any("error", err))
 			}
 
 			return

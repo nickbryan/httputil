@@ -55,7 +55,7 @@ func TestNewNetHTTPHandler(t *testing.T) {
 				}),
 			}, errorRequestInterceptor{}),
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler received an unhandled error",
+				Message: "net/http handler received an unhandled error",
 				Level:   slog.LevelError,
 				Attrs: map[string]slog.Value{
 					"error": slog.AnyValue("calling request interceptor: some error"),
