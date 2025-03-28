@@ -27,11 +27,13 @@ type InvalidOutputTypeError struct {
 	ProvidedType any
 }
 
+// Error returns the error message describing the provided invalid output type.
 func (e *InvalidOutputTypeError) Error() string {
 	return fmt.Sprintf("output must be a pointer to a struct, got %T", e.ProvidedType)
 }
 
-// ParamConversionError represents an error that occurs during parameter conversion.
+// ParamConversionError represents an error that occurs during parameter
+// conversion.
 type ParamConversionError struct {
 	ParameterType problem.ParameterType
 	ParamName     string
@@ -185,6 +187,8 @@ func processValidationErrors(errs validator.ValidationErrors, paramTypes map[str
 	return validationErrors
 }
 
+// validateOutputType ensures the `output` is a pointer to a struct and returns
+// its dereferenced value or an error.
 func validateOutputType(output any) (reflect.Value, error) {
 	outputVal := reflect.ValueOf(output)
 	if outputVal.Kind() != reflect.Ptr || outputVal.Elem().Kind() != reflect.Struct {
@@ -194,6 +198,9 @@ func validateOutputType(output any) (reflect.Value, error) {
 	return outputVal.Elem(), nil
 }
 
+// resolveParamValue extracts a named parameter's value from an HTTP request
+// using struct field tags (query, header, path, default). Returns the parameter
+// name, value, and source type; returns empty strings if no value is found.
 func resolveParamValue(r *http.Request, field reflect.StructField) (string, string, string) {
 	var paramName, paramValue, paramType string
 
@@ -228,6 +235,8 @@ func resolveParamValue(r *http.Request, field reflect.StructField) (string, stri
 	return paramName, paramValue, paramType
 }
 
+// setFieldValue assigns a parameter value to a struct field, converting it to
+// the appropriate type or returning an error.
 func setFieldValue(fieldVal reflect.Value, paramName, paramValue, paramType string) error {
 	switch fieldVal.Interface().(type) {
 	case string:
@@ -245,11 +254,15 @@ func setFieldValue(fieldVal reflect.Value, paramName, paramValue, paramType stri
 	}
 }
 
+// setStringField assigns a string value to a reflect.Value field. Returns an
+// error if the operation fails.
 func setStringField(fieldVal reflect.Value, paramValue string) error {
 	fieldVal.SetString(paramValue)
 	return nil
 }
 
+// setIntField assigns an integer value to a reflect.Value field after
+// converting it from a string. Returns an error if the conversion fails.
 func setIntField(fieldVal reflect.Value, paramName, paramValue, paramType string) error {
 	v, err := strconv.Atoi(paramValue)
 	if err != nil {
@@ -266,6 +279,8 @@ func setIntField(fieldVal reflect.Value, paramName, paramValue, paramType string
 	return nil
 }
 
+// setBoolField sets a boolean value to a reflect.Value field after converting
+// it from a string. Returns an error on failure.
 func setBoolField(fieldVal reflect.Value, paramName, paramValue, paramType string) error {
 	v, err := strconv.ParseBool(paramValue)
 	if err != nil {
@@ -282,6 +297,8 @@ func setBoolField(fieldVal reflect.Value, paramName, paramValue, paramType strin
 	return nil
 }
 
+// setFloatField assigns a float64 value to a reflect.Value field after
+// converting from a string. Returns an error on failure.
 func setFloatField(fieldVal reflect.Value, paramName, paramValue, paramType string) error {
 	v, err := strconv.ParseFloat(paramValue, 64)
 	if err != nil {
@@ -298,6 +315,8 @@ func setFloatField(fieldVal reflect.Value, paramName, paramValue, paramType stri
 	return nil
 }
 
+// setUUIDField parses a UUID string and sets it to the provided reflect.Value
+// field. Returns an error on parsing failure.
 func setUUIDField(fieldVal reflect.Value, paramName, paramValue, paramType string) error {
 	v, err := uuid.Parse(paramValue)
 	if err != nil {

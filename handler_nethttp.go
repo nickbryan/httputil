@@ -12,6 +12,8 @@ import (
 // Ensure that our netHTTPHandler implements the Handler interface.
 var _ Handler = &netHTTPHandler{} //nolint:exhaustruct // Compile time implementation check.
 
+// netHTTPHandler allows a http.Handler to be used as a [Handler]. It will call
+// a [RequestInterceptor] and write errors as application/problem+text.
 type netHTTPHandler struct {
 	handler            http.Handler
 	requestInterceptor RequestInterceptor
@@ -30,6 +32,10 @@ func NewNetHTTPHandlerFunc(h http.HandlerFunc) Handler {
 	return &netHTTPHandler{handler: h, requestInterceptor: nil, logger: nil}
 }
 
+// ServeHTTP handles HTTP requests, applies the request interceptor if present,
+// and delegates to the wrapped handler. Errors are logged and returned as
+// application/problem+text when the interceptor fails. It modifies the request
+// if the interceptor provides a new instance.
 func (h *netHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.requestInterceptor != nil {
 		interceptedRequest, err := h.requestInterceptor.InterceptRequest(r)
@@ -62,7 +68,8 @@ func (h *netHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.handler.ServeHTTP(w, r)
 }
 
+// use sets the logger and request interceptor for the netHTTPHandler instance
+// allowing dependencies to be injected by the server.
 func (h *netHTTPHandler) use(l *slog.Logger, ri RequestInterceptor) {
-	h.logger = l
-	h.requestInterceptor = ri
+	h.logger, h.requestInterceptor = l, ri
 }

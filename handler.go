@@ -8,12 +8,14 @@ import (
 )
 
 type (
-	// Action defines the interface for an action function. It takes a Request that
-	// has data of type D and params of type P and returns a Response or an error.
+	// Action defines the interface for an action function that will be called by
+	// the handler. It takes a Request that has data of type D and params of type P
+	// and returns a Response or an error.
 	Action[D, P any] func(r Request[D, P]) (*Response, error)
 
-	// Handler wraps a http.Handler with the ability to initialize
-	// the implementation with the Server logger and validator.
+	// Handler represents an interface that combines HTTP handling and additional
+	// interceptor and logging functionality ensuring that dependencies can be
+	// passed through to the handler.
 	Handler interface {
 		use(l *slog.Logger, g RequestInterceptor)
 		http.Handler
@@ -21,26 +23,38 @@ type (
 
 	// RequestInterceptor is an interface for modifying or inspecting HTTP requests
 	// before they are processed further. InterceptRequest takes an HTTP request as
-	// input, performs operations on it, and returns a modified request or an error.
-	// A Handler will format the error accordingly.
+	// input, performs operations on it, and returns a potentially modified request
+	// or an error. A Handler will format the error accordingly. This is useful for
+	// authentication and adding claims to the request context.
 	RequestInterceptor interface {
 		InterceptRequest(r *http.Request) (*http.Request, error)
 	}
 
 	// Transformer allows for operations to be performed on the Request, Response or
 	// Params data before it gets finalized. A Transformer will not be called for a
-	// standard http.Handler.
+	// standard http.Handler as there is nothing to transform.
 	Transformer interface {
 		Transform(ctx context.Context) error
 	}
 )
 
 type (
-	// Request represents an HTTP request that expects Prams and Data.
+	// Request is a generic HTTP request wrapper that contains request data,
+	// parameters, and a response writer.
 	Request[D, P any] struct {
 		*http.Request
-		Data           D
-		Params         P
+		// Data holds the request-specific data of generic type D, which is provided
+		// when initializing the request. A [Handler] will attempt to decode the Request
+		// body into this type.
+		Data D
+		// Params holds the parameters of generic type P associated with the request,
+		// allowing dynamic decoding and validation of Request parameters. See
+		// [BindValidParameters] documentation for usage information.
+		Params P
+		// ResponseWriter is an embedded HTTP response writer used to construct and send
+		// the HTTP response. When writing a response via the ResponseWriter directly it
+		// is best practice to return a [NothingToHandle] response so that the handler
+		// does not try to encode response data or handle errors.
 		ResponseWriter http.ResponseWriter
 	}
 
@@ -63,7 +77,8 @@ type (
 )
 
 // RequestInterceptorFunc is a function type for modifying or inspecting an HTTP
-// request, potentially returning an altered request.
+// request, potentially returning an altered request. This is useful for
+// authentication and adding claims to the request context.
 type RequestInterceptorFunc func(r *http.Request) (*http.Request, error)
 
 // InterceptRequest applies the RequestInterceptorFunc to modify or inspect the provided HTTP request.
@@ -112,8 +127,8 @@ func NoContent() (*Response, error) {
 
 // NothingToHandle returns a nil Response and a nil error, intentionally
 // representing a scenario with no response output so the Handler does not
-// attempt to process a response. This adds clarity when a RequestInterceptor does not block
-// the request or when acting on Request.ResponseWriter directly.
+// attempt to process a response. This adds clarity when a RequestInterceptor
+// does not block the request or when acting on Request.ResponseWriter directly.
 func NothingToHandle() (*Response, error) {
 	return nil, nil //nolint:nilnil // Intentional.
 }
@@ -139,6 +154,10 @@ func Redirect(code int, url string) (*Response, error) {
 	}, nil
 }
 
+// transform applies a transformation to the given data if it implements the
+// Transformer interface. Returns an error if the transformation fails;
+// otherwise, returns nil. Context is used to manage request-scoped values and
+// cancellation.
 func transform(ctx context.Context, data any) error {
 	if transformer, ok := data.(Transformer); ok {
 		if err := transformer.Transform(ctx); err != nil {

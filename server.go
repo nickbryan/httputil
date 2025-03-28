@@ -107,10 +107,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	).ServeHTTP(w, r)
 }
 
+// netHTTPServerLogAdapter adapts a slog.Handler to meet the logging
+// requirements of the net/http server. It allows customization of how net/http
+// server errors are logged by processing and reformulating log records.
 type netHTTPServerLogAdapter struct {
 	slog.Handler
 }
 
+// Handle processes and modifies a slog.Record before passing it to the embedded
+// handler for logging. It adjusts the log message and includes the original
+// error as an attribute. Returns an error if the embedded handler fails to
+// handle the modified log record.
 func (n netHTTPServerLogAdapter) Handle(ctx context.Context, record slog.Record) error {
 	rec := record.Clone()
 

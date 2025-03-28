@@ -9,7 +9,7 @@ import (
 
 // MiddlewareFunc defines a function type for HTTP middleware. A MiddlewareFunc
 // takes a http.Handler as input and returns a new http.Handler that wraps the
-// original action with additional logic (e.g., logging, authentication).
+// original action with additional logic.
 type MiddlewareFunc func(next http.Handler) http.Handler
 
 // newPanicRecoveryMiddleware creates a MiddlewareFunc that recovers from panics

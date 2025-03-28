@@ -10,10 +10,10 @@ import (
 
 // As pert the validator.New docs:
 //
-// InputRules is designed to be thread-safe and used as a singleton instance.
-// It caches information about your struct and validations,
-// in essence only parsing your validation tags once per struct type.
-// Using multiple instances neglects the benefit of caching.
+// InputRules is designed to be thread-safe and used as a singleton instance. It
+// caches information about your struct and validations, in essence only parsing
+// your validation tags once per struct type. Using multiple instances neglects
+// the benefit of caching.
 //
 // Doing this allows for a much cleaner API too.
 //
@@ -25,7 +25,8 @@ func init() {
 	validate = defaultValidator()
 }
 
-// defaultValidator returns a new validator.Validate that is configured for JSON tags.
+// defaultValidator returns a new validator.Validate that is configured for JSON
+// tags.
 func defaultValidator() *validator.Validate {
 	vld := validator.New(validator.WithRequiredStructEnabled())
 
@@ -55,7 +56,8 @@ func defaultValidator() *validator.Validate {
 	return vld
 }
 
-// describeValidationError generates a human-readable error message based on the violated validation tag of a field.
+// describeValidationError generates a human-readable error message based on the
+// violated validation tag of a field.
 func describeValidationError(err validator.FieldError) string {
 	switch err.Tag() {
 	case "required":

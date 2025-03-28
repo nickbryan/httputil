@@ -96,7 +96,6 @@ func main() {
 
 ## TODO
 * [ ] Implement proper JSON pointer handling on validation errors as per https://datatracker.ietf.org/doc/html/rfc6901.
-* Finalise all package documentation.
 * [ ] Write the client side.
 * [ ] This README needs filling out properly
 * [ ] Document how errors take priority over responses, if an error is returned no response will be written if one is also returned. y.

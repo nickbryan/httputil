@@ -20,6 +20,10 @@ import (
 // Ensure that our jsonHandler implements the Handler interface.
 var _ Handler = &jsonHandler[any, any]{} //nolint:exhaustruct // Compile time implementation check.
 
+// jsonHandler is a generic struct for handling HTTP requests and responses with
+// JSON encoding and decoding. It supports custom actions, logging, and request
+// interception. D and P represent the data and parameter types processed by the
+// handler, respectively.
 type jsonHandler[D, P any] struct {
 	action                      Action[D, P]
 	requestInterceptor          RequestInterceptor
@@ -40,6 +44,8 @@ func NewJSONHandler[D, P any](action Action[D, P]) Handler {
 	}
 }
 
+// use sets the logger and request interceptor for the JSON handler to allow
+// dependencies to be injected from the Server.
 func (h *jsonHandler[D, P]) use(l *slog.Logger, g RequestInterceptor) {
 	h.logger, h.requestInterceptor = l, g
 }
@@ -53,7 +59,7 @@ func (h *jsonHandler[D, P]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	//nolint:exhaustruct // Zero value for D and P is unknown.
 	request := Request[D, P]{Request: r, ResponseWriter: w}
 
-	if h.requestInterceptBlocksHandler(&request) || !h.requestHydratedOK(&request) {
+	if h.interceptBlocksHandler(&request) || !h.requestHydratedOK(&request) {
 		return
 	}
 
@@ -66,7 +72,9 @@ func (h *jsonHandler[D, P]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.writeSuccessfulResponse(&request, response)
 }
 
-func (h *jsonHandler[D, P]) requestInterceptBlocksHandler(req *Request[D, P]) bool {
+// interceptBlocksHandler handles request interception, modifying the request or
+// blocking further processing if needed.
+func (h *jsonHandler[D, P]) interceptBlocksHandler(req *Request[D, P]) bool {
 	if h.requestInterceptor == nil {
 		return false
 	}
@@ -84,6 +92,8 @@ func (h *jsonHandler[D, P]) requestInterceptBlocksHandler(req *Request[D, P]) bo
 	return false
 }
 
+// requestHydratedOK validates and processes the request payload and parameters,
+// ensuring the request is properly hydrated.
 func (h *jsonHandler[D, P]) requestHydratedOK(req *Request[D, P]) bool {
 	if !h.paramsHydratedOK(req) {
 		return false
@@ -118,6 +128,8 @@ func (h *jsonHandler[D, P]) requestHydratedOK(req *Request[D, P]) bool {
 	return true
 }
 
+// paramsHydratedOK checks if the request parameters are valid, hydrated, and
+// successfully transformed without errors.
 func (h *jsonHandler[D, P]) paramsHydratedOK(req *Request[D, P]) bool {
 	if h.paramsTypeKind != reflect.Struct {
 		h.logger.WarnContext(req.Context(), "JSON handler params type is not a struct", slog.String("type", h.paramsTypeKind.String()))
@@ -154,6 +166,8 @@ func (h *jsonHandler[D, P]) paramsHydratedOK(req *Request[D, P]) bool {
 	return true
 }
 
+// dataHydratedOK checks if the request data is successfully hydrated and
+// validates it against the expected structure and transformations.
 func (h *jsonHandler[D, P]) dataHydratedOK(req *Request[D, P], body []byte) bool {
 	if isEmptyStruct(req.Data) {
 		return true
@@ -188,6 +202,8 @@ func (h *jsonHandler[D, P]) dataHydratedOK(req *Request[D, P], body []byte) bool
 	return true
 }
 
+// writeSuccessfulResponse writes a successful HTTP response to the client,
+// handling redirects, empty data, or JSON encoding.
 func (h *jsonHandler[D, P]) writeSuccessfulResponse(req *Request[D, P], res *Response) {
 	if res == nil {
 		return
@@ -214,6 +230,9 @@ func (h *jsonHandler[D, P]) writeSuccessfulResponse(req *Request[D, P], res *Res
 	h.writeResponse(req.Context(), req.ResponseWriter, res.data)
 }
 
+// writeValidationErr handles validation errors by constructing detailed problem
+// objects and writing error responses. If the error is not a validation error,
+// it logs the error and sends a generic server error response.
 func (h *jsonHandler[D, P]) writeValidationErr(req *Request[D, P], err error) {
 	var errs validator.ValidationErrors
 	if errors.As(err, &errs) {
@@ -231,6 +250,8 @@ func (h *jsonHandler[D, P]) writeValidationErr(req *Request[D, P], err error) {
 	h.writeErrorResponse(req.Context(), req, problem.ServerError(req.Request))
 }
 
+// writeErrorResponse writes an HTTP error response using the provided error and
+// request context, with support for problem details.
 func (h *jsonHandler[D, P]) writeErrorResponse(ctx context.Context, req *Request[D, P], err error) {
 	req.ResponseWriter.Header().Set("Content-Type", "application/problem+json")
 
@@ -245,6 +266,8 @@ func (h *jsonHandler[D, P]) writeErrorResponse(ctx context.Context, req *Request
 	h.writeResponse(ctx, req.ResponseWriter, problemDetails)
 }
 
+// writeResponse encodes the provided data into JSON and writes it to the HTTP
+// response writer and logs errors if encoding fails.
 func (h *jsonHandler[D, P]) writeResponse(ctx context.Context, w http.ResponseWriter, data any) {
 	if err := json.NewEncoder(w).Encode(&data); err != nil {
 		h.logger.ErrorContext(ctx, "JSON handler failed to encode response data", slog.Any("error", err))
