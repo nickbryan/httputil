@@ -13,6 +13,21 @@ handling, error management, and more.
 
 </div>
 
+- [Features](#features)
+    - [HTTP Server with Sensible Defaults](#http-server-with-sensible-defaults)
+    - [Handler Framework](#handler-framework)
+    - [Error Handling](#error-handling)
+    - [Request Parameter Processing](#request-parameter-processing)
+    - [Testing Utilities](#testing-utilities)
+- [Installation](#installation)
+- [Usage](#usage)
+    - [Basic JSON Handler](#basic-json-handler)
+    - [JSON Handler Request/Response](#json-handler-requestresponse)
+    - [JSON Handler With Params](#json-handler-with-params)
+    - [Basic `net/http` Handler](#basic-nethttp-handler)
+- [Server Configuration Options](#server-configuration-options)
+- [Design Choices](#design-choices)
+
 ## Features
 
 ### HTTP Server with Sensible Defaults
