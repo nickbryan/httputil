@@ -1,6 +1,8 @@
 # httputil
-Package `httputil` provides utility helpers for working with net/http adding sensible defaults, bootstrapping, and 
-removing boilerplate code required to build web services.
+Package `httputil` provides utility helpers for working with `net/http`, adding sensible defaults, bootstrapping, 
+and eliminating boilerplate code commonly required when building web services. This package aims to streamline the 
+development of HTTP-based applications by offering a cohesive set of tools for HTTP server configuration, request 
+handling, error management, and more.
 
 <div align="center">
 
@@ -12,91 +14,234 @@ removing boilerplate code required to build web services.
 </div>
 
 ## Features
-* **SerDe Handlers:** Serialize/Deserialize request and response data with decreased boilerplate code.
-  * `NewJSONHandler` provides encoding/decoding for JSON-based handlers.
-* **Reduced Error Handling:** Common error scenarios are handled and logged for consistency.
-  * Server will attempt graceful shutdown and log errors appropriately.
-* **Problem JSON Implementation:** Standardized problem details for error responses as per RFC 9457.
-  * Supports customization of problem payloads and proper JSON pointer handling for validation errors.
-* **Middleware Support:** Add common middleware such as panic recovery and logging with minimal effort.
-* **Endpoint Management:** Easily register and organise endpoints with prefixing and middleware chaining.
 
-## Quick Start
+### HTTP Server with Sensible Defaults
+
+- Configurable HTTP server with secure, production-ready defaults
+- Graceful shutdown handling
+- Customizable timeouts (idle, read, write, shutdown)
+- Request body size limits to prevent abuse
+
+### Handler Framework
+
+- Easy conversion between different handler types
+- Support for standard `http.Handler` interfaces
+- JSON request/response handling with automatic marshaling/unmarshaling
+- Request interception and middleware support
+
+### Error Handling
+
+- RFC 7807 compliant problem details for HTTP APIs
+- Standardized error formatting
+- Predefined error constructors for common HTTP status codes
+
+### Request Parameter Processing
+
+- Safe and convenient parameter extraction from different sources (URL, query, headers, body)
+- Validation support
+
+### Testing Utilities
+
+- JSON comparison tools for testing HTTP responses
+- Helper functions to reduce test boilerplate
+
+## Installation
+
+```bash
+go get github.com/nickbryan/httputil
+```
+
+## Usage
+
+### Basic JSON Handler
+
 ```go
-// Package main is a test example.
 package main
 
 import (
-  "context"
-  "fmt"
-  "log/slog"
-  "net/http"
+    "context"
+    "net/http"
 
-  "github.com/nickbryan/slogutil"
+    "github.com/nickbryan/slogutil"
 
-  "github.com/nickbryan/httputil"
-  "github.com/nickbryan/httputil/problem"
+    "github.com/nickbryan/httputil"
 )
 
-func newAuthInterceptor() httputil.RequestInterceptorFunc {
-  return func(r *http.Request) (*http.Request, error) {
-    params := struct {
-      Token string `header:"Bearer" validate:"required"`
-    }{}
-    if err := httputil.BindValidParameters(r, &params); err != nil {
-      return nil, fmt.Errorf("binding parameters: %w", err)
-    }
-
-    if params.Token == "valid" {
-      return r.WithContext(context.WithValue(r.Context(), "user", "123")), nil
-    }
-
-    return nil, problem.Unauthorized(r)
-  }
-}
-
-func newTestHandler(l *slog.Logger) httputil.Handler {
-  type params struct {
-    Test string `query:"test"`
-  }
-
-  type response struct {
-    Value string `json:"value"`
-  }
-
-  return httputil.NewJSONHandler(func(r httputil.RequestParams[params]) (*httputil.Response, error) {
-    l.InfoContext(r.Context(), "written")
-    return httputil.OK(response{Value: r.Params.Test})
-  })
-}
-
-func endpoints(l *slog.Logger) httputil.EndpointGroup {
-  return httputil.EndpointGroup{
-    {
-      Method:  http.MethodPost,
-      Path:    "/login",
-      Handler: newTestHandler(l),
-    },
-    httputil.NewEndpointWithRequestInterceptor(httputil.Endpoint{
-      Method:  http.MethodPost,
-      Path:    "/test",
-      Handler: newTestHandler(l),
-    }, newAuthInterceptor()),
-  }
-}
-
 func main() {
-  l := slogutil.NewJSONLogger()
-  server := httputil.NewServer(l)
+    logger := slogutil.NewJSONLogger()  
+    server := httputil.NewServer(logger)
+	
+    server.Register(
+        httputil.Endpoint{
+            Method: http.MethodGet, 
+            Path:   "/greetings", 
+            Handler: httputil.NewJSONHandler(
+                func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+                    return httputil.OK([]string{"Hello, World!", "Hola Mundo!"})
+                }, 
+            ),
+        }, 
+    )
 
-  server.Register(endpoints(l).WithPrefix("/api")...)
-  server.Serve(context.Background())
+    server.Serve(context.Background())
+
+    // curl localhost:8080/greetings
+    // ["Hello, World!","Hola Mundo!"]
 }
 ```
 
-## TODO
-* [ ] Implement proper JSON pointer handling on validation errors as per https://datatracker.ietf.org/doc/html/rfc6901.
-* [ ] Write the client side.
-* [ ] This README needs filling out properly
-* [ ] Document how errors take priority over responses, if an error is returned no response will be written if one is also returned. y.
-* [ ] Do I move internal/testutil to its own package too?
+### JSON Handler Request/Response
+
+```go
+package main
+
+import (
+    "context"
+    "net/http"
+
+    "github.com/nickbryan/slogutil"
+
+    "github.com/nickbryan/httputil"
+)
+
+func main() {
+    logger := slogutil.NewJSONLogger()
+    server := httputil.NewServer(logger)
+
+    server.Register(newGreetingsEndpoint())
+
+    server.Serve(context.Background())
+
+    // curl -iS -X POST -H "Content-Type: application/json" -d '{"name": "Nick"}' localhost:8080/greetings                                                                               7 ↵
+    // HTTP/1.1 201 Created
+    // Content-Type: application/json
+    // Date: Sat, 29 Mar 2025 17:12:40 GMT
+    // Content-Length: 26
+    //
+    // {"message":"Hello Nick!"}
+}
+
+func newGreetingsEndpoint() httputil.Endpoint {
+    type (
+        request struct {
+            Name string `json:"name" validate:"required"`
+        }
+        response struct {
+            Message string `json:"message"`
+        }
+    )
+
+    return httputil.Endpoint{
+        Method: http.MethodPost,
+        Path:   "/greetings",
+        Handler: httputil.NewJSONHandler(func(r httputil.RequestData[request]) (*httputil.Response, error) {
+            return httputil.Created(response{Message: "Hello " + r.Data.Name + "!"})
+        }),
+    }
+}
+```
+
+### JSON Handler With Params
+
+```go
+package main
+
+import (
+    "context"
+    "net/http"
+
+    "github.com/nickbryan/slogutil"
+
+    "github.com/nickbryan/httputil"
+)
+
+func main() {
+    logger := slogutil.NewJSONLogger()
+    server := httputil.NewServer(logger)
+
+    server.Register(newGreetingsEndpoint())
+
+    server.Serve(context.Background())
+
+    // curl localhost:8080/greetings/Nick
+    // ["Hello, Nick!","Hola Nick!"]
+}
+
+func newGreetingsEndpoint() httputil.Endpoint {
+    type params struct {
+        Name string `path:"name" validate:"required"`
+    }
+
+    return httputil.Endpoint{
+        Method: http.MethodGet,
+        Path:   "/greetings/{name}",
+        Handler: httputil.NewJSONHandler(func(r httputil.RequestParams[params]) (*httputil.Response, error) {
+            return httputil.OK([]string{"Hello, " + r.Params.Name + "!", "Hola " + r.Params.Name + "!"})
+        }),
+    }
+}
+```
+
+### Basic `net/http` Handler
+
+```go
+package main
+
+import (
+    "context"
+    "net/http"
+
+    "github.com/nickbryan/slogutil"
+
+    "github.com/nickbryan/httputil"
+)
+
+func main() {
+    logger := slogutil.NewJSONLogger()
+    server := httputil.NewServer(logger)
+
+    server.Register(
+        httputil.Endpoint{
+            Method: http.MethodGet,
+            Path:   "/greetings",
+            Handler: httputil.NewNetHTTPHandlerFunc(
+                func(w http.ResponseWriter, _ *http.Request) {
+                    _, _ = w.Write([]byte(`["Hello, World!","Hola Mundo!"]`))
+                },
+            ),
+        },
+    )
+
+    server.Serve(context.Background())
+	
+    // curl localhost:8080/greetings
+    // ["Hello, World!","Hola Mundo!"]
+}
+```
+
+## Server Configuration Options
+The `httputil.Server` can be configured with the following options:
+
+| Option                  | Default | Description                                           |
+|-------------------------|---------|-------------------------------------------------------|
+| `WithAddress`           | `:8080` | Sets the address the server will listen on            |
+| `WithIdleTimeout`       | 30s     | Controls how long connections are kept open when idle |
+| `WithMaxBodySize`       | 5MB     | Maximum allowed request body size                     |
+| `WithReadHeaderTimeout` | 5s      | Maximum time to read request headers                  |
+| `WithReadTimeout`       | 60s     | Maximum time to read the entire request               |
+| `WithShutdownTimeout`   | 30s     | Time to wait for connections to close during shutdown |
+| `WithWriteTimeout`      | 30s     | Maximum time to write a response                      |
+
+## Design Choices
+
+### RFC 7807 Problem Details
+Error responses follow the RFC 7807 standard for Problem Details for HTTP APIs, providing consistent, readable 
+error information.
+
+### Middleware Architecture
+Middleware can be applied at both the server and endpoint level, providing a flexible way to implement cross-cutting 
+concerns like logging, authentication, and metrics.
+
+### Handler Interfaces
+The package provides a consistent interface for handlers while supporting multiple styles (standard http.Handler, 
+functional handlers, and JSON-specific handlers).
