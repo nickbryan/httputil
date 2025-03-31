@@ -20,12 +20,12 @@ handling, error management, and more.
     - [Request Parameter Processing](#request-parameter-processing)
     - [Testing Utilities](#testing-utilities)
 - [Installation](#installation)
+- [Server Options](#server-options)
 - [Usage](#usage)
     - [Basic JSON Handler](#basic-json-handler)
     - [JSON Handler Request/Response](#json-handler-requestresponse)
     - [JSON Handler With Params](#json-handler-with-params)
     - [Basic `net/http` Handler](#basic-nethttp-handler)
-- [Server Configuration Options](#server-configuration-options)
 - [Design Choices](#design-choices)
 
 ## Features
@@ -65,6 +65,19 @@ handling, error management, and more.
 ```bash
 go get github.com/nickbryan/httputil
 ```
+
+## Server Options
+`httputil.NewServer` can be configured with the following options:
+
+| Option                  | Default | Description                                           |
+|-------------------------|---------|-------------------------------------------------------|
+| `WithAddress`           | `:8080` | Sets the address the server will listen on            |
+| `WithIdleTimeout`       | 30s     | Controls how long connections are kept open when idle |
+| `WithMaxBodySize`       | 5MB     | Maximum allowed request body size                     |
+| `WithReadHeaderTimeout` | 5s      | Maximum time to read request headers                  |
+| `WithReadTimeout`       | 60s     | Maximum time to read the entire request               |
+| `WithShutdownTimeout`   | 30s     | Time to wait for connections to close during shutdown |
+| `WithWriteTimeout`      | 30s     | Maximum time to write a response                      |
 
 ## Usage
 
@@ -233,19 +246,6 @@ func main() {
     // ["Hello, World!","Hola Mundo!"]
 }
 ```
-
-## Server Configuration Options
-The `httputil.Server` can be configured with the following options:
-
-| Option                  | Default | Description                                           |
-|-------------------------|---------|-------------------------------------------------------|
-| `WithAddress`           | `:8080` | Sets the address the server will listen on            |
-| `WithIdleTimeout`       | 30s     | Controls how long connections are kept open when idle |
-| `WithMaxBodySize`       | 5MB     | Maximum allowed request body size                     |
-| `WithReadHeaderTimeout` | 5s      | Maximum time to read request headers                  |
-| `WithReadTimeout`       | 60s     | Maximum time to read the entire request               |
-| `WithShutdownTimeout`   | 30s     | Time to wait for connections to close during shutdown |
-| `WithWriteTimeout`      | 30s     | Maximum time to write a response                      |
 
 ## Design Choices
 

@@ -717,6 +717,16 @@ func TestNewJSONHandler(t *testing.T) {
 			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
+		"handles request types being set to any,any": {
+			endpoint: httputil.Endpoint{
+				Method: http.MethodGet,
+				Path:   "/test",
+				Handler: httputil.NewJSONHandler(func(_ httputil.Request[any, any]) (*httputil.Response, error) {
+					return httputil.NoContent()
+				}),
+			},
+			wantResponseStatusCode: http.StatusNoContent,
+		},
 	}
 
 	for testName, testCase := range testCases {

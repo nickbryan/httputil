@@ -131,15 +131,15 @@ func (h *jsonHandler[D, P]) requestHydratedOK(req *Request[D, P]) bool {
 // paramsHydratedOK checks if the request parameters are valid, hydrated, and
 // successfully transformed without errors.
 func (h *jsonHandler[D, P]) paramsHydratedOK(req *Request[D, P]) bool {
+	if isEmpty(req.Params) {
+		return true
+	}
+
 	if h.paramsTypeKind != reflect.Struct {
 		h.logger.WarnContext(req.Context(), "JSON handler params type is not a struct", slog.String("type", h.paramsTypeKind.String()))
 		h.writeErrorResponse(req.Context(), req, problem.ServerError(req.Request))
 
 		return false
-	}
-
-	if isEmptyStruct(req.Params) {
-		return true
 	}
 
 	if err := BindValidParameters(req.Request, &req.Params); err != nil {
@@ -169,7 +169,7 @@ func (h *jsonHandler[D, P]) paramsHydratedOK(req *Request[D, P]) bool {
 // dataHydratedOK checks if the request data is successfully hydrated and
 // validates it against the expected structure and transformations.
 func (h *jsonHandler[D, P]) dataHydratedOK(req *Request[D, P], body []byte) bool {
-	if isEmptyStruct(req.Data) {
+	if isEmpty(req.Data) {
 		return true
 	}
 

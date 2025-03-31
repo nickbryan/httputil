@@ -168,7 +168,12 @@ func transform(ctx context.Context, data any) error {
 	return nil
 }
 
-func isEmptyStruct(v any) bool {
+func isEmpty(v any) bool {
+	if v == nil {
+		return true
+	}
+
 	_, ok := v.(struct{})
+
 	return ok
 }
