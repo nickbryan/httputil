@@ -62,8 +62,7 @@ func NewServer(logger *slog.Logger, options ...ServerOption) *Server {
 // underlying router.
 func (s *Server) Register(endpoints ...Endpoint) {
 	for _, endpoint := range endpoints {
-		endpoint.Handler.use(s.logger, endpoint.requestInterceptor)
-		s.router.Handle(endpoint.Method+" "+endpoint.Path, endpoint.Handler)
+		s.router.Handle(endpoint.Method+" "+endpoint.Path, endpoint.Handler.with(s.logger, endpoint.requestInterceptor))
 	}
 }
 

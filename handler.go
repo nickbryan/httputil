@@ -17,7 +17,7 @@ type (
 	// interceptor and logging functionality ensuring that dependencies can be
 	// passed through to the handler.
 	Handler interface {
-		use(l *slog.Logger, g RequestInterceptor)
+		with(l *slog.Logger, ri RequestInterceptor) Handler
 		http.Handler
 	}
 

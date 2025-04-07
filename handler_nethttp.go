@@ -68,8 +68,8 @@ func (h *netHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.handler.ServeHTTP(w, r)
 }
 
-// use sets the logger and request interceptor for the netHTTPHandler instance
+// with sets the logger and request interceptor for the netHTTPHandler instance
 // allowing dependencies to be injected by the server.
-func (h *netHTTPHandler) use(l *slog.Logger, ri RequestInterceptor) {
-	h.logger, h.requestInterceptor = l, ri
+func (h *netHTTPHandler) with(l *slog.Logger, ri RequestInterceptor) Handler {
+	return &netHTTPHandler{handler: h.handler, requestInterceptor: ri, logger: l}
 }

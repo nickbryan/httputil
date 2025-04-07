@@ -44,10 +44,16 @@ func NewJSONHandler[D, P any](action Action[D, P]) Handler {
 	}
 }
 
-// use sets the logger and request interceptor for the JSON handler to allow
+// with sets the logger and request interceptor for the JSON handler to allow
 // dependencies to be injected from the Server.
-func (h *jsonHandler[D, P]) use(l *slog.Logger, g RequestInterceptor) {
-	h.logger, h.requestInterceptor = l, g
+func (h *jsonHandler[D, P]) with(l *slog.Logger, ri RequestInterceptor) Handler {
+	return &jsonHandler[D, P]{
+		action:             h.action,
+		requestInterceptor: ri,
+		logger:             l,
+		reqTypeKind:        h.reqTypeKind,
+		paramsTypeKind:     h.paramsTypeKind,
+	}
 }
 
 // ServeHTTP implements the http.Handler interface. It reads the request body,

@@ -88,10 +88,10 @@ type handlerMiddlewareWrapper struct {
 	middleware MiddlewareFunc
 }
 
-// use initializes the underlying handler with a logger and a request interceptor to ensure that
+// with initializes the underlying handler with a logger and a request interceptor to ensure that
 // the dependencies are passed through the middleware.
-func (h handlerMiddlewareWrapper) use(l *slog.Logger, ri RequestInterceptor) {
-	h.handler.use(l, ri)
+func (h handlerMiddlewareWrapper) with(l *slog.Logger, ri RequestInterceptor) Handler {
+	return h.handler.with(l, ri)
 }
 
 // ServeHTTP processes HTTP requests using the wrapped handler and middleware,
