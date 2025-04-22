@@ -3,7 +3,6 @@ package httputil
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 )
 
@@ -12,14 +11,6 @@ type (
 	// the handler. It takes a Request that has data of type D and params of type P
 	// and returns a Response or an error.
 	Action[D, P any] func(r Request[D, P]) (*Response, error)
-
-	// Handler represents an interface that combines HTTP handling and additional
-	// guard and logging functionality ensuring that dependencies can be
-	// passed through to the handler.
-	Handler interface {
-		with(l *slog.Logger, g Guard) Handler
-		http.Handler
-	}
 
 	// Guard defines an interface for components that protect access to a Handler's
 	// Action. It acts as a crucial pre-processing gatekeeper within the handler's
@@ -85,7 +76,7 @@ type (
 // authentication and adding claims to the request context.
 type GuardFunc func(r *http.Request) (*http.Request, error)
 
-// Guard applies the GuardFunc to modify or inspect the provided HTTP request.
+// InterceptRequest applies the GuardFunc to modify or inspect the provided HTTP request.
 func (rif GuardFunc) Guard(r *http.Request) (*http.Request, error) {
 	return rif(r)
 }

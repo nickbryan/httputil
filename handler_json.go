@@ -17,8 +17,8 @@ import (
 	"github.com/nickbryan/httputil/problem"
 )
 
-// Ensure that our jsonHandler implements the Handler interface.
-var _ Handler = &jsonHandler[any, any]{} //nolint:exhaustruct // Compile time implementation check.
+// Ensure that our jsonHandler implements the http.Handler interface.
+var _ http.Handler = &jsonHandler[any, any]{} //nolint:exhaustruct // Compile time implementation check.
 
 // jsonHandler is a generic struct for handling HTTP requests and responses with
 // JSON encoding and decoding. It supports custom actions, logging, and request
@@ -33,7 +33,7 @@ type jsonHandler[D, P any] struct {
 
 // NewJSONHandler creates a new Handler that wraps the provided [Action] to
 // deserialize JSON request bodies and serialize JSON response bodies.
-func NewJSONHandler[D, P any](action Action[D, P]) Handler {
+func NewJSONHandler[D, P any](action Action[D, P]) http.Handler {
 	return &jsonHandler[D, P]{
 		action: action,
 		guard:  nil,
@@ -44,15 +44,15 @@ func NewJSONHandler[D, P any](action Action[D, P]) Handler {
 	}
 }
 
-// with sets the logger and guard for the JSON handler to allow
-// dependencies to be injected from the Server.
-func (h *jsonHandler[D, P]) with(l *slog.Logger, g Guard) Handler {
-	return &jsonHandler[D, P]{
-		action:         h.action,
-		guard:          g,
-		logger:         l,
-		reqTypeKind:    h.reqTypeKind,
-		paramsTypeKind: h.paramsTypeKind,
+func (h *jsonHandler[D, P]) setGuard(g Guard) {
+	if h.guard == nil {
+		h.guard = g
+	}
+}
+
+func (h *jsonHandler[D, P]) setLogger(l *slog.Logger) {
+	if h.logger == nil {
+		h.logger = l
 	}
 }
 

@@ -14,8 +14,8 @@ type (
 		Method string
 		// Path is the URL path for this endpoint (e.g., "/users", "/products/{id}").
 		Path string
-		// Handler is the [Handler] that will handle requests for this endpoint.
-		Handler Handler
+		// Handler is the [http.Handler] that will handle requests for this endpoint.
+		Handler http.Handler
 
 		guard Guard
 	}
@@ -84,14 +84,20 @@ func (eg EndpointGroup) WithGuard(g Guard) EndpointGroup {
 // handlerMiddlewareWrapper is a struct that wraps a Handler with MiddlewareFunc
 // to ensure that dependencies are passed through the middleware to the Handler.
 type handlerMiddlewareWrapper struct {
-	handler    Handler
+	handler    http.Handler
 	middleware MiddlewareFunc
 }
 
-// with initializes the underlying handler with a slog.Logger and a Guard to ensure that
-// the dependencies are passed through the middleware.
-func (h handlerMiddlewareWrapper) with(l *slog.Logger, g Guard) Handler {
-	return h.handler.with(l, g)
+func (h handlerMiddlewareWrapper) setGuard(g Guard) {
+	if guardSetter, ok := h.handler.(interface{ setGuard(guard Guard) }); ok {
+		guardSetter.setGuard(g)
+	}
+}
+
+func (h handlerMiddlewareWrapper) setLogger(l *slog.Logger) {
+	if logSetter, ok := h.handler.(interface{ setLogger(l *slog.Logger) }); ok {
+		logSetter.setLogger(l)
+	}
 }
 
 // ServeHTTP processes HTTP requests using the wrapped handler and middleware,

@@ -10,7 +10,7 @@ import (
 )
 
 // Ensure that our netHTTPHandler implements the Handler interface.
-var _ Handler = &netHTTPHandler{} //nolint:exhaustruct // Compile time implementation check.
+var _ http.Handler = &netHTTPHandler{} //nolint:exhaustruct // Compile time implementation check.
 
 // netHTTPHandler allows a http.Handler to be used as a [Handler]. It will call
 // a [Guard] and write errors as application/problem+text.
@@ -22,13 +22,13 @@ type netHTTPHandler struct {
 
 // NewNetHTTPHandler creates a new Handler that wraps the provided http.Handler
 // so that it can be used on an Endpoint definition.
-func NewNetHTTPHandler(h http.Handler) Handler {
+func NewNetHTTPHandler(h http.Handler) http.Handler {
 	return &netHTTPHandler{handler: h, guard: nil, logger: nil}
 }
 
 // NewNetHTTPHandlerFunc creates a new Handler that wraps the provided http.HandlerFunc
 // so that it can be used on an Endpoint definition.
-func NewNetHTTPHandlerFunc(h http.HandlerFunc) Handler {
+func NewNetHTTPHandlerFunc(h http.HandlerFunc) http.Handler {
 	return &netHTTPHandler{handler: h, guard: nil, logger: nil}
 }
 
@@ -68,8 +68,14 @@ func (h *netHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.handler.ServeHTTP(w, r)
 }
 
-// with sets the logger and guard for the netHTTPHandler instance
-// allowing dependencies to be injected by the server.
-func (h *netHTTPHandler) with(l *slog.Logger, g Guard) Handler {
-	return &netHTTPHandler{handler: h.handler, guard: g, logger: l}
+func (h *netHTTPHandler) setGuard(g Guard) {
+	if h.guard == nil {
+		h.guard = g
+	}
+}
+
+func (h *netHTTPHandler) setLogger(l *slog.Logger) {
+	if h.logger == nil {
+		h.logger = l
+	}
 }

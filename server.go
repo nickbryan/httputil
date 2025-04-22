@@ -62,8 +62,20 @@ func NewServer(logger *slog.Logger, options ...ServerOption) *Server {
 // underlying router.
 func (s *Server) Register(endpoints ...Endpoint) {
 	for _, endpoint := range endpoints {
-		s.router.Handle(endpoint.Method+" "+endpoint.Path, endpoint.Handler.with(s.logger, endpoint.guard))
+		if loggerSetter, ok := endpoint.Handler.(interface{ setLogger(l *slog.Logger) }); ok {
+			loggerSetter.setLogger(s.logger)
+		}
+
+		if guardSetter, ok := endpoint.Handler.(interface{ setGuard(guard Guard) }); ok {
+			guardSetter.setGuard(endpoint.guard)
+		}
+
+		s.router.Handle(endpoint.Method+" "+endpoint.Path, endpoint.Handler)
 	}
+}
+
+func injectServerDependencies(handler http.Handler, logger *slog.Logger, guard Guard) {
+
 }
 
 // Serve starts the HTTP server and listens for incoming requests. It gracefully
