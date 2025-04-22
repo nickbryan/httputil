@@ -17,30 +17,30 @@ type (
 		// Handler is the [Handler] that will handle requests for this endpoint.
 		Handler Handler
 
-		requestInterceptor RequestInterceptor
+		guard Guard
 	}
 
 	// EndpointGroup represents a group of Endpoint definitions allowing access to
 	// helper functions to define the group.
 	EndpointGroup []Endpoint
 
-	// RequestInterceptorStack represents multiple RequestInterceptor instances that
+	// GuardStack represents multiple Guard instances that
 	// will be run in order.
-	RequestInterceptorStack []RequestInterceptor
+	GuardStack []Guard
 )
 
-// Ensure that RequestInterceptorStack implements the RequestInterceptor
+// Ensure that GuardStack implements the Guard
 // interface.
-var _ RequestInterceptor = RequestInterceptorStack{}
+var _ Guard = GuardStack{}
 
-// InterceptRequest will run each RequestInterceptor in order starting from 0.
+// Guard will run each Guard in order starting from 0.
 // It will continue iteration until a non nil http.Request or error is returned,
 // it will then return the http.Request and error of that call.
-func (ris RequestInterceptorStack) InterceptRequest(r *http.Request) (*http.Request, error) {
-	for _, ri := range ris {
-		interceptedRequest, err := ri.InterceptRequest(r)
+func (gs GuardStack) Guard(r *http.Request) (*http.Request, error) {
+	for _, g := range gs {
+		interceptedRequest, err := g.Guard(r)
 		if err != nil {
-			return nil, err //nolint:wrapcheck // Allow the RequestInterceptor to determine result.
+			return nil, err //nolint:wrapcheck // Allow the Guard to determine result.
 		}
 
 		r = interceptedRequest
@@ -49,35 +49,35 @@ func (ris RequestInterceptorStack) InterceptRequest(r *http.Request) (*http.Requ
 	return r, nil
 }
 
-// NewEndpointWithRequestInterceptor associates the given RequestInterceptor
+// NewEndpointWithGuard associates the given Guard
 // with the specified Endpoint. It returns a new Endpoint with the
-// RequestInterceptor applied. The original Endpoint remains unmodified.
-func NewEndpointWithRequestInterceptor(e Endpoint, ri RequestInterceptor) Endpoint {
+// Guard applied. The original Endpoint remains unmodified.
+func NewEndpointWithGuard(e Endpoint, g Guard) Endpoint {
 	return Endpoint{
-		Method:             e.Method,
-		Path:               e.Path,
-		Handler:            e.Handler,
-		requestInterceptor: ri,
+		Method:  e.Method,
+		Path:    e.Path,
+		Handler: e.Handler,
+		guard:   g,
 	}
 }
 
-// WithRequestInterceptor adds the RequestInterceptor as a
-// RequestInterceptorStack with the currently set RequestInterceptor as the
-// second RequestInterceptor in the stack. It returns a new slice of
-// EndpointGroup with the RequestInterceptor set. The original endpoints are not
+// WithGuard adds the Guard as a
+// GuardStack with the currently set Guard as the
+// second Guard in the stack. It returns a new slice of
+// EndpointGroup with the Guard set. The original endpoints are not
 // modified.
-func (eg EndpointGroup) WithRequestInterceptor(ri RequestInterceptor) EndpointGroup {
-	if ri == nil {
+func (eg EndpointGroup) WithGuard(g Guard) EndpointGroup {
+	if g == nil {
 		return eg
 	}
 
 	return cloneAndUpdate(eg, func(e *Endpoint) {
-		if e.requestInterceptor == nil {
-			e.requestInterceptor = ri
+		if e.guard == nil {
+			e.guard = g
 			return
 		}
 
-		e.requestInterceptor = RequestInterceptorStack{ri, e.requestInterceptor}
+		e.guard = GuardStack{g, e.guard}
 	})
 }
 
@@ -88,10 +88,10 @@ type handlerMiddlewareWrapper struct {
 	middleware MiddlewareFunc
 }
 
-// with initializes the underlying handler with a logger and a request interceptor to ensure that
+// with initializes the underlying handler with a slog.Logger and a Guard to ensure that
 // the dependencies are passed through the middleware.
-func (h handlerMiddlewareWrapper) with(l *slog.Logger, ri RequestInterceptor) Handler {
-	return h.handler.with(l, ri)
+func (h handlerMiddlewareWrapper) with(l *slog.Logger, g Guard) Handler {
+	return h.handler.with(l, g)
 }
 
 // ServeHTTP processes HTTP requests using the wrapped handler and middleware,
@@ -132,10 +132,10 @@ func cloneAndUpdate(endpoints []Endpoint, update func(e *Endpoint)) []Endpoint {
 
 	for _, endpoint := range endpoints {
 		e := Endpoint{
-			Method:             endpoint.Method,
-			Path:               endpoint.Path,
-			Handler:            endpoint.Handler,
-			requestInterceptor: endpoint.requestInterceptor,
+			Method:  endpoint.Method,
+			Path:    endpoint.Path,
+			Handler: endpoint.Handler,
+			guard:   endpoint.guard,
 		}
 
 		update(&e)

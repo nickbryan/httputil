@@ -14,20 +14,24 @@ type (
 	Action[D, P any] func(r Request[D, P]) (*Response, error)
 
 	// Handler represents an interface that combines HTTP handling and additional
-	// interceptor and logging functionality ensuring that dependencies can be
+	// guard and logging functionality ensuring that dependencies can be
 	// passed through to the handler.
 	Handler interface {
-		with(l *slog.Logger, ri RequestInterceptor) Handler
+		with(l *slog.Logger, g Guard) Handler
 		http.Handler
 	}
 
-	// RequestInterceptor is an interface for modifying or inspecting HTTP requests
-	// before they are processed further. InterceptRequest takes an HTTP request as
-	// input, performs operations on it, and returns a potentially modified request
-	// or an error. A Handler will format the error accordingly. This is useful for
-	// authentication and adding claims to the request context.
-	RequestInterceptor interface {
-		InterceptRequest(r *http.Request) (*http.Request, error)
+	// Guard defines an interface for components that protect access to a Handler's
+	// Action. It acts as a crucial pre-processing gatekeeper within the handler's
+	// request lifecycle, executing after the request has been routed to the handler
+	// but *before* any automatic request body decoding or parameter binding occurs.
+	//
+	// Its primary role is to enforce preconditions, such as authentication,
+	// authorization, API key validation, or other checks based on request headers,
+	// context, or basic properties, before allowing the request to proceed to the
+	// core business logic (the Action).
+	Guard interface {
+		Guard(r *http.Request) (*http.Request, error)
 	}
 
 	// Transformer allows for operations to be performed on the Request, Response or
@@ -76,13 +80,13 @@ type (
 	}
 )
 
-// RequestInterceptorFunc is a function type for modifying or inspecting an HTTP
+// GuardFunc is a function type for modifying or inspecting an HTTP
 // request, potentially returning an altered request. This is useful for
 // authentication and adding claims to the request context.
-type RequestInterceptorFunc func(r *http.Request) (*http.Request, error)
+type GuardFunc func(r *http.Request) (*http.Request, error)
 
-// InterceptRequest applies the RequestInterceptorFunc to modify or inspect the provided HTTP request.
-func (rif RequestInterceptorFunc) InterceptRequest(r *http.Request) (*http.Request, error) {
+// Guard applies the GuardFunc to modify or inspect the provided HTTP request.
+func (rif GuardFunc) Guard(r *http.Request) (*http.Request, error) {
 	return rif(r)
 }
 
@@ -127,7 +131,7 @@ func NoContent() (*Response, error) {
 
 // NothingToHandle returns a nil Response and a nil error, intentionally
 // representing a scenario with no response output so the Handler does not
-// attempt to process a response. This adds clarity when a RequestInterceptor
+// attempt to process a response. This adds clarity when a Guard
 // does not block the request or when acting on Request.ResponseWriter directly.
 func NothingToHandle() (*Response, error) {
 	return nil, nil //nolint:nilnil // Intentional.

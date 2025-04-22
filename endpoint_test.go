@@ -18,12 +18,12 @@ import (
 	"github.com/nickbryan/httputil/problem"
 )
 
-func TestEndpointGroupWithRequestInterceptor(t *testing.T) {
+func TestEndpointGroupWithGuard(t *testing.T) {
 	t.Parallel()
 
 	type statusInCtxKey struct{}
 
-	teapotInContextInterceptor := httputil.RequestInterceptorFunc(func(r *http.Request) (*http.Request, error) {
+	teapotInContextInterceptor := httputil.GuardFunc(func(r *http.Request) (*http.Request, error) {
 		return r.WithContext(context.WithValue(r.Context(), statusInCtxKey{}, http.StatusTeapot)), nil
 	})
 
@@ -43,11 +43,11 @@ func TestEndpointGroupWithRequestInterceptor(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		endpoints    httputil.EndpointGroup
-		interceptors []httputil.RequestInterceptor
-		requests     []testRequest
+		endpoints httputil.EndpointGroup
+		guards    []httputil.Guard
+		requests  []testRequest
 	}{
-		"nil interceptor does nothing": {
+		"nil guard does nothing": {
 			endpoints: httputil.EndpointGroup{
 				httputil.Endpoint{
 					Method: http.MethodGet,
@@ -57,12 +57,12 @@ func TestEndpointGroupWithRequestInterceptor(t *testing.T) {
 					}),
 				},
 			},
-			interceptors: nil,
+			guards: nil,
 			requests: []testRequest{
 				{path: "/test", method: http.MethodGet, expectedCode: http.StatusOK},
 			},
 		},
-		"multiple nil interceptors do nothing": {
+		"multiple nil guards do nothing": {
 			endpoints: httputil.EndpointGroup{
 				httputil.Endpoint{
 					Method: http.MethodGet,
@@ -72,12 +72,12 @@ func TestEndpointGroupWithRequestInterceptor(t *testing.T) {
 					}),
 				},
 			},
-			interceptors: []httputil.RequestInterceptor{nil, nil},
+			guards: []httputil.Guard{nil, nil},
 			requests: []testRequest{
 				{path: "/test", method: http.MethodGet, expectedCode: http.StatusOK},
 			},
 		},
-		"single interceptor modifies request": {
+		"single guard modifies request": {
 			endpoints: httputil.EndpointGroup{
 				httputil.Endpoint{
 					Method:  http.MethodGet,
@@ -85,12 +85,12 @@ func TestEndpointGroupWithRequestInterceptor(t *testing.T) {
 					Handler: statusFromContextHandler,
 				},
 			},
-			interceptors: []httputil.RequestInterceptor{teapotInContextInterceptor},
+			guards: []httputil.Guard{teapotInContextInterceptor},
 			requests: []testRequest{
 				{path: "/test", method: http.MethodGet, expectedCode: http.StatusTeapot},
 			},
 		},
-		"single interceptor applies to multiple endpoints": {
+		"single guard applies to multiple endpoints": {
 			endpoints: httputil.EndpointGroup{
 				httputil.Endpoint{
 					Method:  http.MethodGet,
@@ -103,13 +103,13 @@ func TestEndpointGroupWithRequestInterceptor(t *testing.T) {
 					Handler: statusFromContextHandler,
 				},
 			},
-			interceptors: []httputil.RequestInterceptor{teapotInContextInterceptor},
+			guards: []httputil.Guard{teapotInContextInterceptor},
 			requests: []testRequest{
 				{path: "/testA", method: http.MethodGet, expectedCode: http.StatusTeapot},
 				{path: "/testB", method: http.MethodGet, expectedCode: http.StatusTeapot},
 			},
 		},
-		"multiple interceptors are stacked": {
+		"multiple guards are stacked": {
 			endpoints: httputil.EndpointGroup{
 				httputil.Endpoint{
 					Method:  http.MethodGet,
@@ -122,8 +122,8 @@ func TestEndpointGroupWithRequestInterceptor(t *testing.T) {
 					Handler: statusFromContextHandler,
 				},
 			},
-			interceptors: []httputil.RequestInterceptor{
-				noopRequestInterceptor{},
+			guards: []httputil.Guard{
+				noopGuard{},
 				teapotInContextInterceptor,
 			},
 			requests: []testRequest{
@@ -138,8 +138,8 @@ func TestEndpointGroupWithRequestInterceptor(t *testing.T) {
 			t.Parallel()
 
 			interceptedEndpoints := testCase.endpoints
-			for _, interceptor := range testCase.interceptors {
-				interceptedEndpoints = interceptedEndpoints.WithRequestInterceptor(interceptor)
+			for _, guard := range testCase.guards {
+				interceptedEndpoints = interceptedEndpoints.WithGuard(guard)
 			}
 
 			logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
@@ -231,7 +231,7 @@ func TestEndpointGroupWithMiddleware(t *testing.T) {
 			t.Errorf("expected len(endpoints) = %d, got: %d", len(endpoints), len(endpointsWithMiddleware))
 		}
 
-		if diff := cmp.Diff(endpoints, endpointsWithMiddleware, cmpopts.IgnoreInterfaces(struct{ httputil.RequestInterceptor }{})); diff != "" {
+		if diff := cmp.Diff(endpoints, endpointsWithMiddleware, cmpopts.IgnoreInterfaces(struct{ httputil.Guard }{})); diff != "" {
 			t.Errorf("returned endpoints are not the same as the passed endpoints, diff: %s", diff)
 		}
 	})
@@ -334,57 +334,57 @@ func TestEndpointGroupWithPrefix(t *testing.T) {
 	}
 }
 
-func TestRequestInterceptorStack(t *testing.T) {
+func TestGuardStack(t *testing.T) {
 	t.Parallel()
 
 	type ctxKey struct{}
 
-	valueContextInterceptor := func(value string) httputil.RequestInterceptor {
-		return httputil.RequestInterceptorFunc(func(r *http.Request) (*http.Request, error) {
+	valueContextInterceptor := func(value string) httputil.Guard {
+		return httputil.GuardFunc(func(r *http.Request) (*http.Request, error) {
 			return r.WithContext(context.WithValue(r.Context(), ctxKey{}, value)), nil
 		})
 	}
 
 	testCases := map[string]struct {
-		interceptorStack httputil.RequestInterceptorStack
-		wantReq          bool
-		wantReqCtxVal    string
-		wantErr          error
+		guardStack    httputil.GuardStack
+		wantReq       bool
+		wantReqCtxVal string
+		wantErr       error
 	}{
 		"nil stack returns request and nil error": {
-			interceptorStack: nil,
-			wantReq:          true,
-			wantErr:          nil,
+			guardStack: nil,
+			wantReq:    true,
+			wantErr:    nil,
 		},
 		"no handlers in stack returns request and nil error": {
-			interceptorStack: httputil.RequestInterceptorStack{},
-			wantReq:          true,
-			wantErr:          nil,
+			guardStack: httputil.GuardStack{},
+			wantReq:    true,
+			wantErr:    nil,
 		},
-		"single interceptor: returns request and nil error": {
-			interceptorStack: httputil.RequestInterceptorStack{noopRequestInterceptor{}},
-			wantReq:          true,
-			wantErr:          nil,
+		"single guard: returns request and nil error": {
+			guardStack: httputil.GuardStack{noopGuard{}},
+			wantReq:    true,
+			wantErr:    nil,
 		},
-		"single interceptor: returns non-nil request and nil error": {
-			interceptorStack: httputil.RequestInterceptorStack{valueContextInterceptor("some value")},
-			wantReq:          true,
-			wantReqCtxVal:    "some value",
-			wantErr:          nil,
+		"single guard: returns non-nil request and nil error": {
+			guardStack:    httputil.GuardStack{valueContextInterceptor("some value")},
+			wantReq:       true,
+			wantReqCtxVal: "some value",
+			wantErr:       nil,
 		},
-		"single interceptor: returns nil request and non-nil error": {
-			interceptorStack: httputil.RequestInterceptorStack{
-				httputil.RequestInterceptorFunc(func(_ *http.Request) (*http.Request, error) {
+		"single guard: returns nil request and non-nil error": {
+			guardStack: httputil.GuardStack{
+				httputil.GuardFunc(func(_ *http.Request) (*http.Request, error) {
 					return nil, errors.New("some error")
 				}),
 			},
 			wantReq: false,
 			wantErr: errors.New("some error"),
 		},
-		"multiple interceptors: request is passed through all interceptors so they can add to context if required": {
-			interceptorStack: httputil.RequestInterceptorStack{
+		"multiple guards: request is passed through all guards so they can add to context if required": {
+			guardStack: httputil.GuardStack{
 				valueContextInterceptor("some value"),
-				httputil.RequestInterceptorFunc(func(r *http.Request) (*http.Request, error) {
+				httputil.GuardFunc(func(r *http.Request) (*http.Request, error) {
 					ctxVal, ok := r.Context().Value(ctxKey{}).(string)
 					if !ok {
 						return nil, errors.New("ctxKey value not set")
@@ -397,41 +397,41 @@ func TestRequestInterceptorStack(t *testing.T) {
 			wantReqCtxVal: "some value that was appended to",
 			wantErr:       nil,
 		},
-		"multiple interceptors: first returns nil request and non-nil error, skips subsequent interceptors": {
-			interceptorStack: httputil.RequestInterceptorStack{
-				httputil.RequestInterceptorFunc(func(_ *http.Request) (*http.Request, error) {
+		"multiple guards: first returns nil request and non-nil error, skips subsequent guards": {
+			guardStack: httputil.GuardStack{
+				httputil.GuardFunc(func(_ *http.Request) (*http.Request, error) {
 					return nil, errors.New("first handler error")
 				}),
-				httputil.RequestInterceptorFunc(func(_ *http.Request) (*http.Request, error) {
+				httputil.GuardFunc(func(_ *http.Request) (*http.Request, error) {
 					return nil, errors.New("should not be called")
 				}),
 			},
 			wantReq: false,
 			wantErr: errors.New("first handler error"),
 		},
-		"multiple interceptors: all return request and nil error": {
-			interceptorStack: httputil.RequestInterceptorStack{noopRequestInterceptor{}, noopRequestInterceptor{}},
-			wantReq:          true,
-			wantErr:          nil,
+		"multiple guards: all return request and nil error": {
+			guardStack: httputil.GuardStack{noopGuard{}, noopGuard{}},
+			wantReq:    true,
+			wantErr:    nil,
 		},
-		"multiple interceptors: second request interceptor returns non-nil response and nil error": {
-			interceptorStack: httputil.RequestInterceptorStack{
-				noopRequestInterceptor{},
+		"multiple guards: second guard returns non-nil response and nil error": {
+			guardStack: httputil.GuardStack{
+				noopGuard{},
 				valueContextInterceptor("some value"),
 			},
 			wantReq:       true,
 			wantReqCtxVal: "some value",
 			wantErr:       nil,
 		},
-		"multiple interceptors: last returns nil request and non-nil error": {
-			interceptorStack: httputil.RequestInterceptorStack{
-				noopRequestInterceptor{},
-				httputil.RequestInterceptorFunc(func(_ *http.Request) (*http.Request, error) {
-					return nil, errors.New("last interceptor error")
+		"multiple guards: last returns nil request and non-nil error": {
+			guardStack: httputil.GuardStack{
+				noopGuard{},
+				httputil.GuardFunc(func(_ *http.Request) (*http.Request, error) {
+					return nil, errors.New("last guard error")
 				}),
 			},
 			wantReq: false,
-			wantErr: errors.New("last interceptor error"),
+			wantErr: errors.New("last guard error"),
 		},
 	}
 
@@ -439,7 +439,7 @@ func TestRequestInterceptorStack(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
-			req, err := testCase.interceptorStack.InterceptRequest(httptest.NewRequest(http.MethodGet, "/test", nil))
+			req, err := testCase.guardStack.Guard(httptest.NewRequest(http.MethodGet, "/test", nil))
 
 			if (testCase.wantErr != nil && err == nil) || (testCase.wantErr == nil && err != nil) {
 				t.Errorf("want error: %v, got: %v", testCase.wantErr, err)

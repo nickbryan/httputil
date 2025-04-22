@@ -26,8 +26,8 @@ func TestNewNetHTTPHandler(t *testing.T) {
 		wantResponseBody       string
 		wantResponseStatusCode int
 	}{
-		"returns the response when a interceptor is set as nil": {
-			endpoint: httputil.NewEndpointWithRequestInterceptor(httputil.Endpoint{
+		"returns the response when a guard is set as nil": {
+			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
 				Handler: httputil.NewNetHTTPHandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -36,51 +36,51 @@ func TestNewNetHTTPHandler(t *testing.T) {
 			}, nil),
 			wantResponseStatusCode: http.StatusNoContent,
 		},
-		"returns the response when the interceptor does not block the handler": {
-			endpoint: httputil.NewEndpointWithRequestInterceptor(httputil.Endpoint{
+		"returns the response when the guard does not block the handler": {
+			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
 				Handler: httputil.NewNetHTTPHandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusNoContent)
 				}),
-			}, noopRequestInterceptor{}),
+			}, noopGuard{}),
 			wantResponseStatusCode: http.StatusNoContent,
 		},
-		"returns and logs an error when the interceptor blocks the handler by returning an error": {
-			endpoint: httputil.NewEndpointWithRequestInterceptor(httputil.Endpoint{
+		"returns and logs an error when the guard blocks the handler by returning an error": {
+			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
 				Handler: httputil.NewNetHTTPHandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusNoContent)
 				}),
-			}, errorRequestInterceptor{}),
+			}, errorGuard{}),
 			wantLogs: []slogmem.RecordQuery{{
 				Message: "net/http handler received an unhandled error",
 				Level:   slog.LevelError,
 				Attrs: map[string]slog.Value{
-					"error": slog.AnyValue("calling request interceptor: some error"),
+					"error": slog.AnyValue("calling guard: some error"),
 				},
 			}},
 			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).Error(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
-		"returns a problem error when the interceptor blocks the handler by returning a problem error type": {
-			endpoint: httputil.NewEndpointWithRequestInterceptor(httputil.Endpoint{
+		"returns a problem error when the guard blocks the handler by returning a problem error type": {
+			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
 				Handler: httputil.NewNetHTTPHandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusNoContent)
 				}),
-			}, problemRequestInterceptor{}),
+			}, problemGuard{}),
 			wantResponseBody:       problem.BadRequest(problemtest.NewRequest("/test")).Error(),
 			wantResponseStatusCode: http.StatusBadRequest,
 		},
-		"allows the interceptor to add to the request context which is passed to the handler for consumption": {
-			endpoint: httputil.NewEndpointWithRequestInterceptor(httputil.Endpoint{
+		"allows the guard to add to the request context which is passed to the handler for consumption": {
+			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
 				Handler: httputil.NewNetHTTPHandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					ctxVal, ok := r.Context().Value(addToContextRequestInterceptorCtxKey{}).(addToContextRequestInterceptor)
+					ctxVal, ok := r.Context().Value(addToContextGuardCtxKey{}).(addToContextGuard)
 					if !ok {
 						ctxVal = "ctxVal not set"
 					}
@@ -89,9 +89,9 @@ func TestNewNetHTTPHandler(t *testing.T) {
 						panic(err)
 					}
 				}),
-			}, addToContextRequestInterceptor("my context value")),
+			}, addToContextGuard("my context value")),
 			request: httptest.NewRequestWithContext(
-				context.WithValue(t.Context(), addToContextRequestInterceptorCtxKey{}, "should not see this"),
+				context.WithValue(t.Context(), addToContextGuardCtxKey{}, "should not see this"),
 				http.MethodGet,
 				"/test",
 				nil,
@@ -99,12 +99,12 @@ func TestNewNetHTTPHandler(t *testing.T) {
 			wantResponseBody:       `my context value`,
 			wantResponseStatusCode: http.StatusOK,
 		},
-		"uses the current request if the interceptor returns nil": {
-			endpoint: httputil.NewEndpointWithRequestInterceptor(httputil.Endpoint{
+		"uses the current request if the guard returns nil": {
+			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
 				Handler: httputil.NewNetHTTPHandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					ctxVal, ok := r.Context().Value(addToContextRequestInterceptorCtxKey{}).(addToContextRequestInterceptor)
+					ctxVal, ok := r.Context().Value(addToContextGuardCtxKey{}).(addToContextGuard)
 					if !ok {
 						ctxVal = "ctxVal not set"
 					}
@@ -113,11 +113,11 @@ func TestNewNetHTTPHandler(t *testing.T) {
 						panic(err)
 					}
 				}),
-			}, httputil.RequestInterceptorFunc(func(_ *http.Request) (*http.Request, error) {
+			}, httputil.GuardFunc(func(_ *http.Request) (*http.Request, error) {
 				return nil, nil //nolint:nilnil // Required for test case.
 			})),
 			request: httptest.NewRequestWithContext(
-				context.WithValue(t.Context(), addToContextRequestInterceptorCtxKey{}, addToContextRequestInterceptor("my original context value")),
+				context.WithValue(t.Context(), addToContextGuardCtxKey{}, addToContextGuard("my original context value")),
 				http.MethodGet,
 				"/test",
 				nil,

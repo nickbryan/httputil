@@ -441,8 +441,8 @@ func TestNewJSONHandler(t *testing.T) {
 			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
-		"returns the response when a interceptor is set as nil": {
-			endpoint: httputil.NewEndpointWithRequestInterceptor(httputil.Endpoint{
+		"returns the response when a guard is set as nil": {
+			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
 				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
@@ -451,60 +451,60 @@ func TestNewJSONHandler(t *testing.T) {
 			}, nil),
 			wantResponseStatusCode: http.StatusNoContent,
 		},
-		"returns the response when the interceptor does not block the handler": {
-			endpoint: httputil.NewEndpointWithRequestInterceptor(httputil.Endpoint{
+		"returns the response when the guard does not block the handler": {
+			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
 				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return httputil.NoContent()
 				}),
-			}, noopRequestInterceptor{}),
+			}, noopGuard{}),
 			wantResponseStatusCode: http.StatusNoContent,
 		},
-		"returns and logs an error when the interceptor blocks the handler by returning an error": {
-			endpoint: httputil.NewEndpointWithRequestInterceptor(httputil.Endpoint{
+		"returns and logs an error when the guard blocks the handler by returning an error": {
+			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
 				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return httputil.NoContent()
 				}),
-			}, errorRequestInterceptor{}),
+			}, errorGuard{}),
 			wantLogs: []slogmem.RecordQuery{{
 				Message: "JSON handler received an unhandled error",
 				Level:   slog.LevelError,
 				Attrs: map[string]slog.Value{
-					"error": slog.AnyValue("calling request interceptor: some error"),
+					"error": slog.AnyValue("calling guard: some error"),
 				},
 			}},
 			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
-		"returns a problem error when the interceptor blocks the handler by returning a problem error type": {
-			endpoint: httputil.NewEndpointWithRequestInterceptor(httputil.Endpoint{
+		"returns a problem error when the guard blocks the handler by returning a problem error type": {
+			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
 				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return httputil.NoContent()
 				}),
-			}, problemRequestInterceptor{}),
+			}, problemGuard{}),
 			wantResponseBody:       problem.BadRequest(problemtest.NewRequest("/test")).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusBadRequest,
 		},
-		"allows the interceptor to add to the request context which is passed to the handler for consumption": {
-			endpoint: httputil.NewEndpointWithRequestInterceptor(httputil.Endpoint{
+		"allows the guard to add to the request context which is passed to the handler for consumption": {
+			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
 				Handler: httputil.NewJSONHandler(func(r httputil.RequestEmpty) (*httputil.Response, error) {
-					ctxVal, ok := r.Context().Value(addToContextRequestInterceptorCtxKey{}).(addToContextRequestInterceptor)
+					ctxVal, ok := r.Context().Value(addToContextGuardCtxKey{}).(addToContextGuard)
 					if !ok {
 						return nil, problem.BusinessRuleViolation(r.Request).WithDetail("ctxVal not set")
 					}
 
 					return httputil.OK(map[string]string{"context": string(ctxVal)})
 				}),
-			}, addToContextRequestInterceptor("my context value")),
+			}, addToContextGuard("my context value")),
 			request: httptest.NewRequestWithContext(
-				context.WithValue(t.Context(), addToContextRequestInterceptorCtxKey{}, "should not see this"),
+				context.WithValue(t.Context(), addToContextGuardCtxKey{}, "should not see this"),
 				http.MethodGet,
 				"/test",
 				nil,
@@ -512,23 +512,23 @@ func TestNewJSONHandler(t *testing.T) {
 			wantResponseBody:       `{"context":"my context value"}`,
 			wantResponseStatusCode: http.StatusOK,
 		},
-		"uses the current request if the interceptor returns nil": {
-			endpoint: httputil.NewEndpointWithRequestInterceptor(httputil.Endpoint{
+		"uses the current request if the guard returns nil": {
+			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
 				Handler: httputil.NewJSONHandler(func(r httputil.RequestEmpty) (*httputil.Response, error) {
-					ctxVal, ok := r.Context().Value(addToContextRequestInterceptorCtxKey{}).(addToContextRequestInterceptor)
+					ctxVal, ok := r.Context().Value(addToContextGuardCtxKey{}).(addToContextGuard)
 					if !ok {
 						return nil, problem.BusinessRuleViolation(r.Request).WithDetail("ctxVal not set")
 					}
 
 					return httputil.OK(map[string]string{"context": string(ctxVal)})
 				}),
-			}, httputil.RequestInterceptorFunc(func(_ *http.Request) (*http.Request, error) {
+			}, httputil.GuardFunc(func(_ *http.Request) (*http.Request, error) {
 				return nil, nil //nolint:nilnil // Required for test case.
 			})),
 			request: httptest.NewRequestWithContext(
-				context.WithValue(t.Context(), addToContextRequestInterceptorCtxKey{}, addToContextRequestInterceptor("my original context value")),
+				context.WithValue(t.Context(), addToContextGuardCtxKey{}, addToContextGuard("my original context value")),
 				http.MethodGet,
 				"/test",
 				nil,
@@ -828,36 +828,36 @@ func (errorTransformer) Transform(_ context.Context) error {
 	return errors.New("some error")
 }
 
-type noopRequestInterceptor struct{}
+type noopGuard struct{}
 
-var _ httputil.RequestInterceptor = noopRequestInterceptor{}
+var _ httputil.Guard = noopGuard{}
 
-func (noopRequestInterceptor) InterceptRequest(r *http.Request) (*http.Request, error) {
+func (noopGuard) Guard(r *http.Request) (*http.Request, error) {
 	return r, nil
 }
 
-type errorRequestInterceptor struct{}
+type errorGuard struct{}
 
-var _ httputil.RequestInterceptor = errorRequestInterceptor{}
+var _ httputil.Guard = errorGuard{}
 
-func (errorRequestInterceptor) InterceptRequest(_ *http.Request) (*http.Request, error) {
+func (errorGuard) Guard(_ *http.Request) (*http.Request, error) {
 	return nil, errors.New("some error")
 }
 
-type problemRequestInterceptor struct{}
+type problemGuard struct{}
 
-var _ httputil.RequestInterceptor = problemRequestInterceptor{}
+var _ httputil.Guard = problemGuard{}
 
-func (problemRequestInterceptor) InterceptRequest(r *http.Request) (*http.Request, error) {
+func (problemGuard) Guard(r *http.Request) (*http.Request, error) {
 	return nil, problem.BadRequest(r)
 }
 
-type addToContextRequestInterceptor string
+type addToContextGuard string
 
-var _ httputil.RequestInterceptor = addToContextRequestInterceptor("")
+var _ httputil.Guard = addToContextGuard("")
 
-type addToContextRequestInterceptorCtxKey struct{}
+type addToContextGuardCtxKey struct{}
 
-func (ri addToContextRequestInterceptor) InterceptRequest(r *http.Request) (*http.Request, error) {
-	return r.WithContext(context.WithValue(r.Context(), addToContextRequestInterceptorCtxKey{}, ri)), nil
+func (ri addToContextGuard) Guard(r *http.Request) (*http.Request, error) {
+	return r.WithContext(context.WithValue(r.Context(), addToContextGuardCtxKey{}, ri)), nil
 }
