@@ -25,7 +25,7 @@ import (
 )
 
 //nolint:paralleltest // These test do not run in parallel due to how signal notifications are handled and tested.
-func TestServerServe(t *testing.T) {
+func TestServer_Serve(t *testing.T) {
 	const testAddress = "test:address"
 
 	var (
@@ -134,7 +134,7 @@ func TestServerServe(t *testing.T) {
 			}
 
 			logger, logs := slogutil.NewInMemoryLogger(slog.LevelDebug)
-			server := httputil.NewServer(logger, httputil.WithAddress(testAddress), httputil.WithShutdownTimeout(shutdownTimeout))
+			server := httputil.NewServer(logger, httputil.WithServerAddress(testAddress), httputil.WithServerShutdownTimeout(shutdownTimeout))
 
 			server.Listener = &fakeListener{
 				listenAndServeErr: testCase.listenAndServeErr,
@@ -169,7 +169,7 @@ func TestServerServe(t *testing.T) {
 	}
 }
 
-func TestServerServeHTTP(t *testing.T) {
+func TestServer_ServeHTTP(t *testing.T) {
 	t.Parallel()
 
 	t.Run("recovers from a panic gracefully", func(t *testing.T) {
@@ -184,7 +184,7 @@ func TestServerServeHTTP(t *testing.T) {
 		svr.Register(httputil.Endpoint{
 			Method: http.MethodGet,
 			Path:   "/",
-			Handler: httputil.NewNetHTTPHandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+			Handler: httputil.WrapNetHTTPHandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 				panic("panic from handler")
 			}),
 		})
@@ -212,7 +212,7 @@ func TestServerServeHTTP(t *testing.T) {
 		t.Parallel()
 
 		logger, records := slogutil.NewInMemoryLogger(slog.LevelDebug)
-		svr := httputil.NewServer(logger, httputil.WithMaxBodySize(0))
+		svr := httputil.NewServer(logger, httputil.WithServerMaxBodySize(0))
 
 		response := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("some request body"))
@@ -220,7 +220,7 @@ func TestServerServeHTTP(t *testing.T) {
 		svr.Register(httputil.Endpoint{
 			Method: http.MethodPost,
 			Path:   "/",
-			Handler: httputil.NewNetHTTPHandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			Handler: httputil.WrapNetHTTPHandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 				if _, err := io.ReadAll(r.Body); err != nil {
 					t.Fatalf("unexpected error reading request body: %s", err.Error())
 				}

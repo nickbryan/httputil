@@ -15,20 +15,20 @@ var _ http.Handler = &netHTTPHandler{} //nolint:exhaustruct // Compile time impl
 // netHTTPHandler allows a http.Handler to be used as a [Handler]. It will call
 // a [Guard] and write errors as application/problem+text.
 type netHTTPHandler struct {
-	handler http.Handler
 	guard   Guard
+	handler http.Handler
 	logger  *slog.Logger
 }
 
-// NewNetHTTPHandler creates a new Handler that wraps the provided http.Handler
-// so that it can be used on an Endpoint definition.
-func NewNetHTTPHandler(h http.Handler) http.Handler {
+// WrapNetHTTPHandler wraps a standard http.Handler with additional
+// functionality like optional guard and logging.
+func WrapNetHTTPHandler(h http.Handler) http.Handler {
 	return &netHTTPHandler{handler: h, guard: nil, logger: nil}
 }
 
-// NewNetHTTPHandlerFunc creates a new Handler that wraps the provided http.HandlerFunc
-// so that it can be used on an Endpoint definition.
-func NewNetHTTPHandlerFunc(h http.HandlerFunc) http.Handler {
+// WrapNetHTTPHandlerFunc wraps an http.HandlerFunc in a netHTTPHandler to
+// support additional features like guarding and logging.
+func WrapNetHTTPHandlerFunc(h http.HandlerFunc) http.Handler {
 	return &netHTTPHandler{handler: h, guard: nil, logger: nil}
 }
 

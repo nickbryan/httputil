@@ -1,21 +1,24 @@
 package httputil_test
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/nickbryan/slogutil"
+	"github.com/nickbryan/slogutil/slogmem"
 
 	"github.com/nickbryan/httputil"
 )
 
 /*
-These tests look like they know too much about the underlying implementation but that is by design.
+These tests look like they know too much about the underlying implementation, but that is by design.
 We encapsulate the http.Server as a httputil.Listener so that we can test our wrapper. We provide
-http.Server as the default implementation allowing us to confidently check that the values
-get set as expected rather than having to test the behavioral impact they have on the server itself
+http.Server as the default implementation, allowing us to confidently check that the values
+get set as expected rather than having to test the behavioral impact they have on the server itself,
 which is already tested within the wrapped http.Server. We just need to know our values are being
 set correctly.
 */
@@ -66,11 +69,12 @@ func TestServerOptions(t *testing.T) {
 
 	logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
 	server := httputil.NewServer(logger,
-		httputil.WithAddress("someaddr:8765"),
-		httputil.WithIdleTimeout(time.Duration(1)),
-		httputil.WithReadHeaderTimeout(time.Duration(2)),
-		httputil.WithReadTimeout(time.Duration(3)),
-		httputil.WithWriteTimeout(time.Duration(4)),
+		httputil.WithServerAddress("someaddr:8765"),
+		httputil.WithServerIdleTimeout(time.Duration(1)),
+		httputil.WithServerReadHeaderTimeout(time.Duration(2)),
+		httputil.WithServerReadTimeout(time.Duration(3)),
+		httputil.WithServerWriteTimeout(time.Duration(4)),
+		httputil.WithServerCodec(testCodec{}),
 	)
 
 	netHTTPServer, ok := server.Listener.(*http.Server)
@@ -97,4 +101,121 @@ func TestServerOptions(t *testing.T) {
 	if got, want := netHTTPServer.WriteTimeout, time.Duration(4); got != want {
 		t.Errorf("default write timeout not set, got: %s, want: %s", got, want)
 	}
+
+	server.Register(httputil.Endpoint{
+		Method: http.MethodGet,
+		Path:   "/",
+		Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+			// Returning data here forces testCodec.Encode to be called, so we know that
+			// the global server Codec is overwritten by WithServerCodec during setup.
+			return httputil.OK(map[string]any{})
+		}),
+	})
+
+	res := httptest.NewRecorder()
+
+	server.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if res.Header().Get("X-Test-Codec") != "true" {
+		t.Errorf("expected X-Test-Codec header to be set by the test codec")
+	}
+}
+
+func TestHandlerOptions(t *testing.T) {
+	t.Parallel()
+
+	t.Run("WithHandlerCodec", func(t *testing.T) {
+		t.Parallel()
+
+		handler := httputil.NewHandler(
+			func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+				// Returning data here forces testCodec.Encode to be called, so we know that
+				// the global server Codec is overwritten by WithServerCodec during setup.
+				return httputil.OK(map[string]any{})
+			},
+			httputil.WithHandlerCodec(testCodec{}),
+		)
+
+		res := httptest.NewRecorder()
+
+		handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/", nil))
+
+		if res.Header().Get("X-Test-Codec") != "true" {
+			t.Error("expected X-Test-Codec header to be set by the test codec")
+		}
+	})
+
+	t.Run("WithHandlerGuard", func(t *testing.T) {
+		t.Parallel()
+
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelInfo)
+		handler := httputil.NewHandler(
+			func(r httputil.RequestEmpty) (*httputil.Response, error) {
+				t.Fatal("action should not be called when guard returns an error")
+				return nil, nil
+			},
+			httputil.WithHandlerCodec(httputil.NewJSONCodec()),
+			httputil.WithHandlerLogger(logger),
+			httputil.WithHandlerGuard(testGuard{}),
+		)
+
+		res := httptest.NewRecorder()
+
+		handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/", nil))
+
+		if res.Code != http.StatusInternalServerError {
+			t.Errorf("expected status code %d, got %d", http.StatusInternalServerError, res.Code)
+		}
+	})
+
+	t.Run("WithHandlerLogger", func(t *testing.T) {
+		t.Parallel()
+
+		logger, logs := slogutil.NewInMemoryLogger(slog.LevelInfo)
+		expectedErr := errors.New("unhandled action error")
+
+		handler := httputil.NewHandler(
+			func(r httputil.RequestEmpty) (*httputil.Response, error) {
+				return nil, expectedErr
+			},
+			httputil.WithHandlerCodec(httputil.NewJSONCodec()),
+			httputil.WithHandlerLogger(logger),
+		)
+
+		res := httptest.NewRecorder()
+
+		handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/", nil))
+
+		if res.Code != http.StatusInternalServerError {
+			t.Errorf("expected status code %d, got %d", http.StatusInternalServerError, res.Code)
+		}
+
+		query := slogmem.RecordQuery{
+			Message: "Handler received an unhandled error",
+			Level:   slog.LevelError,
+			Attrs: map[string]slog.Value{
+				"error": slog.AnyValue("calling action: unhandled action error"),
+			},
+		}
+
+		if ok, diff := logs.Contains(query); !ok {
+			t.Errorf("expected log record not found, diff (-want +got):\n%s", diff)
+		}
+	})
+}
+
+type (
+	testCodec struct {
+		httputil.Codec
+	}
+	testGuard struct{}
+)
+
+func (t testCodec) Encode(w http.ResponseWriter, data any) error {
+	w.Header().Set("X-Test-Codec", "true")
+	return nil
+}
+
+func (g testGuard) Guard(_ *http.Request) (*http.Request, error) {
+	return nil, errors.New("access denied")
 }

@@ -21,7 +21,7 @@ import (
 	"github.com/nickbryan/httputil/problem/problemtest"
 )
 
-func TestNewJSONHandler(t *testing.T) {
+func TestNewHandler(t *testing.T) {
 	t.Parallel()
 
 	testCases := map[string]struct {
@@ -32,28 +32,40 @@ func TestNewJSONHandler(t *testing.T) {
 		wantResponseBody       string
 		wantResponseStatusCode int
 	}{
-		"the response content type is application/json when a successful response is returned": {
+		"the response content type is not set when a successful response without data is returned": {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return httputil.NoContent()
 				}),
 			},
-			wantHeader:             http.Header{"Content-Type": {"application/json"}},
+			wantHeader:             http.Header{},
 			wantResponseStatusCode: http.StatusNoContent,
+		},
+		"the response content type is application/json when a successful response with data is returned": {
+			endpoint: httputil.Endpoint{
+				Method: http.MethodGet,
+				Path:   "/test",
+				Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+					return httputil.OK(map[string]string{"hello": "world"})
+				}),
+			},
+			wantHeader:             http.Header{"Content-Type": {"application/json; charset=utf-8"}},
+			wantResponseBody:       `{"hello":"world"}`,
+			wantResponseStatusCode: http.StatusOK,
 		},
 		"the response content type is application/problem+json when an error response is returned": {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return nil, errors.New("some error")
 				}),
 			},
-			wantHeader: http.Header{"Content-Type": {"application/problem+json"}},
+			wantHeader: http.Header{"Content-Type": {"application/problem+json; charset=utf-8"}},
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler received an unhandled error",
+				Message: "Handler received an unhandled error",
 				Level:   slog.LevelError,
 				Attrs: map[string]slog.Value{
 					"error": slog.AnyValue("calling action: some error"),
@@ -66,11 +78,11 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(r httputil.RequestEmpty) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(r httputil.RequestEmpty) (*httputil.Response, error) {
 					return nil, problem.ServerError(r.Request)
 				}),
 			},
-			wantHeader:             http.Header{"Content-Type": {"application/problem+json"}},
+			wantHeader:             http.Header{"Content-Type": {"application/problem+json; charset=utf-8"}},
 			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
@@ -78,20 +90,20 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.RequestData[map[string]any]) (*httputil.Response, error) {
 					return httputil.NoContent()
 				}),
 			},
 			request: httptest.NewRequest(http.MethodGet, "/test", errReader("the request body was invalid")),
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler failed to read request body",
+				Message: "Handler failed to decode request data",
 				Level:   slog.LevelWarn,
 				Attrs: map[string]slog.Value{
-					"error": slog.AnyValue("the request body was invalid"),
+					"error": slog.AnyValue("decoding request body as JSON: the request body was invalid"),
 				},
 			}},
-			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
-			wantResponseStatusCode: http.StatusInternalServerError,
+			wantResponseBody:       problem.BadRequest(problemtest.NewRequest("/test")).MustMarshalJSONString(),
+			wantResponseStatusCode: http.StatusBadRequest,
 		},
 		"returns a bad request status code with errors if the payload is empty but request data is expected": {
 			endpoint: func() httputil.Endpoint {
@@ -102,13 +114,13 @@ func TestNewJSONHandler(t *testing.T) {
 				return httputil.Endpoint{
 					Method: http.MethodGet,
 					Path:   "/test",
-					Handler: httputil.NewJSONHandler(func(_ httputil.RequestData[request]) (*httputil.Response, error) {
+					Handler: httputil.NewHandler(func(_ httputil.RequestData[request]) (*httputil.Response, error) {
 						return httputil.NoContent()
 					}),
 				}
 			}(),
 			request:                httptest.NewRequest(http.MethodGet, "/test", strings.NewReader("")),
-			wantHeader:             http.Header{"Content-Type": {"application/problem+json"}},
+			wantHeader:             http.Header{"Content-Type": {"application/problem+json; charset=utf-8"}},
 			wantResponseBody:       problem.BadRequest(problemtest.NewRequest("/test")).WithDetail("The server received an unexpected empty request body").MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusBadRequest,
 		},
@@ -116,17 +128,17 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestData[map[string]string]) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.RequestData[map[string]string]) (*httputil.Response, error) {
 					return httputil.NoContent()
 				}),
 			},
 			request:    httptest.NewRequest(http.MethodGet, "/test", strings.NewReader(`{`)),
-			wantHeader: http.Header{"Content-Type": {"application/problem+json"}},
+			wantHeader: http.Header{"Content-Type": {"application/problem+json; charset=utf-8"}},
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler failed to decode request data",
+				Message: "Handler failed to decode request data",
 				Level:   slog.LevelWarn,
 				Attrs: map[string]slog.Value{
-					"error": slog.AnyValue("unexpected end of JSON input"),
+					"error": slog.AnyValue("decoding request body as JSON: unexpected EOF"),
 				},
 			}},
 			wantResponseBody:       problem.BadRequest(problemtest.NewRequest("/test")).MustMarshalJSONString(),
@@ -146,13 +158,13 @@ func TestNewJSONHandler(t *testing.T) {
 				return httputil.Endpoint{
 					Method: http.MethodGet,
 					Path:   "/test",
-					Handler: httputil.NewJSONHandler(func(_ httputil.RequestData[request]) (*httputil.Response, error) {
+					Handler: httputil.NewHandler(func(_ httputil.RequestData[request]) (*httputil.Response, error) {
 						return httputil.NoContent()
 					}),
 				}
 			}(),
 			request:    httptest.NewRequest(http.MethodGet, "/test", strings.NewReader("{}")),
-			wantHeader: http.Header{"Content-Type": {"application/problem+json"}},
+			wantHeader: http.Header{"Content-Type": {"application/problem+json; charset=utf-8"}},
 			wantResponseBody: problem.ConstraintViolation(
 				problemtest.NewRequest("/test"),
 				problem.Property{Detail: "thing is required", Pointer: "/inner/thing"},
@@ -173,13 +185,13 @@ func TestNewJSONHandler(t *testing.T) {
 				return httputil.Endpoint{
 					Method: http.MethodGet,
 					Path:   "/test",
-					Handler: httputil.NewJSONHandler(func(_ httputil.RequestData[request]) (*httputil.Response, error) {
+					Handler: httputil.NewHandler(func(_ httputil.RequestData[request]) (*httputil.Response, error) {
 						return httputil.NoContent()
 					}),
 				}
 			}(),
 			request:    httptest.NewRequest(http.MethodGet, "/test", strings.NewReader("{}")),
-			wantHeader: http.Header{"Content-Type": {"application/problem+json"}},
+			wantHeader: http.Header{"Content-Type": {"application/problem+json; charset=utf-8"}},
 			wantResponseBody: problem.ConstraintViolation(
 				problemtest.NewRequest("/test"),
 				problem.Property{Detail: "required is required", Pointer: "/required"},
@@ -191,31 +203,11 @@ func TestNewJSONHandler(t *testing.T) {
 			).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusUnprocessableEntity,
 		},
-		"the request body can be read again in the action after it has been decoded into the request data type": {
-			endpoint: httputil.Endpoint{
-				Method: http.MethodGet,
-				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(r httputil.RequestData[map[string]string]) (*httputil.Response, error) {
-					bytes, err := io.ReadAll(r.Body)
-					if err != nil {
-						t.Errorf("failed to read r.Body, err: %v", err)
-					}
-
-					if diff := testutil.DiffJSON(string(bytes), `{"hello":"world"}`); diff != "" {
-						t.Errorf("r.Body mismatch (-want +got):\n%s", diff)
-					}
-
-					return httputil.NoContent()
-				}),
-			},
-			request:                httptest.NewRequest(http.MethodGet, "/test", strings.NewReader(`{"hello":"world"}`)),
-			wantResponseStatusCode: http.StatusNoContent,
-		},
 		"the request body is mapped to the requests data": {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(r httputil.RequestData[map[string]string]) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(r httputil.RequestData[map[string]string]) (*httputil.Response, error) {
 					if r.Data["hello"] != "world" {
 						t.Errorf("r.data[\"hello\"] = %v, want: world", r.Data["hello"])
 					}
@@ -230,13 +222,13 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return nil, errors.New("some error")
 				}),
 			},
-			wantHeader: http.Header{"Content-Type": {"application/problem+json"}},
+			wantHeader: http.Header{"Content-Type": {"application/problem+json; charset=utf-8"}},
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler received an unhandled error",
+				Message: "Handler received an unhandled error",
 				Level:   slog.LevelError,
 				Attrs: map[string]slog.Value{
 					"error": slog.AnyValue("calling action: some error"),
@@ -249,7 +241,7 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return httputil.Accepted(nil)
 				}),
 			},
@@ -259,7 +251,7 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return httputil.OK(map[string]string{"hello": "world"})
 				}),
 			},
@@ -270,15 +262,15 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return httputil.Created(map[string]chan int{"chan": make(chan int)})
 				}),
 			},
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler failed to encode response data",
+				Message: "Handler failed to encode response data",
 				Level:   slog.LevelError,
 				Attrs: map[string]slog.Value{
-					"error": slog.AnyValue("json: unsupported type: chan int"),
+					"error": slog.AnyValue("encoding response data as JSON: json: unsupported type: chan int"),
 				},
 			}},
 			// We have no way to overwrite the status code to an error code in this situation as it will
@@ -289,13 +281,13 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return httputil.NewResponse(http.StatusNoContent, nil), errors.New("some error") //nolint:nilnil // Requires both to be set for test.
 				}),
 			},
-			wantHeader: http.Header{"Content-Type": {"application/problem+json"}},
+			wantHeader: http.Header{"Content-Type": {"application/problem+json; charset=utf-8"}},
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler received an unhandled error",
+				Message: "Handler received an unhandled error",
 				Level:   slog.LevelError,
 				Attrs: map[string]slog.Value{
 					"error": slog.AnyValue("calling action: some error"),
@@ -308,32 +300,33 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return httputil.Redirect(http.StatusPermanentRedirect, "http://example.com")
 				}),
 			},
-			wantHeader:             http.Header{"Content-Type": []string{"application/json"}, "Location": []string{"http://example.com"}},
+			wantHeader:             http.Header{"Content-Type": []string{"text/html; charset=utf-8"}, "Location": []string{"http://example.com"}},
+			wantResponseBody:       `<a href="http://example.com">Permanent Redirect</a>.`,
 			wantResponseStatusCode: http.StatusPermanentRedirect,
 		},
 		"allows writing to the response writer directly": {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(r httputil.RequestEmpty) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(r httputil.RequestEmpty) (*httputil.Response, error) {
 					r.ResponseWriter.Header().Set("X-Correlation-Id", "some-random-id")
 					r.ResponseWriter.WriteHeader(http.StatusTeapot)
 
 					return httputil.NothingToHandle()
 				}),
 			},
-			wantHeader:             http.Header{"Content-Type": []string{"application/json"}, "X-Correlation-Id": []string{"some-random-id"}},
+			wantHeader:             http.Header{"X-Correlation-Id": []string{"some-random-id"}},
 			wantResponseStatusCode: http.StatusTeapot,
 		},
 		"request data is transformed before the action is called": {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(r httputil.RequestData[dataFromCtxTransformer]) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(r httputil.RequestData[dataFromCtxTransformer]) (*httputil.Response, error) {
 					return httputil.OK(map[string]string{"data": r.Data.TransformedData})
 				}),
 			},
@@ -350,13 +343,13 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestData[errorTransformer]) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.RequestData[errorTransformer]) (*httputil.Response, error) {
 					return httputil.OK(map[string]string{"data": "should not be returned"})
 				}),
 			},
 			request: httptest.NewRequest(http.MethodGet, "/test", strings.NewReader(`{"data":"some-data"}`)),
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler failed to transform request data",
+				Message: "Handler failed to transform request data",
 				Level:   slog.LevelWarn,
 				Attrs: map[string]slog.Value{
 					"error": slog.AnyValue("transforming data: some error"),
@@ -369,7 +362,7 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(r httputil.RequestParams[dataFromCtxTransformer]) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(r httputil.RequestParams[dataFromCtxTransformer]) (*httputil.Response, error) {
 					return httputil.OK(map[string]string{"data": r.Params.TransformedData})
 				}),
 			},
@@ -391,13 +384,13 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestParams[errorTransformer]) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.RequestParams[errorTransformer]) (*httputil.Response, error) {
 					return httputil.OK(map[string]string{"data": "should not be returned"})
 				}),
 			},
 			request: httptest.NewRequest(http.MethodGet, "/test", strings.NewReader(`{"data":"some-data"}`)),
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler failed to transform params data",
+				Message: "Handler failed to transform params data",
 				Level:   slog.LevelWarn,
 				Attrs: map[string]slog.Value{
 					"error": slog.AnyValue("transforming data: some error"),
@@ -410,7 +403,7 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return httputil.OK(&dataFromCtxTransformer{TransformedData: "some-data"})
 				}),
 			},
@@ -427,12 +420,12 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return httputil.OK(errorTransformer{})
 				}),
 			},
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler failed to transform response data",
+				Message: "Handler failed to transform response data",
 				Level:   slog.LevelWarn,
 				Attrs: map[string]slog.Value{
 					"error": slog.AnyValue("transforming data: some error"),
@@ -445,7 +438,7 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return httputil.NoContent()
 				}),
 			}, nil),
@@ -455,7 +448,7 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return httputil.NoContent()
 				}),
 			}, noopGuard{}),
@@ -465,12 +458,12 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return httputil.NoContent()
 				}),
 			}, errorGuard{}),
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler received an unhandled error",
+				Message: "Handler received an unhandled error",
 				Level:   slog.LevelError,
 				Attrs: map[string]slog.Value{
 					"error": slog.AnyValue("calling guard: some error"),
@@ -483,7 +476,7 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return httputil.NoContent()
 				}),
 			}, problemGuard{}),
@@ -494,7 +487,7 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(r httputil.RequestEmpty) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(r httputil.RequestEmpty) (*httputil.Response, error) {
 					ctxVal, ok := r.Context().Value(addToContextGuardCtxKey{}).(addToContextGuard)
 					if !ok {
 						return nil, problem.BusinessRuleViolation(r.Request).WithDetail("ctxVal not set")
@@ -516,7 +509,7 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(r httputil.RequestEmpty) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(r httputil.RequestEmpty) (*httputil.Response, error) {
 					ctxVal, ok := r.Context().Value(addToContextGuardCtxKey{}).(addToContextGuard)
 					if !ok {
 						return nil, problem.BusinessRuleViolation(r.Request).WithDetail("ctxVal not set")
@@ -540,13 +533,13 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return httputil.NewResponse(http.StatusTeapot, nil), nil
 				}),
 			},
 			request: httptest.NewRequest(http.MethodGet, "/test", errReadCloser("some error")),
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler failed to close request body",
+				Message: "Handler failed to close request body",
 				Level:   slog.LevelWarn,
 				Attrs: map[string]slog.Value{
 					"error": slog.StringValue("some error"),
@@ -558,7 +551,7 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 					return httputil.NewResponse(http.StatusTeapot, nil), nil
 				}),
 			},
@@ -571,7 +564,6 @@ func TestNewJSONHandler(t *testing.T) {
 			}(),
 			wantResponseStatusCode: http.StatusTeapot,
 		},
-
 		"sets zero values when request params are missing and there is no validation": {
 			endpoint: func() httputil.Endpoint {
 				type params struct {
@@ -583,7 +575,7 @@ func TestNewJSONHandler(t *testing.T) {
 				return httputil.Endpoint{
 					Method: http.MethodGet,
 					Path:   "/test",
-					Handler: httputil.NewJSONHandler(func(r httputil.RequestParams[params]) (*httputil.Response, error) {
+					Handler: httputil.NewHandler(func(r httputil.RequestParams[params]) (*httputil.Response, error) {
 						return httputil.OK(map[string]string{
 							"name":          r.Params.Name,
 							"correlationId": r.Params.CorrelationID,
@@ -607,7 +599,7 @@ func TestNewJSONHandler(t *testing.T) {
 				return httputil.Endpoint{
 					Method: http.MethodGet,
 					Path:   "/test",
-					Handler: httputil.NewJSONHandler(func(r httputil.RequestParams[params]) (*httputil.Response, error) {
+					Handler: httputil.NewHandler(func(r httputil.RequestParams[params]) (*httputil.Response, error) {
 						return httputil.OK(map[string]string{
 							"name":          r.Params.Name,
 							"correlationId": r.Params.CorrelationID,
@@ -631,7 +623,7 @@ func TestNewJSONHandler(t *testing.T) {
 				return httputil.Endpoint{
 					Method: http.MethodGet,
 					Path:   "/test",
-					Handler: httputil.NewJSONHandler(func(r httputil.RequestParams[params]) (*httputil.Response, error) {
+					Handler: httputil.NewHandler(func(r httputil.RequestParams[params]) (*httputil.Response, error) {
 						return httputil.OK(map[string]string{
 							"name":          r.Params.Name,
 							"correlationId": r.Params.CorrelationID,
@@ -655,7 +647,7 @@ func TestNewJSONHandler(t *testing.T) {
 				return httputil.Endpoint{
 					Method: http.MethodGet,
 					Path:   "/test",
-					Handler: httputil.NewJSONHandler(func(r httputil.RequestParams[params]) (*httputil.Response, error) {
+					Handler: httputil.NewHandler(func(r httputil.RequestParams[params]) (*httputil.Response, error) {
 						return httputil.OK(map[string]string{
 							"name":          r.Params.Name,
 							"correlationId": r.Params.CorrelationID,
@@ -677,13 +669,13 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.RequestParams[map[string]string]) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.RequestParams[map[string]string]) (*httputil.Response, error) {
 					return httputil.NoContent()
 				}),
 			},
 			request: httptest.NewRequest(http.MethodGet, "/test", nil),
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler params type is not a struct",
+				Message: "Handler params type is not a struct",
 				Level:   slog.LevelWarn,
 				Attrs: map[string]slog.Value{
 					"type": slog.StringValue("map"),
@@ -701,14 +693,14 @@ func TestNewJSONHandler(t *testing.T) {
 				return httputil.Endpoint{
 					Method: http.MethodGet,
 					Path:   "/test",
-					Handler: httputil.NewJSONHandler(func(_ httputil.RequestParams[params]) (*httputil.Response, error) {
+					Handler: httputil.NewHandler(func(_ httputil.RequestParams[params]) (*httputil.Response, error) {
 						return httputil.NoContent()
 					}),
 				}
 			}(),
 			request: httptest.NewRequest(http.MethodGet, "/test", nil),
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "JSON handler failed to decode params data",
+				Message: "Handler failed to decode params data",
 				Level:   slog.LevelWarn,
 				Attrs: map[string]slog.Value{
 					"error": slog.AnyValue(`setting field value: failed to convert parameter "default" to int: strconv.Atoi: parsing "not an int": invalid syntax`),
@@ -721,7 +713,7 @@ func TestNewJSONHandler(t *testing.T) {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewJSONHandler(func(_ httputil.Request[any, any]) (*httputil.Response, error) {
+				Handler: httputil.NewHandler(func(_ httputil.Request[any, any]) (*httputil.Response, error) {
 					return httputil.NoContent()
 				}),
 			},
