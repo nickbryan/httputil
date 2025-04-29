@@ -30,7 +30,7 @@ func TestNewNetHTTPHandler(t *testing.T) {
 			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewNetHTTPHandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				Handler: httputil.WrapNetHTTPHandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusNoContent)
 				}),
 			}, nil),
@@ -40,7 +40,7 @@ func TestNewNetHTTPHandler(t *testing.T) {
 			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewNetHTTPHandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				Handler: httputil.WrapNetHTTPHandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusNoContent)
 				}),
 			}, noopGuard{}),
@@ -50,7 +50,7 @@ func TestNewNetHTTPHandler(t *testing.T) {
 			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewNetHTTPHandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				Handler: httputil.WrapNetHTTPHandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusNoContent)
 				}),
 			}, errorGuard{}),
@@ -68,7 +68,7 @@ func TestNewNetHTTPHandler(t *testing.T) {
 			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewNetHTTPHandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				Handler: httputil.WrapNetHTTPHandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusNoContent)
 				}),
 			}, problemGuard{}),
@@ -79,7 +79,7 @@ func TestNewNetHTTPHandler(t *testing.T) {
 			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewNetHTTPHandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				Handler: httputil.WrapNetHTTPHandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					ctxVal, ok := r.Context().Value(addToContextGuardCtxKey{}).(addToContextGuard)
 					if !ok {
 						ctxVal = "ctxVal not set"
@@ -103,7 +103,7 @@ func TestNewNetHTTPHandler(t *testing.T) {
 			endpoint: httputil.NewEndpointWithGuard(httputil.Endpoint{
 				Method: http.MethodGet,
 				Path:   "/test",
-				Handler: httputil.NewNetHTTPHandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				Handler: httputil.WrapNetHTTPHandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					ctxVal, ok := r.Context().Value(addToContextGuardCtxKey{}).(addToContextGuard)
 					if !ok {
 						ctxVal = "ctxVal not set"

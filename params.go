@@ -62,7 +62,7 @@ func (e *UnsupportedFieldTypeError) Error() string {
 }
 
 // BindValidParameters extracts parameters from an *http.Request, populates the
-// fields of the output struct and validates the struct. The output parameter
+// fields of the output struct, and validates the struct. The output parameter
 // must be a pointer to a struct, and the struct fields can be annotated with
 // struct tags to specify the source of the parameters. Supported struct tags
 // and their meanings are:

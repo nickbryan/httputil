@@ -66,11 +66,11 @@ func TestServerOptions(t *testing.T) {
 
 	logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
 	server := httputil.NewServer(logger,
-		httputil.WithAddress("someaddr:8765"),
-		httputil.WithIdleTimeout(time.Duration(1)),
-		httputil.WithReadHeaderTimeout(time.Duration(2)),
-		httputil.WithReadTimeout(time.Duration(3)),
-		httputil.WithWriteTimeout(time.Duration(4)),
+		httputil.WithServerAddress("someaddr:8765"),
+		httputil.WithServerIdleTimeout(time.Duration(1)),
+		httputil.WithServerReadHeaderTimeout(time.Duration(2)),
+		httputil.WithServerReadTimeout(time.Duration(3)),
+		httputil.WithServerWriteTimeout(time.Duration(4)),
 	)
 
 	netHTTPServer, ok := server.Listener.(*http.Server)

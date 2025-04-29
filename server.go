@@ -24,13 +24,14 @@ type Server struct {
 	router *http.ServeMux
 
 	address         string
+	codec           Codec
 	maxBodySize     int64
 	shutdownTimeout time.Duration
 }
 
-// NewServer creates a new Server instance with the specified logger and options.
-// The options parameter allows for customization of server settings such as the
-// address and timeouts.
+// NewServer creates a new Server instance with the specified logger and
+// options. The options allow for customization of server settings such as the
+// address, codec, and timeouts.
 func NewServer(logger *slog.Logger, options ...ServerOption) *Server {
 	opts := mapServerOptionsToDefaults(options)
 
@@ -39,6 +40,7 @@ func NewServer(logger *slog.Logger, options ...ServerOption) *Server {
 		logger:          logger,
 		router:          http.NewServeMux(),
 		address:         opts.address,
+		codec:           opts.codec,
 		maxBodySize:     opts.maxBodySize,
 		shutdownTimeout: opts.shutdownTimeout,
 	}
@@ -62,20 +64,20 @@ func NewServer(logger *slog.Logger, options ...ServerOption) *Server {
 // underlying router.
 func (s *Server) Register(endpoints ...Endpoint) {
 	for _, endpoint := range endpoints {
-		if loggerSetter, ok := endpoint.Handler.(interface{ setLogger(l *slog.Logger) }); ok {
-			loggerSetter.setLogger(s.logger)
+		if codecSetter, ok := endpoint.Handler.(interface{ setCodec(c Codec) }); ok {
+			codecSetter.setCodec(s.codec)
 		}
 
 		if guardSetter, ok := endpoint.Handler.(interface{ setGuard(guard Guard) }); ok {
 			guardSetter.setGuard(endpoint.guard)
 		}
 
+		if loggerSetter, ok := endpoint.Handler.(interface{ setLogger(l *slog.Logger) }); ok {
+			loggerSetter.setLogger(s.logger)
+		}
+
 		s.router.Handle(endpoint.Method+" "+endpoint.Path, endpoint.Handler)
 	}
-}
-
-func injectServerDependencies(handler http.Handler, logger *slog.Logger, guard Guard) {
-
 }
 
 // Serve starts the HTTP server and listens for incoming requests. It gracefully
@@ -94,7 +96,7 @@ func (s *Server) Serve(ctx context.Context) {
 	<-awaitSignalCtx.Done()
 
 	// We use a new context here as inheriting from ctx would create an instant
-	// timeout if ctx was canceled. We want to ensure that we still attempt graceful
+	// timeout if ctx was canceled. We want to ensure that we still attempt a graceful
 	// shutdown if this happens.
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), s.shutdownTimeout)
 	defer cancelShutdown()

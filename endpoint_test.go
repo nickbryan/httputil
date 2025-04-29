@@ -27,7 +27,7 @@ func TestEndpointGroupWithGuard(t *testing.T) {
 		return r.WithContext(context.WithValue(r.Context(), statusInCtxKey{}, http.StatusTeapot)), nil
 	})
 
-	statusFromContextHandler := httputil.NewJSONHandler(func(r httputil.RequestEmpty) (*httputil.Response, error) {
+	statusFromContextHandler := httputil.NewHandler(func(r httputil.RequestEmpty) (*httputil.Response, error) {
 		ctxVal, ok := r.Context().Value(statusInCtxKey{}).(int)
 		if !ok {
 			return nil, problem.BusinessRuleViolation(r.Request).WithDetail("ctxVal not set")
@@ -52,7 +52,7 @@ func TestEndpointGroupWithGuard(t *testing.T) {
 				httputil.Endpoint{
 					Method: http.MethodGet,
 					Path:   "/test",
-					Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+					Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 						return httputil.NewResponse(http.StatusOK, nil), nil
 					}),
 				},
@@ -67,7 +67,7 @@ func TestEndpointGroupWithGuard(t *testing.T) {
 				httputil.Endpoint{
 					Method: http.MethodGet,
 					Path:   "/test",
-					Handler: httputil.NewJSONHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+					Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 						return httputil.NewResponse(http.StatusOK, nil), nil
 					}),
 				},
@@ -242,7 +242,7 @@ func TestEndpointGroupWithMiddleware(t *testing.T) {
 		endpointsWithMiddleware := httputil.EndpointGroup{{
 			Method:  http.MethodPost,
 			Path:    "/users",
-			Handler: httputil.NewNetHTTPHandler(newTestHandler(t)),
+			Handler: httputil.WrapNetHTTPHandler(newTestHandler(t)),
 		}}.WithMiddleware(injectContextValueMiddleware)
 
 		if len(endpointsWithMiddleware) != 1 {
@@ -258,8 +258,8 @@ func TestEndpointGroupWithMiddleware(t *testing.T) {
 		t.Parallel()
 
 		endpoints := httputil.EndpointGroup{
-			{Method: http.MethodGet, Path: "/users", Handler: httputil.NewNetHTTPHandler(newTestHandler(t))},
-			{Method: http.MethodPost, Path: "/users", Handler: httputil.NewNetHTTPHandler(newTestHandler(t))},
+			{Method: http.MethodGet, Path: "/users", Handler: httputil.WrapNetHTTPHandler(newTestHandler(t))},
+			{Method: http.MethodPost, Path: "/users", Handler: httputil.WrapNetHTTPHandler(newTestHandler(t))},
 		}
 
 		endpointsWithMiddleware := endpoints.WithMiddleware(injectContextValueMiddleware)
