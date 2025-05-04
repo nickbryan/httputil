@@ -1,5 +1,6 @@
+version: "2"
 linters:
-  disable-all: true
+  default: none
   enable:
     - asasalint
     - asciicheck
@@ -10,7 +11,6 @@ linters:
     - contextcheck
     - copyloopvar
     - cyclop
-#   - decorder # Sometimes it is more expressive to order declarations in a certain way.
     - depguard
     - dogsled
     - dupl
@@ -25,11 +25,8 @@ linters:
     - exhaustruct
     - exptostd
     - fatcontext
-#   - forbidigo # Will be enabled if something needs to be forbidden.
     - forcetypeassert
     - funlen
-#   - gci # Prefer goimports behaviour.
-#   - ginkgolinter # No plans to use ginkgo for testing, prefer using std "testing".
     - gocheckcompilerdirectives
     - gochecknoglobals
     - gochecknoinits
@@ -40,27 +37,18 @@ linters:
     - gocyclo
     - godot
     - godox
-    - gofmt
-    - gofumpt
-#   - goheader # I don't use file headers.
-    - goimports
     - gomoddirectives
-#   - gomodguard # Prefer depguard.
     - goprintffuncname
     - gosec
-    - gosimple
     - gosmopolitan
     - govet
     - grouper
     - iface
-#   - importas # Enabled as needed per project.
     - inamedparam
     - ineffassign
     - interfacebloat
     - intrange
     - ireturn
-#   - lll # Go code can be more expressive and readable on a single line.
-#   - loggercheck # No plans to use external logging libraries, prefer using std "log/slog".
     - maintidx
     - makezero
     - mirror
@@ -75,13 +63,11 @@ linters:
     - nlreturn
     - noctx
     - nolintlint
-#   - nonamedreturns # Naked retursn disabled through nakedret.
     - nosprintfhostport
     - paralleltest
     - perfsprint
     - prealloc
     - predeclared
-#   - promlinter # No plans to use Prometheus.
     - protogetter
     - reassign
     - recvcheck
@@ -91,11 +77,9 @@ linters:
     - spancheck
     - sqlclosecheck
     - staticcheck
-    - stylecheck
     - tagalign
     - tagliatelle
     - testableexamples
-#   - testifylint # No plans to use Testify for testing, prefer using std "testing".
     - testpackage
     - thelper
     - tparallel
@@ -104,130 +88,143 @@ linters:
     - unused
     - usestdlibvars
     - usetesting
-#   - varnamelen # Too strict in most cases hindering expressiveness.
     - wastedassign
     - whitespace
     - wrapcheck
     - wsl
-#   - zerologlint # No plans to use zerolog, prefer using std "log/slog".
-linters-settings:
-  copyloopvar:
-    check-alias: true
-  depguard:
+  settings:
+    copyloopvar:
+      check-alias: true
+    depguard:
+      rules:
+        main:
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/nickbryan/httputil
+            - github.com/nickbryan/slogutil
+            - github.com/go-playground/form
+            - github.com/go-playground/validator/v10
+            - github.com/google/go-cmp/cmp
+            - github.com/google/uuid
+    errcheck:
+      check-type-assertions: true
+    exhaustive:
+      check:
+        - switch
+        - map
+      default-signifies-exhaustive: true
+    exhaustruct:
+      exclude:
+        - .+/httputil\.Endpoint$
+    funlen:
+      ignore-comments: true
+    gocognit:
+      min-complexity: 15
+    gocyclo:
+      min-complexity: 15
+    grouper:
+      const-require-grouping: true
+      import-require-grouping: true
+    interfacebloat:
+      max: 3
+    ireturn:
+      allow:
+        - anon
+        - error
+        - empty
+        - generic
+        - stdlib
+        - httputil.Handler
+    misspell:
+      locale: US
+    nestif:
+      min-complexity: 7
+    nilnil:
+      detect-opposite: true
+    nlreturn:
+      block-size: 2
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    rowserrcheck:
+      packages:
+        - github.com/jackc/pgx
+    sloglint:
+      attr-only: true
+      no-global: all
+      context: all
+      static-msg: true
+      key-naming-case: snake
+      forbidden-keys:
+        - time
+        - level
+        - msg
+        - source
+    tagalign:
+      order:
+        - json
+        - query
+        - path
+        - header
+        - default
+        - validate
+    usestdlibvars:
+      time-month: true
+      time-layout: true
+      crypto-hash: true
+      default-rpc-path: true
+      sql-isolation-level: true
+      tls-signature-scheme: true
+      constant-kind: true
+    usetesting:
+      os-temp-dir: true
+    wrapcheck:
+      extra-ignore-sigs:
+        - httputil.Accepted
+        - httputil.Created
+        - httputil.NoContent
+        - httputil.NothingToHandle
+        - httputil.OK
+        - httputil.Redirect
+  exclusions:
+    generated: lax
     rules:
-      main:
-        list-mode: strict
-        allow:
-          - $gostd
-          - github.com/nickbryan/httputil
-          - github.com/nickbryan/slogutil
-          - github.com/go-playground/validator/v10
-          - github.com/google/go-cmp/cmp
-          - github.com/google/uuid
-  errcheck:
-    check-type-assertions: true
-  exhaustive:
-    check:
-      - switch
-      - map
-    default-signifies-exhaustive: true
-  exhaustruct:
-    exclude:
-      - '.+/httputil\.Endpoint$'
-  funlen:
-    ignore-comments: true
-  gocognit:
-    min-complexity: 15
-  goconst:
-    ignore-tests: true
-  gocyclo:
-    min-complexity: 15
-  gofumpt:
-    extra-rules: true
-  goimports:
-    local-prefixes: github.com/nickbryan
-  grouper:
-    const-require-grouping: true
-    import-require-grouping: true
-  interfacebloat:
-    max: 3
-  ireturn:
-    allow:
-      - anon
-      - error
-      - empty
-      - generic
-      - stdlib
-      - httputil.Handler
-  misspell:
-    locale: US # US English is most common in software code so keep it familiar.
-  nakedret:
-    max-func-lines: 0
-  nestif:
-    min-complexity: 7
-  nilnil:
-    detect-opposite: true
-  nlreturn:
-    block-size: 2
-  nolintlint:
-    require-explanation: true
-    require-specific: true
-  rowserrcheck:
-    packages:
-      - github.com/jackc/pgx
-  sloglint:
-    attr-only: true
-    no-global: "all"
-    context: "all"
-    static-msg: true
-    key-naming-case: snake
-    forbidden-keys:
-      - time
-      - level
-      - msg
-      - source
-  tagalign:
-    order:
-      - json
-      - query
-      - path
-      - header
-      - default
-      - validate
-  usestdlibvars:
-    time-month: true
-    time-layout: true
-    crypto-hash: true
-    default-rpc-path: true
-    sql-isolation-level: true
-    tls-signature-scheme: true
-    constant-kind: true
-  usetesting:
-    os-temp-dir: true
-  wrapcheck:
-    extra-ignore-sigs:
-      - httputil.Accepted
-      - httputil.Created
-      - httputil.NoContent
-      - httputil.NothingToHandle
-      - httputil.OK
-      - httputil.Redirect
+      - linters:
+          - containedctx
+          - cyclop
+          - err113
+          - exhaustruct
+          - funlen
+          - gocognit
+          - gocyclo
+          - maintidx
+          - nestif
+        path: _test\.go
+      - linters:
+          - goconst
+        path: (.+)_test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - containedctx
-        - cyclop
-        - err113
-        - exhaustruct
-        - funlen
-        - gocognit
-        - gocyclo
-        - maintidx
-        - nestif
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
-output:
-  sort-results: true
-  show-stats: true
+formatters:
+  enable:
+    - gofmt
+    - gofumpt
+    - goimports
+  settings:
+    gofumpt:
+      extra-rules: true
+    goimports:
+      local-prefixes:
+        - github.com/nickbryan
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

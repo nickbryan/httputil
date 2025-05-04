@@ -25,7 +25,12 @@ help:
 	@perl -e '$(HELP_FUN)' $(MAKEFILE_LIST)
 
 lint: ##@Test
-	golangci-lint run $(args) ./...
+	docker run --rm -t -v $(shell pwd):/app -w /app \
+	--user $(shell id -u):$(shell id -g) \
+	-v $(shell go env GOCACHE):/.cache/go-build -e GOCACHE=/.cache/go-build \
+	-v $(shell go env GOMODCACHE):/.cache/mod -e GOMODCACHE=/.cache/mod \
+	-v ~/.cache/golangci-lint:/.cache/golangci-lint -e GOLANGCI_LINT_CACHE=/.cache/golangci-lint \
+	golangci/golangci-lint:v2.1 golangci-lint run $(args) ./...
 
 lint-fix: ##@Test
 	@make lint args="--fix"

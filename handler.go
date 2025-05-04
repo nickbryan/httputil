@@ -66,7 +66,7 @@ type (
 		// [BindValidParameters] documentation for usage information.
 		Params P
 		// ResponseWriter is an embedded HTTP response writer used to construct and send
-		// the HTTP response. When writing a response via the ResponseWriter directly it
+		// the HTTP response. When writing a response via the ResponseWriter directly, it
 		// is best practice to return a [NothingToHandle] response so that the handler
 		// does not try to encode response data or handle errors.
 		ResponseWriter http.ResponseWriter
@@ -169,6 +169,8 @@ type handler[D, P any] struct {
 	reqTypeKind, paramsTypeKind reflect.Kind
 }
 
+// NewHandler creates a new Handler that wraps the provided Action. It accepts
+// options to configure the handler's behavior.
 func NewHandler[D, P any](action Action[D, P], options ...HandlerOption) http.Handler {
 	opts := mapHandlerOptionsToDefaults(options)
 
@@ -184,18 +186,21 @@ func NewHandler[D, P any](action Action[D, P], options ...HandlerOption) http.Ha
 	}
 }
 
+// setCodec sets the codec for the handler if it has not already been set.
 func (h *handler[D, P]) setCodec(c Codec) {
 	if h.codec == nil {
 		h.codec = c
 	}
 }
 
+// setGuard sets the guard for the handler if it has not already been set.
 func (h *handler[D, P]) setGuard(g Guard) {
 	if h.guard == nil {
 		h.guard = g
 	}
 }
 
+// setLogger sets the logger for the handler if it has not already been set.
 func (h *handler[D, P]) setLogger(l *slog.Logger) {
 	if h.logger == nil {
 		h.logger = l
@@ -212,7 +217,7 @@ func (h *handler[D, P]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	request := Request[D, P]{Request: r, ResponseWriter: w}
 
 	if err := h.protect(&request); err != nil {
-		h.writeErrorResponse(request.Context(), &request, err)
+		h.writeErrorResponse(r.Context(), &request, err)
 		return
 	}
 
@@ -353,6 +358,7 @@ func (h *handler[D, P]) writeSuccessfulResponse(req *Request[D, P], res *Respons
 	}
 
 	req.ResponseWriter.WriteHeader(res.code)
+
 	if err := h.codec.Encode(req.ResponseWriter, res.data); err != nil {
 		h.logger.ErrorContext(req.Context(), "Handler failed to encode response data", slog.Any("error", err))
 	}
@@ -391,6 +397,7 @@ func (h *handler[D, P]) writeErrorResponse(ctx context.Context, req *Request[D, 
 	}
 
 	req.ResponseWriter.WriteHeader(problemDetails.Status)
+
 	if err = h.codec.EncodeError(req.ResponseWriter, problemDetails); err != nil {
 		h.logger.ErrorContext(ctx, "Handler failed to encode error data", slog.Any("error", err))
 	}
