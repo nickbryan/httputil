@@ -32,7 +32,7 @@ func (e *TemplateFSReadError) Error() string {
 // and parsing `.html` files. It returns the compiled template or an error if
 // file reading or parsing fails.
 func ReadHTMLTemplates(fsys fs.ReadFileFS, rootDir string) (*template.Template, error) {
-	views := template.New(filepath.Base(rootDir))
+	views := template.New(rootDir)
 	cleanRootDir := filepath.Clean(rootDir)
 
 	if err := fs.WalkDir(fsys, cleanRootDir, func(path string, d fs.DirEntry, err error) error {

@@ -58,7 +58,7 @@ type (
 	Request[D, P any] struct {
 		*http.Request
 		// Data holds the request-specific data of generic type D, which is provided
-		// when initializing the request. A [Handler] will attempt to decode the Request
+		// when initializing the request. A [Handler] will attempt to decode the http.Request
 		// body into this type.
 		Data D
 		// Params holds the parameters of generic type P associated with the request,
@@ -155,6 +155,14 @@ func Redirect(code int, url string) (*Response, error) {
 		code:     code,
 		data:     nil,
 		redirect: url,
+	}, nil
+}
+
+func Render(code int, template string, data any) (*Response, error) {
+	return &Response{
+		code:     code,
+		data:     templateData{name: template, data: data},
+		redirect: "",
 	}, nil
 }
 

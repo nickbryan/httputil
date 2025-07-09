@@ -262,12 +262,9 @@ The package provides a consistent interface for handlers while supporting multip
 functional handlers, and JSON-specific handlers).
 
 ## TODO
-- migrate run and satisfy linter.
-- mock the encoder for these tests then test the encoder	directly.
+- mock the encoder for the handler tests then test the encoder	directly.
 - test the default encoder with the server options.
 - address endpoints API.
-- address the net/http handler API.
 - test view.
 - tidy up the handler internals.
-- address the RequestX API.
 - revisit documentation.

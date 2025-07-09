@@ -564,7 +564,6 @@ func TestNewHandler(t *testing.T) {
 			}(),
 			wantResponseStatusCode: http.StatusTeapot,
 		},
-
 		"sets zero values when request params are missing and there is no validation": {
 			endpoint: func() httputil.Endpoint {
 				type params struct {

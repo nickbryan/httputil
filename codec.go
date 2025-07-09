@@ -35,8 +35,8 @@ type Codec interface {
 type JSONCodec struct{}
 
 // NewJSONCodec creates a new JSONCodec instance.
-func NewJSONCodec() *JSONCodec {
-	return &JSONCodec{}
+func NewJSONCodec() JSONCodec {
+	return JSONCodec{}
 }
 
 // Decode reads and decodes the JSON body of an HTTP request into the provided
@@ -90,8 +90,8 @@ func writeJSON(w io.Writer, data any) error {
 type XMLCodec struct{}
 
 // NewXMLCodec creates a new XMLCodec instance.
-func NewXMLCodec() *XMLCodec {
-	return &XMLCodec{}
+func NewXMLCodec() XMLCodec {
+	return XMLCodec{}
 }
 
 // Decode reads and decodes the XML body of an HTTP request into the provided
@@ -153,8 +153,8 @@ type HTMXCodec struct {
 }
 
 // NewHTMXCodec creates a new HTMXCodec instance.
-func NewHTMXCodec(templates *template.Template) *HTMXCodec {
-	return &HTMXCodec{
+func NewHTMXCodec(templates *template.Template) HTMXCodec {
+	return HTMXCodec{
 		decoder:   form.NewDecoder(),
 		templates: templates,
 	}
@@ -178,12 +178,28 @@ func (c HTMXCodec) Decode(r *http.Request, into any) error {
 	return nil
 }
 
+type templateData struct {
+	name string
+	data any
+}
+
+var errTemplateDataMissing = errors.New("template data missing")
+
 func (c HTMXCodec) Encode(w http.ResponseWriter, data any) error {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	tmpl, ok := data.(templateData)
+	if !ok {
+		return errTemplateDataMissing
+	}
+
+	if err := c.templates.ExecuteTemplate(w, tmpl.name, tmpl.data); err != nil {
+		return fmt.Errorf("rendering template: %w", err)
+	}
 
 	return nil
 }
 
-func (c HTMXCodec) EncodeError(w http.ResponseWriter, err error) error {
+func (c HTMXCodec) EncodeError(w http.ResponseWriter, _ error) error {
 	return nil
 }
