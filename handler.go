@@ -74,12 +74,18 @@ type (
 	}
 
 	// RequestData represents a Request that expects data but no Params.
+	// It's a type alias for Request with a generic data type D and an empty struct for Params.
+	// Use this type when your handler needs to process request body data but doesn't need URL parameters.
 	RequestData[D any] = Request[D, struct{}]
 
-	// RequestEmpty represents an empty Request that expects no Prams or data.
+	// RequestEmpty represents an empty Request that expects no Params or data.
+	// It's a type alias for Request with empty structs for both data and Params.
+	// Use this type when your handler doesn't need to process any request body or URL parameters.
 	RequestEmpty = Request[struct{}, struct{}]
 
 	// RequestParams represents a Request that expects Params but no data.
+	// It's a type alias for Request with an empty struct for data and a generic Params type P.
+	// Use this type when your handler needs to process URL parameters but doesn't need request body data.
 	RequestParams[P any] = Request[struct{}, P]
 
 	// Response represents an HTTP response that holds optional data and the

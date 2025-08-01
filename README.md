@@ -1,4 +1,5 @@
 # httputil
+
 Package `httputil` provides utility helpers for working with `net/http`, adding sensible defaults, bootstrapping, 
 and eliminating boilerplate code commonly required when building web services. This package aims to streamline the 
 development of HTTP-based applications by offering a cohesive set of tools for HTTP server configuration, request 
@@ -13,20 +14,38 @@ handling, error management, and more.
 
 </div>
 
+## Table of Contents
 - [Features](#features)
-    - [HTTP Server with Sensible Defaults](#http-server-with-sensible-defaults)
-    - [Handler Framework](#handler-framework)
-    - [Error Handling](#error-handling)
-    - [Request Parameter Processing](#request-parameter-processing)
-    - [Testing Utilities](#testing-utilities)
 - [Installation](#installation)
-- [Server Options](#server-options)
-- [Usage](#usage)
-    - [Basic JSON Handler](#basic-json-handler)
-    - [JSON Handler Request/Response](#json-handler-requestresponse)
-    - [JSON Handler With Params](#json-handler-with-params)
-    - [Basic `net/http` Handler](#basic-nethttp-handler)
+- [Quick Start](#quick-start)
+- [Server Configuration](#server-configuration)
+- [Request Handling](#request-handling)
+  - [Basic Handlers](#basic-handlers)
+  - [Request Types](#request-types)
+  - [Parameter Binding](#parameter-binding)
+  - [Validation](#validation)
+- [Handler Options](#handler-options)
+- [Response Helpers](#response-helpers)
+- [Error Handling](#error-handling)
+  - [RFC 7807 Problem Details](#rfc-7807-problem-details)
+  - [Predefined Error Types](#predefined-error-types)
+- [Middleware](#middleware)
+  - [Built-in Middleware](#built-in-middleware)
+  - [Custom Middleware](#custom-middleware)
+- [Guards](#guards)
+  - [Request Interception](#request-interception)
+  - [Guard Stacks](#guard-stacks)
+- [Endpoint Groups](#endpoint-groups)
+- [Testing](#testing)
+- [Examples](#examples)
+  - [Basic JSON Handler](#basic-json-handler)
+  - [JSON Handler with Request/Response](#json-handler-requestresponse)
+  - [JSON Handler with Path Parameters](#json-handler-with-path-parameters)
+  - [Basic net/http Handler](#basic-nethttp-handler)
+  - [Advanced Examples](#advanced-examples)
 - [Design Choices](#design-choices)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Features
 
@@ -53,7 +72,7 @@ handling, error management, and more.
 ### Request Parameter Processing
 
 - Safe and convenient parameter extraction from different sources (URL, query, headers, body)
-- Validation support
+- Validation support using the `validator` package
 
 ### Testing Utilities
 
@@ -66,20 +85,428 @@ handling, error management, and more.
 go get github.com/nickbryan/httputil
 ```
 
-## Server Options
+## Quick Start
+
+Here's a minimal example to get you started:
+
+```go
+package main
+
+import (
+    "context"
+    "net/http"
+    "log/slog"
+    "os"
+
+    "github.com/nickbryan/httputil"
+)
+
+func main() {
+    // Create a logger
+    logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+    
+    // Create a server with default options
+    server := httputil.NewServer(logger)
+    
+    // Register an endpoint
+    server.Register(
+        httputil.Endpoint{
+            Method: http.MethodGet,
+            Path:   "/hello",
+            Handler: httputil.NewHandler(
+                func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+                    return httputil.OK(map[string]string{"message": "Hello, World!"})
+                },
+            ),
+        },
+    )
+    
+    // Start the server
+    server.Serve(context.Background())
+}
+```
+
+## Server Configuration
+
 `httputil.NewServer` can be configured with the following options:
 
-| Option                  | Default | Description                                           |
-|-------------------------|---------|-------------------------------------------------------|
-| `WithAddress`           | `:8080` | Sets the address the server will listen on            |
-| `WithIdleTimeout`       | 30s     | Controls how long connections are kept open when idle |
-| `WithMaxBodySize`       | 5MB     | Maximum allowed request body size                     |
-| `WithReadHeaderTimeout` | 5s      | Maximum time to read request headers                  |
-| `WithReadTimeout`       | 60s     | Maximum time to read the entire request               |
-| `WithShutdownTimeout`   | 30s     | Time to wait for connections to close during shutdown |
-| `WithWriteTimeout`      | 30s     | Maximum time to write a response                      |
+| Option                        | Default | Description                                           |
+|-------------------------------|---------|-------------------------------------------------------|
+| `WithServerAddress`           | `:8080` | Sets the address the server will listen on            |
+| `WithServerCodec`             | JSON    | Sets the default codec for request/response encoding  |
+| `WithServerIdleTimeout`       | 30s     | Controls how long connections are kept open when idle |
+| `WithServerMaxBodySize`       | 5MB     | Maximum allowed request body size                     |
+| `WithServerReadHeaderTimeout` | 5s      | Maximum time to read request headers                  |
+| `WithServerReadTimeout`       | 60s     | Maximum time to read the entire request               |
+| `WithServerShutdownTimeout`   | 30s     | Time to wait for connections to close during shutdown |
+| `WithServerWriteTimeout`      | 30s     | Maximum time to write a response                      |
 
-## Usage
+Example with custom configuration:
+
+```go
+server := httputil.NewServer(
+    logger,
+    httputil.WithServerAddress(":3000"),
+    httputil.WithServerMaxBodySize(10 * 1024 * 1024), // 10MB
+    httputil.WithServerReadTimeout(30 * time.Second),
+)
+```
+
+## Request Handling
+
+### Basic Handlers
+
+The package provides a flexible handler system that supports different request types:
+
+```go
+// Empty request (no body or parameters)
+httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
+    return httputil.OK(map[string]string{"message": "Hello, World!"})
+})
+
+// Request with JSON body
+httputil.NewHandler(func(r httputil.RequestData[MyRequestType]) (*httputil.Response, error) {
+    // Access request data with r.Data
+    return httputil.OK(map[string]string{"message": "Hello, " + r.Data.Name})
+})
+
+// Request with path/query parameters
+httputil.NewHandler(func(r httputil.RequestParams[MyParamsType]) (*httputil.Response, error) {
+    // Access parameters with r.Params
+    return httputil.OK(map[string]string{"message": "Hello, " + r.Params.Name})
+})
+```
+
+### Request Types
+
+The package supports three main request types:
+
+1. `RequestEmpty` - For requests without body or parameters
+2. `RequestData<T>` - For requests with a JSON body of type T
+3. `RequestParams<P>` - For requests with path/query parameters of type P
+
+You can also combine both data and parameters:
+
+```go
+httputil.NewHandler(func(r httputil.Request[MyRequestType, MyParamsType]) (*httputil.Response, error) {
+    // Access both r.Data and r.Params
+    return httputil.OK(map[string]string{
+        "message": "Hello, " + r.Params.Name,
+        "details": r.Data.Details,
+    })
+})
+```
+
+### Parameter Binding
+
+Parameters can be bound from different sources using struct tags:
+
+```go
+type MyParams struct {
+    ID      string `path:"id" validate:"required,uuid"`
+    Filter  string `query:"filter"`
+    APIKey  string `header:"X-API-Key" validate:"required"`
+    Version int    `query:"version" validate:"omitempty,min=1"`
+}
+```
+
+Supported parameter sources:
+- `path` - URL path parameters
+- `query` - Query string parameters
+- `header` - HTTP headers
+
+### Validation
+
+The package uses [go-playground/validator](https://github.com/go-playground/validator) for request validation:
+
+```go
+type CreateUserRequest struct {
+    Name     string `json:"name" validate:"required,min=2,max=100"`
+    Email    string `json:"email" validate:"required,email"`
+    Age      int    `json:"age" validate:"required,min=18"`
+    Password string `json:"password" validate:"required,min=8"`
+}
+```
+
+Validation errors are automatically converted to RFC 7807 problem details responses.
+
+## Handler Options
+
+When creating handlers with `httputil.NewHandler()`, you can customize their behavior using the following options:
+
+| Option                | Default | Description                                           |
+|-----------------------|---------|-------------------------------------------------------|
+| `WithHandlerCodec`    | nil     | Sets the codec used for request/response serialization |
+| `WithHandlerGuard`    | nil     | Sets a guard for request interception                  |
+| `WithHandlerLogger`   | nil     | Sets the logger used by the handler                    |
+
+Example with custom handler options:
+
+```go
+handler := httputil.NewHandler(
+    myHandlerFunc,
+    httputil.WithHandlerCodec(httputil.NewJSONCodec()),
+    httputil.WithHandlerGuard(myAuthGuard),
+    httputil.WithHandlerLogger(logger),
+)
+```
+
+If handler options are not specified, the handler will inherit settings from the server when registered.
+
+## Response Helpers
+
+The package provides helper functions for creating common HTTP responses:
+
+```go
+// 200 OK
+httputil.OK(data)
+
+// 201 Created
+httputil.Created(data)
+
+// 202 Accepted
+httputil.Accepted(data)
+
+// 204 No Content
+httputil.NoContent()
+
+// 301/302/307/308 Redirects
+httputil.Redirect(http.StatusTemporaryRedirect, "/new-location")
+```
+
+For custom status codes, use `NewResponse`:
+
+```go
+httputil.NewResponse(http.StatusPartialContent, data)
+```
+
+## Error Handling
+
+### RFC 7807 Problem Details
+
+Error responses follow the [RFC 7807](https://tools.ietf.org/html/rfc7807) standard for Problem Details for HTTP APIs:
+
+```json
+{
+  "type": "https://example.com/problems/constraint-violation",
+  "title": "Constraint Violation",
+  "status": 400,
+  "detail": "The request body contains invalid fields",
+  "code": "INVALID_REQUEST_BODY",
+  "instance": "/users",
+  "invalid_params": [
+    {
+      "name": "email",
+      "reason": "must be a valid email address"
+    }
+  ]
+}
+```
+
+### Predefined Error Types
+
+The package provides predefined error constructors for common HTTP status codes:
+
+```go
+// 400 Bad Request
+problem.BadRequest("Invalid request format")
+
+// 401 Unauthorized
+problem.Unauthorized("Authentication required")
+
+// 403 Forbidden
+problem.Forbidden("Insufficient permissions")
+
+// 404 Not Found
+problem.NotFound("User not found")
+
+// 409 Conflict
+problem.ResourceExists("User already exists")
+
+// 422 Unprocessable Entity
+problem.ConstraintViolation("Invalid input", []problem.Parameter{
+    {Name: "email", Reason: "must be a valid email address"},
+})
+
+// 500 Internal Server Error
+problem.ServerError("An unexpected error occurred")
+```
+
+## Middleware
+
+### Built-in Middleware
+
+The package includes built-in middleware for common tasks:
+
+1. **Panic Recovery** - Automatically recovers from panics in handlers
+2. **Max Body Size** - Limits request body size to prevent abuse
+
+These are applied automatically by the server.
+
+### Custom Middleware
+
+You can create custom middleware using the `MiddlewareFunc` type:
+
+```go
+func loggingMiddleware(logger *slog.Logger) httputil.MiddlewareFunc {
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            start := time.Now()
+            
+            // Call the next handler
+            next.ServeHTTP(w, r)
+            
+            // Log after the request is processed
+            logger.InfoContext(r.Context(), "Request processed",
+                slog.String("method", r.Method),
+                slog.String("path", r.URL.Path),
+                slog.Duration("duration", time.Since(start)),
+            )
+        })
+    }
+}
+```
+
+Apply middleware to endpoints:
+
+```go
+endpoints := httputil.EndpointGroup{
+    httputil.Endpoint{
+        Method: http.MethodGet,
+        Path:   "/users",
+        Handler: httputil.NewHandler(listUsers),
+    },
+    httputil.Endpoint{
+        Method: http.MethodPost,
+        Path:   "/users",
+        Handler: httputil.NewHandler(createUser),
+    },
+}
+
+// Apply middleware to all endpoints in the group
+server.Register(endpoints.WithMiddleware(loggingMiddleware(logger))...)
+```
+
+## Guards
+
+Guards provide a way to intercept and potentially modify requests before they reach handlers.
+
+### Request Interception
+
+Implement the `Guard` interface:
+
+```go
+type AuthGuard struct {
+    secretKey string
+}
+
+func (g *AuthGuard) Guard(r *http.Request) (*http.Request, error) {
+    token := r.Header.Get("Authorization")
+    if token == "" {
+        return nil, problem.Unauthorized("Missing authorization token")
+    }
+    
+    // Validate token...
+    
+    // Add user info to context
+    ctx := context.WithValue(r.Context(), "user", userInfo)
+    return r.WithContext(ctx), nil
+}
+```
+
+Apply the guard to an endpoint:
+
+```go
+endpoint := httputil.NewEndpointWithGuard(
+    httputil.Endpoint{
+        Method: http.MethodGet,
+        Path:   "/protected",
+        Handler: httputil.NewHandler(protectedHandler),
+    },
+    &AuthGuard{secretKey: "your-secret-key"},
+)
+```
+
+### Guard Stacks
+
+Combine multiple guards using `GuardStack`:
+
+```go
+guards := httputil.GuardStack{
+    &RateLimitGuard{},
+    &AuthGuard{secretKey: "your-secret-key"},
+    &LoggingGuard{logger: logger},
+}
+
+endpoint := httputil.NewEndpointWithGuard(
+    httputil.Endpoint{
+        Method: http.MethodGet,
+        Path:   "/protected",
+        Handler: httputil.NewHandler(protectedHandler),
+    },
+    guards,
+)
+```
+
+## Endpoint Groups
+
+`EndpointGroup` allows you to manage multiple endpoints together:
+
+```go
+userEndpoints := httputil.EndpointGroup{
+    httputil.Endpoint{
+        Method: http.MethodGet,
+        Path:   "/users",
+        Handler: httputil.NewHandler(listUsers),
+    },
+    httputil.Endpoint{
+        Method: http.MethodPost,
+        Path:   "/users",
+        Handler: httputil.NewHandler(createUser),
+    },
+}
+
+// Add a path prefix to all endpoints
+prefixedEndpoints := userEndpoints.WithPrefix("/api/v1")
+
+// Apply middleware to all endpoints
+secureEndpoints := prefixedEndpoints.WithMiddleware(authMiddleware)
+
+// Apply a guard to all endpoints
+guardedEndpoints := secureEndpoints.WithGuard(&RateLimitGuard{})
+
+// Register all endpoints
+server.Register(guardedEndpoints...)
+```
+
+## Testing
+
+The package provides utilities for testing HTTP handlers:
+
+```go
+func TestUserHandler(t *testing.T) {
+    handler := httputil.NewHandler(func(r httputil.RequestEmpty) (*httputil.Response, error) {
+        return httputil.OK(map[string]string{"message": "Hello, World!"})
+    })
+    
+    req := httptest.NewRequest(http.MethodGet, "/users", nil)
+    w := httptest.NewRecorder()
+    
+    handler.ServeHTTP(w, req)
+    
+    if w.Code != http.StatusOK {
+        t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+    }
+    
+    // Use the testutil package for JSON comparison
+    expected := `{"message":"Hello, World!"}`
+    if err := testutil.JSONEquals(expected, w.Body.String()); err != nil {
+        t.Error(err)
+    }
+}
+```
+
+## Examples
 
 ### Basic JSON Handler
 
@@ -103,7 +530,7 @@ func main() {
         httputil.Endpoint{
             Method: http.MethodGet, 
             Path:   "/greetings", 
-            Handler: httputil.NewJSONHandler(
+            Handler: httputil.NewHandler(
                 func(_ httputil.RequestEmpty) (*httputil.Response, error) {
                     return httputil.OK([]string{"Hello, World!", "Hola Mundo!"})
                 }, 
@@ -118,7 +545,7 @@ func main() {
 }
 ```
 
-### JSON Handler Request/Response
+### JSON Handler with Request/Response
 
 ```go
 package main
@@ -162,14 +589,14 @@ func newGreetingsEndpoint() httputil.Endpoint {
     return httputil.Endpoint{
         Method: http.MethodPost,
         Path:   "/greetings",
-        Handler: httputil.NewJSONHandler(func(r httputil.RequestData[request]) (*httputil.Response, error) {
+        Handler: httputil.NewHandler(func(r httputil.RequestData[request]) (*httputil.Response, error) {
             return httputil.Created(response{Message: "Hello " + r.Data.Name + "!"})
         }),
     }
 }
 ```
 
-### JSON Handler With Params
+### JSON Handler with Path Parameters
 
 ```go
 package main
@@ -203,14 +630,14 @@ func newGreetingsEndpoint() httputil.Endpoint {
     return httputil.Endpoint{
         Method: http.MethodGet,
         Path:   "/greetings/{name}",
-        Handler: httputil.NewJSONHandler(func(r httputil.RequestParams[params]) (*httputil.Response, error) {
+        Handler: httputil.NewHandler(func(r httputil.RequestParams[params]) (*httputil.Response, error) {
             return httputil.OK([]string{"Hello, " + r.Params.Name + "!", "Hola " + r.Params.Name + "!"})
         }),
     }
 }
 ```
 
-### Basic `net/http` Handler
+### Basic net/http Handler
 
 ```go
 package main
@@ -232,7 +659,7 @@ func main() {
         httputil.Endpoint{
             Method: http.MethodGet,
             Path:   "/greetings",
-            Handler: httputil.NewNetHTTPHandlerFunc(
+            Handler: httputil.WrapNetHTTPHandlerFunc(
                 func(w http.ResponseWriter, _ *http.Request) {
                     _, _ = w.Write([]byte(`["Hello, World!","Hola Mundo!"]`))
                 },
@@ -244,6 +671,89 @@ func main() {
 	
     // curl localhost:8080/greetings
     // ["Hello, World!","Hola Mundo!"]
+}
+```
+
+### Advanced Examples
+
+#### Combined Data and Parameters
+
+```go
+func userEndpoint() httputil.Endpoint {
+    type (
+        params struct {
+            ID string `path:"id" validate:"required,uuid"`
+        }
+        request struct {
+            Name  string `json:"name" validate:"required"`
+            Email string `json:"email" validate:"required,email"`
+        }
+    )
+
+    return httputil.Endpoint{
+        Method: http.MethodPut,
+        Path:   "/users/{id}",
+        Handler: httputil.NewHandler(func(r httputil.Request[request, params]) (*httputil.Response, error) {
+            // Access both r.Data and r.Params
+            return httputil.OK(map[string]string{
+                "id": r.Params.ID,
+                "name": r.Data.Name,
+                "email": r.Data.Email,
+            })
+        }),
+    }
+}
+```
+
+#### Custom Middleware and Guards
+
+```go
+func setupServer() *httputil.Server {
+    logger := slogutil.NewJSONLogger()
+    server := httputil.NewServer(logger)
+
+    // Create middleware
+    loggingMiddleware := func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            logger.InfoContext(r.Context(), "Request started", 
+                slog.String("method", r.Method), 
+                slog.String("path", r.URL.Path))
+            next.ServeHTTP(w, r)
+        })
+    }
+
+    // Create guard
+    authGuard := httputil.GuardFunc(func(r *http.Request) (*http.Request, error) {
+        token := r.Header.Get("Authorization")
+        if token == "" {
+            return nil, problem.Unauthorized("Missing authorization token")
+        }
+        return r, nil
+    })
+
+    // Create endpoints
+    endpoints := httputil.EndpointGroup{
+        httputil.Endpoint{
+            Method: http.MethodGet,
+            Path:   "/users",
+            Handler: httputil.NewHandler(listUsers),
+        },
+        httputil.Endpoint{
+            Method: http.MethodPost,
+            Path:   "/users",
+            Handler: httputil.NewHandler(createUser),
+        },
+    }
+
+    // Apply middleware and guard
+    secureEndpoints := endpoints.
+        WithMiddleware(loggingMiddleware).
+        WithGuard(authGuard).
+        WithPrefix("/api/v1")
+
+    server.Register(secureEndpoints...)
+    
+    return server
 }
 ```
 
@@ -260,3 +770,23 @@ concerns like logging, authentication, and metrics.
 ### Handler Interfaces
 The package provides a consistent interface for handlers while supporting multiple styles (standard http.Handler, 
 functional handlers, and JSON-specific handlers).
+
+### Type Safety with Generics
+The package uses Go generics to provide type-safe request handling, ensuring that request data and parameters are properly typed.
+
+### Graceful Shutdown
+The server implementation includes graceful shutdown handling, ensuring that in-flight requests are completed before the server stops.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

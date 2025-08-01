@@ -68,12 +68,17 @@ func (h *netHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.handler.ServeHTTP(w, r)
 }
 
+// setGuard sets the guard for the handler if it has not already been set.
+// This method is called by the Server when registering endpoints with guards.
 func (h *netHTTPHandler) setGuard(g Guard) {
 	if h.guard == nil {
 		h.guard = g
 	}
 }
 
+// setLogger sets the logger for the handler if it has not already been set.
+// This method is called by the Server when registering endpoints to provide
+// consistent logging across all handlers.
 func (h *netHTTPHandler) setLogger(l *slog.Logger) {
 	if h.logger == nil {
 		h.logger = l

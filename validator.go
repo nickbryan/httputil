@@ -1,3 +1,4 @@
+// Package httputil provides utilities for working with HTTP servers and clients.
 package httputil
 
 import (
@@ -8,7 +9,10 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
-// As pert the validator.New docs:
+// validate is a singleton instance of the validator.Validate type used for
+// validating request data and parameters.
+//
+// As per the validator.New docs:
 //
 // InputRules is designed to be thread-safe and used as a singleton instance. It
 // caches information about your struct and validations, in essence only parsing
