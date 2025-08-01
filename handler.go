@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/go-playground/validator/v10"
 
@@ -162,6 +163,7 @@ func Redirect(code int, url string) (*Response, error) {
 var _ http.Handler = &handler[any, any]{} //nolint:exhaustruct // Compile time implementation check.
 
 type handler[D, P any] struct {
+	mu                          sync.Mutex
 	action                      Action[D, P]
 	codec                       Codec
 	guard                       Guard
@@ -188,6 +190,9 @@ func NewHandler[D, P any](action Action[D, P], options ...HandlerOption) http.Ha
 
 // setCodec sets the codec for the handler if it has not already been set.
 func (h *handler[D, P]) setCodec(c Codec) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	if h.codec == nil {
 		h.codec = c
 	}
@@ -195,6 +200,9 @@ func (h *handler[D, P]) setCodec(c Codec) {
 
 // setGuard sets the guard for the handler if it has not already been set.
 func (h *handler[D, P]) setGuard(g Guard) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	if h.guard == nil {
 		h.guard = g
 	}
@@ -202,6 +210,9 @@ func (h *handler[D, P]) setGuard(g Guard) {
 
 // setLogger sets the logger for the handler if it has not already been set.
 func (h *handler[D, P]) setLogger(l *slog.Logger) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	if h.logger == nil {
 		h.logger = l
 	}

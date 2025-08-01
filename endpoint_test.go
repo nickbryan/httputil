@@ -27,14 +27,16 @@ func TestEndpointGroup_WithGuard(t *testing.T) {
 		return r.WithContext(context.WithValue(r.Context(), statusInCtxKey{}, http.StatusTeapot)), nil
 	})
 
-	statusFromContextHandler := httputil.NewHandler(func(r httputil.RequestEmpty) (*httputil.Response, error) {
-		ctxVal, ok := r.Context().Value(statusInCtxKey{}).(int)
-		if !ok {
-			return nil, problem.BusinessRuleViolation(r.Request).WithDetail("ctxVal not set")
-		}
+	newStatusFromContextHandler := func() http.Handler {
+		return httputil.NewHandler(func(r httputil.RequestEmpty) (*httputil.Response, error) {
+			ctxVal, ok := r.Context().Value(statusInCtxKey{}).(int)
+			if !ok {
+				return nil, problem.BusinessRuleViolation(r.Request).WithDetail("ctxVal not set")
+			}
 
-		return httputil.NewResponse(ctxVal, nil), nil
-	})
+			return httputil.NewResponse(ctxVal, nil), nil
+		})
+	}
 
 	type testRequest struct {
 		path         string
@@ -82,7 +84,7 @@ func TestEndpointGroup_WithGuard(t *testing.T) {
 				httputil.Endpoint{
 					Method:  http.MethodGet,
 					Path:    "/test",
-					Handler: statusFromContextHandler,
+					Handler: newStatusFromContextHandler(),
 				},
 			},
 			guards: []httputil.Guard{teapotInContextInterceptor},
@@ -95,12 +97,12 @@ func TestEndpointGroup_WithGuard(t *testing.T) {
 				httputil.Endpoint{
 					Method:  http.MethodGet,
 					Path:    "/testA",
-					Handler: statusFromContextHandler,
+					Handler: newStatusFromContextHandler(),
 				},
 				httputil.Endpoint{
 					Method:  http.MethodGet,
 					Path:    "/testB",
-					Handler: statusFromContextHandler,
+					Handler: newStatusFromContextHandler(),
 				},
 			},
 			guards: []httputil.Guard{teapotInContextInterceptor},
@@ -114,12 +116,12 @@ func TestEndpointGroup_WithGuard(t *testing.T) {
 				httputil.Endpoint{
 					Method:  http.MethodGet,
 					Path:    "/testA",
-					Handler: statusFromContextHandler,
+					Handler: newStatusFromContextHandler(),
 				},
 				httputil.Endpoint{
 					Method:  http.MethodGet,
 					Path:    "/testB",
-					Handler: statusFromContextHandler,
+					Handler: newStatusFromContextHandler(),
 				},
 			},
 			guards: []httputil.Guard{
