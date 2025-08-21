@@ -11,6 +11,7 @@ type (
 	// ClientOption allows default doer config values to be overridden.
 	ClientOption func(co *clientOptions)
 
+	// RedirectPolicy defines the policy for handling HTTP redirects.
 	RedirectPolicy func(req *http.Request, via []*http.Request) error
 
 	clientOptions struct {
@@ -60,6 +61,8 @@ func WithClientRedirectPolicy(policy RedirectPolicy) ClientOption {
 	}
 }
 
+// mapClientOptionsToDefaults applies the provided ClientOption to a default
+// clientOptions struct.
 func mapClientOptionsToDefaults(opts []ClientOption) clientOptions {
 	const (
 		// This value aligns with the server's read timeout, providing a reasonable
@@ -176,7 +179,10 @@ func WithRequestParams(params map[string]string) RequestOption {
 // mapRequestOptionsToDefaults applies the provided RequestOption to a default
 // requestOptions struct.
 func mapRequestOptionsToDefaults(opts []RequestOption) requestOptions {
-	defaultOpts := requestOptions{}
+	defaultOpts := requestOptions{
+		header: make(http.Header),
+		params: make(url.Values),
+	}
 
 	for _, opt := range opts {
 		opt(&defaultOpts)

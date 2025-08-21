@@ -11,9 +11,15 @@ import (
 	"github.com/nickbryan/httputil/problem"
 )
 
+// ClientCodec is an interface for encoding and decoding HTTP request and
+// response bodies for the client. It provides methods for encoding request data
+// and decoding response data or errors.
 type ClientCodec interface {
+	// ContentType returns the Content-Type header value for the client codec.
 	ContentType() string
+	// Encode encodes the given data into a new io.Reader.
 	Encode(data any) (io.Reader, error)
+	// Decode reads and decodes the response body into the provided target struct
 	Decode(r io.Reader, into any) error
 }
 

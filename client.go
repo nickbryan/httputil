@@ -1,3 +1,4 @@
+// Package httputil provides utilities for building HTTP clients and servers.
 package httputil
 
 import (
@@ -12,12 +13,15 @@ import (
 	"github.com/nickbryan/httputil/problem"
 )
 
+// Client is an HTTP client that wraps a standard http.Client and provides
+// convenience methods for making requests and handling responses.
 type Client struct {
 	basePath string
 	client   *http.Client
 	codec    ClientCodec
 }
 
+// NewClient creates a new Client with the given options.
 func NewClient(options ...ClientOption) *Client {
 	opts := mapClientOptionsToDefaults(options)
 
@@ -43,30 +47,43 @@ func (c *Client) WrappedClient() *http.Client {
 }
 
 // Do executes the provided request using the Client's underlying *http.Client.
+// It returns the raw *http.Response and an error, if any.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	return c.client.Do(req)
 }
 
+// Get sends an HTTP GET request to the specified path.
+// It returns a Result which wraps the http.Response, or an error.
 func (c *Client) Get(ctx context.Context, path string, options ...RequestOption) (*Result, error) {
 	return c.do(ctx, http.MethodGet, path, nil, options...)
 }
 
+// Post sends an HTTP POST request to the specified path with the given body.
+// It returns a Result which wraps the http.Response, or an error.
 func (c *Client) Post(ctx context.Context, path string, body any, options ...RequestOption) (*Result, error) {
 	return c.do(ctx, http.MethodPost, path, body, options...)
 }
 
+// Put sends an HTTP PUT request to the specified path with the given body.
+// It returns a Result which wraps the http.Response, or an error.
 func (c *Client) Put(ctx context.Context, path string, body any, options ...RequestOption) (*Result, error) {
 	return c.do(ctx, http.MethodPut, path, body, options...)
 }
 
+// Patch sends an HTTP PATCH request to the specified path with the given body.
+// It returns a Result which wraps the http.Response, or an error.
 func (c *Client) Patch(ctx context.Context, path string, body any, options ...RequestOption) (*Result, error) {
 	return c.do(ctx, http.MethodPatch, path, body, options...)
 }
 
+// Delete sends an HTTP DELETE request to the specified path.
+// It returns a Result which wraps the http.Response, or an error.
 func (c *Client) Delete(ctx context.Context, path string, options ...RequestOption) (*Result, error) {
 	return c.do(ctx, http.MethodDelete, path, nil, options...)
 }
 
+// do executes an HTTP request with the given method, path, body, and options.
+// It handles request creation, body encoding, and response wrapping in a Result.
 func (c *Client) do(ctx context.Context, method, path string, body any, options ...RequestOption) (*Result, error) {
 	opts := mapRequestOptionsToDefaults(options)
 
@@ -108,11 +125,17 @@ func (c *Client) do(ctx context.Context, method, path string, body any, options 
 	}, nil
 }
 
+// Result wraps an http.Response and provides convenience methods for
+// decoding the response body and checking status codes.
 type Result struct {
 	*http.Response
 	codec ClientCodec
 }
 
+// AsProblemDetails attempts to decode the response body into a
+// problem.DetailedError. This is useful for handling API errors that conform to
+// RFC 7807. Note: This method consumes the response body. Subsequent calls to
+// Decode or AsProblemDetails will fail if the body has already been read.
 func (cr *Result) AsProblemDetails() (*problem.DetailedError, error) {
 	var problemDetails *problem.DetailedError
 
@@ -123,14 +146,20 @@ func (cr *Result) AsProblemDetails() (*problem.DetailedError, error) {
 	return problemDetails, nil
 }
 
+// IsError returns true if the HTTP status code is 400 or greater.
 func (cr *Result) IsError() bool {
 	return cr.StatusCode >= 400
 }
 
+// IsSuccess returns true if the HTTP status code is between 200 and 299 (inclusive).
 func (cr *Result) IsSuccess() bool {
 	return cr.StatusCode > 199 && cr.StatusCode < 300
 }
 
+// Decode decodes the response body into the provided target. It uses the
+// ClientCodec to perform the decoding. Note: This method consumes the response
+// body. Subsequent calls to Decode or AsProblemDetails will fail if the body
+// has already been read.
 func (cr *Result) Decode(into any) (err error) {
 	defer func(Body io.ReadCloser) {
 		if e := Body.Close(); e != nil {

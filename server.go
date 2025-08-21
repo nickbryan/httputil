@@ -128,9 +128,9 @@ type netHTTPServerLogAdapter struct {
 }
 
 // Handle processes and modifies a slog.Record before passing it to the embedded
-// handler for logging. It adjusts the log message and includes the original
-// error as an attribute. Returns an error if the embedded handler fails to
-// handle the modified log record.
+// handler for logging. It adjusts the log message to be more generic and
+// includes the original error as an attribute. Returns an error if the embedded
+// handler fails to handle the modified log record.
 func (n netHTTPServerLogAdapter) Handle(ctx context.Context, record slog.Record) error {
 	rec := record.Clone()
 
