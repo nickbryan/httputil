@@ -2,8 +2,124 @@ package httputil
 
 import (
 	"log/slog"
+	"net/http"
 	"time"
 )
+
+type (
+	// ClientOption allows default doer config values to be overridden.
+	ClientOption func(co *clientOptions)
+
+	RedirectPolicy func(req *http.Request, via []*http.Request) error
+
+	clientOptions struct {
+		basePath      string
+		checkRedirect RedirectPolicy
+		jar           http.CookieJar
+		timeout       time.Duration
+	}
+)
+
+// WithClientBasePath sets the base path for the Client. This is used to prefix
+// relative paths in the request URLs.
+func WithClientBasePath(basePath string) ClientOption {
+	return func(co *clientOptions) {
+		co.basePath = basePath
+	}
+}
+
+// WithClientCookieJar sets the CookieJar that the Client will use when making requests.
+func WithClientCookieJar(jar http.CookieJar) ClientOption {
+	return func(co *clientOptions) {
+		co.jar = jar
+	}
+}
+
+// WithClientTimeout sets the timeout for the doer. This is the maximum amount of
+// time the doer will wait for a response from the server.
+func WithClientTimeout(timeout time.Duration) ClientOption {
+	return func(co *clientOptions) {
+		co.timeout = timeout
+	}
+}
+
+// WithClientRedirectPolicy sets the RedirectPolicy that the Client will use when
+// following redirects.
+func WithClientRedirectPolicy(policy RedirectPolicy) ClientOption {
+	return func(co *clientOptions) {
+		co.checkRedirect = policy
+	}
+}
+
+func mapClientOptionsToDefaults(opts []ClientOption) clientOptions {
+	const (
+		// This value aligns with the server's read timeout, providing a reasonable
+		// balance between waiting for slow server responses and preventing the doer
+		// from being stuck for too long
+		defaultTimeout = 60 * time.Second
+	)
+
+	defaultOpts := clientOptions{
+		basePath:      "",
+		checkRedirect: nil,
+		jar:           nil,
+		timeout:       defaultTimeout,
+	}
+
+	for _, opt := range opts {
+		opt(&defaultOpts)
+	}
+
+	return defaultOpts
+}
+
+type (
+	// HandlerOption allows default handler config values to be overridden.
+	HandlerOption func(ho *handlerOptions)
+
+	handlerOptions struct {
+		codec  Codec
+		guard  Guard
+		logger *slog.Logger
+	}
+)
+
+// WithHandlerCodec sets the Codec that the Handler will use when [NewHandler] is called.
+func WithHandlerCodec(codec Codec) HandlerOption {
+	return func(ho *handlerOptions) {
+		ho.codec = codec
+	}
+}
+
+// WithHandlerGuard sets the Guard that the Handler will use when [NewHandler] is called.
+func WithHandlerGuard(guard Guard) HandlerOption {
+	return func(ho *handlerOptions) {
+		ho.guard = guard
+	}
+}
+
+// WithHandlerLogger sets the slog.Logger that the Handler will use when [NewHandler] is called.
+func WithHandlerLogger(logger *slog.Logger) HandlerOption {
+	return func(ho *handlerOptions) {
+		ho.logger = logger
+	}
+}
+
+// mapHandlerOptionsToDefaults applies the provided HandlerOption to a default
+// handlerOptions struct.
+func mapHandlerOptionsToDefaults(opts []HandlerOption) handlerOptions {
+	defaultOpts := handlerOptions{
+		codec:  nil,
+		guard:  nil,
+		logger: nil,
+	}
+
+	for _, opt := range opts {
+		opt(&defaultOpts)
+	}
+
+	return defaultOpts
+}
 
 type (
 	// ServerOption allows default server config values to be overridden.
@@ -128,54 +244,6 @@ func mapServerOptionsToDefaults(opts []ServerOption) serverOptions {
 		readTimeout:       defaultReadTimeout,
 		shutdownTimeout:   defaultShutdownTimeout,
 		writeTimeout:      defaultWriteTimeout,
-	}
-
-	for _, opt := range opts {
-		opt(&defaultOpts)
-	}
-
-	return defaultOpts
-}
-
-type (
-	// HandlerOption allows default handler config values to be overridden.
-	HandlerOption func(so *handlerOptions)
-
-	handlerOptions struct {
-		codec  Codec
-		guard  Guard
-		logger *slog.Logger
-	}
-)
-
-// WithHandlerCodec sets the Codec that the Handler will use when [NewHandler] is called.
-func WithHandlerCodec(codec Codec) HandlerOption {
-	return func(so *handlerOptions) {
-		so.codec = codec
-	}
-}
-
-// WithHandlerGuard sets the Guard that the Handler will use when [NewHandler] is called.
-func WithHandlerGuard(guard Guard) HandlerOption {
-	return func(so *handlerOptions) {
-		so.guard = guard
-	}
-}
-
-// WithHandlerLogger sets the slog.Logger that the Handler will use when [NewHandler] is called.
-func WithHandlerLogger(logger *slog.Logger) HandlerOption {
-	return func(so *handlerOptions) {
-		so.logger = logger
-	}
-}
-
-// mapHandlerOptionsToDefaults applies the provided HandlerOption to a default
-// handlerOptions struct.
-func mapHandlerOptionsToDefaults(opts []HandlerOption) handlerOptions {
-	defaultOpts := handlerOptions{
-		codec:  nil,
-		guard:  nil,
-		logger: nil,
 	}
 
 	for _, opt := range opts {

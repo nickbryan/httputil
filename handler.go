@@ -350,7 +350,7 @@ func (h *handler[D, P]) paramsHydratedOK(req *Request[D, P]) bool {
 	return true
 }
 
-// writeSuccessfulResponse writes a successful HTTP response to the client,
+// writeSuccessfulResponse writes a successful HTTP response to the doer,
 // handling redirects, empty data, or JSON encoding.
 func (h *handler[D, P]) writeSuccessfulResponse(req *Request[D, P], res *Response) {
 	if res == nil {
