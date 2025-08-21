@@ -43,6 +43,7 @@ handling, error management, and more.
   - [JSON Handler with Path Parameters](#json-handler-with-path-parameters)
   - [Basic net/http Handler](#basic-nethttp-handler)
   - [Advanced Examples](#advanced-examples)
+- [Client Usage](#client-usage)
 - [Design Choices](#design-choices)
 - [Contributing](#contributing)
 - [License](#license)
@@ -756,6 +757,121 @@ func setupServer() *httputil.Server {
     return server
 }
 ```
+
+## Client Usage
+
+`httputil.Client` provides a convenient and idiomatic way to make HTTP requests to external services. It wraps the 
+standard `net/http.Client` and offers simplified methods for common HTTP operations, along with robust response handling.
+
+### Creating a Client
+
+You can create a new `Client` instance using `httputil.NewClient` and configure it with `ClientOption`s:
+
+```go
+import (
+    "net/http"
+    "time"
+    "github.com/nickbryan/httputil"
+)
+
+client := httputil.NewClient(
+    httputil.WithClientBasePath("https://api.example.com"),
+    httputil.WithClientTimeout(10 * time.Second),
+    httputil.WithClientCookieJar(nil), // Or provide a custom http.CookieJar
+)
+```
+
+### Making Requests
+
+The `Client` provides methods for common HTTP verbs. All methods return a `*httputil.Result` and an `error`.
+
+```go
+import (
+    "context"
+    "fmt"
+    "github.com/nickbryan/httputil"
+)
+
+type MyResponse struct {
+    Message string `json:"message"`
+}
+
+// GET request
+resp, err := client.Get(
+	context.Background(), 
+	"/users/123",
+    httputil.WithRequestHeader("Authorization", "Bearer token"),
+    httputil.WithRequestParam("version", "v1"),
+)
+if err != nil {
+    fmt.Printf("Error making GET request: %v\n", err)
+}
+
+// POST request with a JSON body
+type MyRequest struct {
+    Name string `json:"name"`
+}
+reqBody := MyRequest{Name: "John Doe"}
+
+resp, err = client.Post(context.Background(), "/users", reqBody)
+if err != nil {
+    fmt.Printf("Error making POST request: %v\n", err)
+}
+
+// PUT, PATCH, DELETE methods are similar
+resp, err = client.Put(context.Background(), "/users/123", reqBody)
+resp, err = client.Patch(context.Background(), "/users/123", reqBody)
+resp, err = client.Delete(context.Background(), "/users/123")
+```
+
+### Handling Responses
+
+The `*httputil.Result` type wraps the `*http.Response` and provides convenient methods for checking status codes and decoding the response body.
+
+```go
+// Check for success or error
+if resp.IsSuccess() {
+    var data MyResponse
+    if err := resp.Decode(&data); err != nil {
+        fmt.Printf("Error decoding success response: %v\n", err)
+    }
+	
+    fmt.Printf("Success: %s\n", data.Message)
+} else if resp.IsError() {
+    // Decodes as RFC 7807 Problem Details
+    problemDetails, err := resp.AsProblemDetails()
+    if err != nil {
+        fmt.Printf("Error decoding problem details: %v\n", err)
+    }
+
+    fmt.Printf("Error: %s - %s\n", problemDetails.Title, problemDetails.Detail)
+} else {
+    fmt.Printf("Unhandled status code: %d\n", resp.StatusCode)
+}
+```
+
+### Client Options
+
+`httputil.NewClient` accepts `ClientOption`s to customize the underlying `http.Client`:
+
+| Option                     | Default | Description                                       |
+|----------------------------|---------|---------------------------------------------------|
+| `WithClientBasePath`       | `""`    | Sets a base URL path for all requests             |
+| `WithClientCodec`          | JSON    | Sets the codec for request/response serialization |
+| `WithClientCookieJar`      | nil     | Sets the `http.CookieJar` for the client          |
+| `WithClientTimeout`        | 60s     | Sets the total timeout for requests               |
+| `WithClientRedirectPolicy` | nil     | Sets the redirect policy for the client           |
+
+### Request Options
+
+Request-specific options can be passed to individual HTTP method calls:
+
+| Option               | Description                                  |
+|----------------------|----------------------------------------------|
+| `WithRequestHeader`  | Adds a single HTTP header to the request     |
+| `WithRequestHeaders` | Adds multiple HTTP headers from a map        |
+| `WithRequestParam`   | Adds a single query parameter to the request |
+| `WithRequestParams`  | Adds multiple query parameters from a map    |
 
 ## Design Choices
 
