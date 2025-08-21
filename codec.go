@@ -12,6 +12,7 @@ import (
 )
 
 type ClientCodec interface {
+	ContentType() string
 	Encode(data any) (io.Reader, error)
 	Decode(r io.Reader, into any) error
 }
@@ -23,6 +24,12 @@ type JSONClientCodec struct{}
 // NewJSONClientCodec creates a new JSONClientCodec instance.
 func NewJSONClientCodec() JSONClientCodec {
 	return JSONClientCodec{}
+}
+
+// ContentType returns the Content-Type header value for JSON requests and
+// responses.
+func (c JSONClientCodec) ContentType() string {
+	return "application/json; charset=utf-8"
 }
 
 // Encode encodes the given data into a new io.Reader.

@@ -148,10 +148,28 @@ func WithRequestHeader(k, v string) RequestOption {
 	}
 }
 
-// WithRequestParams adds a query parameter to the request.
-func WithRequestParams(k, v string) RequestOption {
+// WithRequestHeaders adds multiple headers to the request.
+func WithRequestHeaders(headers map[string]string) RequestOption {
+	return func(ro *requestOptions) {
+		for k, v := range headers {
+			ro.header.Add(k, v)
+		}
+	}
+}
+
+// WithRequestParam adds a query parameter to the request.
+func WithRequestParam(k, v string) RequestOption {
 	return func(ro *requestOptions) {
 		ro.params.Add(k, v)
+	}
+}
+
+// WithRequestParams adds multiple query parameters to the request.
+func WithRequestParams(params map[string]string) RequestOption {
+	return func(ro *requestOptions) {
+		for k, v := range params {
+			ro.params.Add(k, v)
+		}
 	}
 }
 
