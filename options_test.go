@@ -107,7 +107,7 @@ func TestServerOptions(t *testing.T) {
 		Path:   "/",
 		Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 			// Returning data here forces testCodec.Encode to be called, so we know that
-			// the global server Codec is overwritten by WithServerCodec during setup.
+			// the global server ServerCodec is overwritten by WithServerCodec during setup.
 			return httputil.OK(map[string]any{})
 		}),
 	})
@@ -117,7 +117,7 @@ func TestServerOptions(t *testing.T) {
 	server.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	if res.Header().Get("X-Test-Codec") != "true" {
-		t.Errorf("expected X-Test-Codec header to be set by the test codec")
+		t.Errorf("expected X-Test-ServerCodec header to be set by the test codec")
 	}
 }
 
@@ -130,7 +130,7 @@ func TestHandlerOptions(t *testing.T) {
 		handler := httputil.NewHandler(
 			func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 				// Returning data here forces testCodec.Encode to be called, so we know that
-				// the global server Codec is overwritten by WithServerCodec during setup.
+				// the global server ServerCodec is overwritten by WithServerCodec during setup.
 				return httputil.OK(map[string]any{})
 			},
 			httputil.WithHandlerCodec(testCodec{}),
@@ -141,7 +141,7 @@ func TestHandlerOptions(t *testing.T) {
 		handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/", nil))
 
 		if res.Header().Get("X-Test-Codec") != "true" {
-			t.Error("expected X-Test-Codec header to be set by the test codec")
+			t.Error("expected X-Test-ServerCodec header to be set by the test codec")
 		}
 	})
 
@@ -154,7 +154,7 @@ func TestHandlerOptions(t *testing.T) {
 				t.Fatal("action should not be called when guard returns an error")
 				return nil, nil
 			},
-			httputil.WithHandlerCodec(httputil.NewJSONCodec()),
+			httputil.WithHandlerCodec(httputil.NewJSONServerCodec()),
 			httputil.WithHandlerLogger(logger),
 			httputil.WithHandlerGuard(testGuard{}),
 		)
@@ -178,7 +178,7 @@ func TestHandlerOptions(t *testing.T) {
 			func(r httputil.RequestEmpty) (*httputil.Response, error) {
 				return nil, expectedErr
 			},
-			httputil.WithHandlerCodec(httputil.NewJSONCodec()),
+			httputil.WithHandlerCodec(httputil.NewJSONServerCodec()),
 			httputil.WithHandlerLogger(logger),
 		)
 
@@ -206,7 +206,7 @@ func TestHandlerOptions(t *testing.T) {
 
 type (
 	testCodec struct {
-		httputil.Codec
+		httputil.ServerCodec
 	}
 	testGuard struct{}
 )

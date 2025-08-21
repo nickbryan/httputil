@@ -1,6 +1,7 @@
 package httputil
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,10 +11,48 @@ import (
 	"github.com/nickbryan/httputil/problem"
 )
 
-// Codec is an interface for encoding and decoding HTTP requests and responses.
+type ClientCodec interface {
+	Encode(data any) (io.Reader, error)
+	Decode(r io.Reader, into any) error
+}
+
+// JSONClientCodec provides methods to encode data as JSON or decode data from JSON in
+// HTTP requests and responses.
+type JSONClientCodec struct{}
+
+// NewJSONClientCodec creates a new JSONClientCodec instance.
+func NewJSONClientCodec() JSONClientCodec {
+	return JSONClientCodec{}
+}
+
+// Encode encodes the given data into a new io.Reader.
+func (c JSONClientCodec) Encode(data any) (io.Reader, error) {
+	if data == nil {
+		return nil, nil
+	}
+
+	b, err := json.Marshal(data)
+	if err != nil {
+		return nil, fmt.Errorf("encoding request body as JSON: %w", err)
+	}
+
+	return bytes.NewReader(b), nil
+}
+
+// Decode reads and decodes the JSON body of an HTTP response into the provided
+// target struct or variable.
+func (c JSONClientCodec) Decode(r io.Reader, into any) error {
+	if err := json.NewDecoder(r).Decode(into); err != nil {
+		return fmt.Errorf("decoding response body as JSON: %w", err)
+	}
+
+	return nil
+}
+
+// ServerCodec is an interface for encoding and decoding HTTP requests and responses.
 // It provides methods for decoding request data and encoding response data or
 // errors.
-type Codec interface {
+type ServerCodec interface {
 	// Decode decodes the request data and sets it on into. Implementations of
 	// Decode should return [io.EOF] if the request data is empty when Decode is
 	// called.
@@ -26,19 +65,19 @@ type Codec interface {
 	EncodeError(w http.ResponseWriter, err error) error
 }
 
-// JSONCodec provides methods to encode data as JSON or decode data from JSON in
+// JSONServerCodec provides methods to encode data as JSON or decode data from JSON in
 // HTTP requests and responses.
-type JSONCodec struct{}
+type JSONServerCodec struct{}
 
-// NewJSONCodec creates a new JSONCodec instance.
-func NewJSONCodec() JSONCodec {
-	return JSONCodec{}
+// NewJSONServerCodec creates a new JSONServerCodec instance.
+func NewJSONServerCodec() JSONServerCodec {
+	return JSONServerCodec{}
 }
 
 // Decode reads and decodes the JSON body of an HTTP request into the provided
 // target struct or variable. Returns an error if decoding fails or if the
 // request body is nil.
-func (c JSONCodec) Decode(r *http.Request, into any) error {
+func (c JSONServerCodec) Decode(r *http.Request, into any) error {
 	if r.Body == nil {
 		return nil
 	}
@@ -52,7 +91,7 @@ func (c JSONCodec) Decode(r *http.Request, into any) error {
 
 // Encode writes the given data as JSON to the provided HTTP response writer
 // with the appropriate Content-Type header.
-func (c JSONCodec) Encode(w http.ResponseWriter, data any) error {
+func (c JSONServerCodec) Encode(w http.ResponseWriter, data any) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
 	return writeJSON(w, data)
@@ -61,7 +100,7 @@ func (c JSONCodec) Encode(w http.ResponseWriter, data any) error {
 // EncodeError encodes an error into an HTTP response, handling
 // `problem.DetailedError` if applicable to set the correct content type, or
 // falling back to standard JSON encoding otherwise.
-func (c JSONCodec) EncodeError(w http.ResponseWriter, err error) error {
+func (c JSONServerCodec) EncodeError(w http.ResponseWriter, err error) error {
 	var problemDetails *problem.DetailedError
 	if errors.As(err, &problemDetails) {
 		w.Header().Set("Content-Type", "application/problem+json; charset=utf-8")

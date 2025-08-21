@@ -88,8 +88,8 @@ type handlerMiddlewareWrapper struct {
 	middleware MiddlewareFunc
 }
 
-func (h handlerMiddlewareWrapper) setCodec(c Codec) {
-	if codecSetter, ok := h.handler.(interface{ setCodec(c Codec) }); ok {
+func (h handlerMiddlewareWrapper) setCodec(c ServerCodec) {
+	if codecSetter, ok := h.handler.(interface{ setCodec(c ServerCodec) }); ok {
 		codecSetter.setCodec(c)
 	}
 }

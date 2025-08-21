@@ -63,7 +63,7 @@ func TestJSONCodec_Decode(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			codec := httputil.NewJSONCodec()
+			codec := httputil.NewJSONServerCodec()
 			err := codec.Decode(tc.request, tc.into)
 
 			if (err != nil) != tc.wantErr {
@@ -122,7 +122,7 @@ func TestJSONCodec_Encode(t *testing.T) {
 			t.Parallel()
 
 			w := httptest.NewRecorder()
-			codec := httputil.NewJSONCodec()
+			codec := httputil.NewJSONServerCodec()
 
 			err := codec.Encode(w, tc.data)
 
@@ -175,7 +175,7 @@ func TestJSONCodec_EncodeError(t *testing.T) {
 			t.Parallel()
 
 			w := httptest.NewRecorder()
-			codec := httputil.NewJSONCodec()
+			codec := httputil.NewJSONServerCodec()
 
 			err := codec.EncodeError(w, tc.err)
 

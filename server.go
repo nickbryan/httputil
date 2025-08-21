@@ -24,7 +24,7 @@ type Server struct {
 	router *http.ServeMux
 
 	address         string
-	codec           Codec
+	codec           ServerCodec
 	maxBodySize     int64
 	shutdownTimeout time.Duration
 }
@@ -64,7 +64,7 @@ func NewServer(logger *slog.Logger, options ...ServerOption) *Server {
 // underlying router.
 func (s *Server) Register(endpoints ...Endpoint) {
 	for _, endpoint := range endpoints {
-		if codecSetter, ok := endpoint.Handler.(interface{ setCodec(c Codec) }); ok {
+		if codecSetter, ok := endpoint.Handler.(interface{ setCodec(c ServerCodec) }); ok {
 			codecSetter.setCodec(s.codec)
 		}
 

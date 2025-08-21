@@ -3,6 +3,7 @@ package httputil
 import (
 	"log/slog"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -15,6 +16,7 @@ type (
 	clientOptions struct {
 		basePath      string
 		checkRedirect RedirectPolicy
+		codec         ClientCodec
 		jar           http.CookieJar
 		timeout       time.Duration
 	}
@@ -25,6 +27,13 @@ type (
 func WithClientBasePath(basePath string) ClientOption {
 	return func(co *clientOptions) {
 		co.basePath = basePath
+	}
+}
+
+// WithClientCodec sets the ClientCodec that the Client will use when making requests.
+func WithClientCodec(codec ClientCodec) ClientOption {
+	return func(co *clientOptions) {
+		co.codec = codec
 	}
 }
 
@@ -62,6 +71,7 @@ func mapClientOptionsToDefaults(opts []ClientOption) clientOptions {
 	defaultOpts := clientOptions{
 		basePath:      "",
 		checkRedirect: nil,
+		codec:         NewJSONClientCodec(),
 		jar:           nil,
 		timeout:       defaultTimeout,
 	}
@@ -78,14 +88,14 @@ type (
 	HandlerOption func(ho *handlerOptions)
 
 	handlerOptions struct {
-		codec  Codec
+		codec  ServerCodec
 		guard  Guard
 		logger *slog.Logger
 	}
 )
 
-// WithHandlerCodec sets the Codec that the Handler will use when [NewHandler] is called.
-func WithHandlerCodec(codec Codec) HandlerOption {
+// WithHandlerCodec sets the ServerCodec that the Handler will use when [NewHandler] is called.
+func WithHandlerCodec(codec ServerCodec) HandlerOption {
 	return func(ho *handlerOptions) {
 		ho.codec = codec
 	}
@@ -122,12 +132,48 @@ func mapHandlerOptionsToDefaults(opts []HandlerOption) handlerOptions {
 }
 
 type (
+	// RequestOption allows default request config values to be overridden.
+	RequestOption func(ro *requestOptions)
+
+	requestOptions struct {
+		header http.Header
+		params url.Values
+	}
+)
+
+// WithRequestHeader adds a header to the request.
+func WithRequestHeader(k, v string) RequestOption {
+	return func(ro *requestOptions) {
+		ro.header.Add(k, v)
+	}
+}
+
+// WithRequestParams adds a query parameter to the request.
+func WithRequestParams(k, v string) RequestOption {
+	return func(ro *requestOptions) {
+		ro.params.Add(k, v)
+	}
+}
+
+// mapRequestOptionsToDefaults applies the provided RequestOption to a default
+// requestOptions struct.
+func mapRequestOptionsToDefaults(opts []RequestOption) requestOptions {
+	defaultOpts := requestOptions{}
+
+	for _, opt := range opts {
+		opt(&defaultOpts)
+	}
+
+	return defaultOpts
+}
+
+type (
 	// ServerOption allows default server config values to be overridden.
 	ServerOption func(so *serverOptions)
 
 	serverOptions struct {
 		address           string
-		codec             Codec
+		codec             ServerCodec
 		idleTimeout       time.Duration
 		maxBodySize       int64
 		readHeaderTimeout time.Duration
@@ -144,8 +190,8 @@ func WithServerAddress(address string) ServerOption {
 	}
 }
 
-// WithServerCodec sets the Codec that the Server will use by default when [NewHandler] is called.
-func WithServerCodec(codec Codec) ServerOption {
+// WithServerCodec sets the ServerCodec that the Server will use by default when [NewHandler] is called.
+func WithServerCodec(codec ServerCodec) ServerOption {
 	return func(so *serverOptions) {
 		so.codec = codec
 	}
@@ -237,7 +283,7 @@ func mapServerOptionsToDefaults(opts []ServerOption) serverOptions {
 
 	defaultOpts := serverOptions{
 		address:           ":8080",
-		codec:             NewJSONCodec(),
+		codec:             NewJSONServerCodec(),
 		idleTimeout:       defaultIdleTimeout,
 		maxBodySize:       defaultMaxBodySize,
 		readHeaderTimeout: defaultReadHeaderTimeout,

@@ -171,7 +171,7 @@ var _ http.Handler = &handler[any, any]{} //nolint:exhaustruct // Compile time i
 type handler[D, P any] struct {
 	mu                          sync.Mutex
 	action                      Action[D, P]
-	codec                       Codec
+	codec                       ServerCodec
 	guard                       Guard
 	logger                      *slog.Logger
 	reqTypeKind, paramsTypeKind reflect.Kind
@@ -195,7 +195,7 @@ func NewHandler[D, P any](action Action[D, P], options ...HandlerOption) http.Ha
 }
 
 // setCodec sets the codec for the handler if it has not already been set.
-func (h *handler[D, P]) setCodec(c Codec) {
+func (h *handler[D, P]) setCodec(c ServerCodec) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
