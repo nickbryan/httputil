@@ -134,7 +134,9 @@ type Result struct {
 
 // AsProblemDetails attempts to decode the response body into a
 // problem.DetailedError. This is useful for handling API errors that conform to
-// RFC 7807. Note: This method consumes the response body. Subsequent calls to
+// RFC 7807.
+//
+// Note: This method consumes the response body. Subsequent calls to
 // Decode or AsProblemDetails will fail if the body has already been read.
 func (cr *Result) AsProblemDetails() (*problem.DetailedError, error) {
 	var problemDetails *problem.DetailedError
@@ -157,9 +159,10 @@ func (cr *Result) IsSuccess() bool {
 }
 
 // Decode decodes the response body into the provided target. It uses the
-// ClientCodec to perform the decoding. Note: This method consumes the response
-// body. Subsequent calls to Decode or AsProblemDetails will fail if the body
-// has already been read.
+// ClientCodec to perform the decoding.
+//
+// Note: This method consumes the response body. Subsequent calls to Decode or
+// AsProblemDetails will fail if the body has already been read.
 func (cr *Result) Decode(into any) (err error) {
 	defer func(Body io.ReadCloser) {
 		if e := Body.Close(); e != nil {
