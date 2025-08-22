@@ -50,7 +50,7 @@ func WithClientCookieJar(jar http.CookieJar) ClientOption {
 // will be executed in the order that it was added.
 func WithClientInterceptor(intercept InterceptorFunc) ClientOption {
 	return func(co *clientOptions) {
-		co.transport = intercept(co.transport)
+		co.transport = newCloseIdleConnectionsPropagatingRoundTripper(intercept(co.transport))
 	}
 }
 

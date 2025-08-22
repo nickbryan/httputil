@@ -42,6 +42,15 @@ func (c *Client) BasePath() string {
 	return c.basePath
 }
 
+// Ensure Client implements the ability to close inline with io.Closer.
+var _ io.Closer = &Client{}
+
+func (c *Client) Close() error {
+	c.client.CloseIdleConnections()
+
+	return nil
+}
+
 // Do executes the provided request using the Client's underlying *http.Client.
 // It returns the raw *http.Response and an error, if any.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
