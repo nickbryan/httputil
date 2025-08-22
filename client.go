@@ -31,6 +31,7 @@ func NewClient(options ...ClientOption) *Client {
 			CheckRedirect: opts.checkRedirect,
 			Jar:           opts.jar,
 			Timeout:       opts.timeout,
+			Transport:     opts.transport,
 		},
 		codec: opts.codec,
 	}
@@ -39,11 +40,6 @@ func NewClient(options ...ClientOption) *Client {
 // BasePath returns the base path for the Client.
 func (c *Client) BasePath() string {
 	return c.basePath
-}
-
-// WrappedClient provides access to the underlying *http.Client.
-func (c *Client) WrappedClient() *http.Client {
-	return c.client
 }
 
 // Do executes the provided request using the Client's underlying *http.Client.

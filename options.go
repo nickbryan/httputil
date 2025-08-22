@@ -20,6 +20,7 @@ type (
 		codec         ClientCodec
 		jar           http.CookieJar
 		timeout       time.Duration
+		transport     http.RoundTripper
 	}
 )
 
@@ -42,6 +43,14 @@ func WithClientCodec(codec ClientCodec) ClientOption {
 func WithClientCookieJar(jar http.CookieJar) ClientOption {
 	return func(co *clientOptions) {
 		co.jar = jar
+	}
+}
+
+// WithClientInterceptor adds an InterceptorFunc to the Client. Each InterceptorFunc
+// will be executed in the order that it was added.
+func WithClientInterceptor(intercept InterceptorFunc) ClientOption {
+	return func(co *clientOptions) {
+		co.transport = intercept(co.transport)
 	}
 }
 
@@ -77,6 +86,7 @@ func mapClientOptionsToDefaults(opts []ClientOption) clientOptions {
 		codec:         NewJSONClientCodec(),
 		jar:           nil,
 		timeout:       defaultTimeout,
+		transport:     http.DefaultTransport,
 	}
 
 	for _, opt := range opts {

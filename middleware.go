@@ -7,7 +7,7 @@ import (
 	"runtime/debug"
 )
 
-// MiddlewareFunc defines a function type for HTTP middleware. A MiddlewareFunc
+// MiddlewareFunc defines a function type for HTTP server middleware. A MiddlewareFunc
 // takes a http.Handler as input and returns a new http.Handler that wraps the
 // original action with additional logic.
 type MiddlewareFunc func(next http.Handler) http.Handler
