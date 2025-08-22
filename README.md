@@ -768,16 +768,11 @@ standard `net/http.Client` and offers simplified methods for common HTTP operati
 You can create a new `Client` instance using `httputil.NewClient` and configure it with `ClientOption`s:
 
 ```go
-import (
-    "net/http"
-    "time"
-    "github.com/nickbryan/httputil"
-)
-
 client := httputil.NewClient(
     httputil.WithClientBasePath("https://api.example.com"),
+    httputil.WithClientCookieJar(nil), // Or provide a custom http.CookieJar.
+    httputil.WithClientInterceptor(NewLogInterceptor(logger)), // Add middleware.
     httputil.WithClientTimeout(10 * time.Second),
-    httputil.WithClientCookieJar(nil), // Or provide a custom http.CookieJar
 )
 ```
 
@@ -786,16 +781,6 @@ client := httputil.NewClient(
 The `Client` provides methods for common HTTP verbs. All methods return a `*httputil.Result` and an `error`.
 
 ```go
-import (
-    "context"
-    "fmt"
-    "github.com/nickbryan/httputil"
-)
-
-type MyResponse struct {
-    Message string `json:"message"`
-}
-
 // GET request
 resp, err := client.Get(
 	context.Background(), 
@@ -829,6 +814,10 @@ resp, err = client.Delete(context.Background(), "/users/123")
 The `*httputil.Result` type wraps the `*http.Response` and provides convenient methods for checking status codes and decoding the response body.
 
 ```go
+type MyResponse struct {
+    Message string `json:"message"`
+}
+
 // Check for success or error
 if resp.IsSuccess() {
     var data MyResponse
@@ -850,17 +839,68 @@ if resp.IsSuccess() {
 }
 ```
 
+### Client Middleware with Interceptors
+The client uses an interceptor model that wraps the underlying http.RoundTripper. Interceptors let you run logic before 
+and after an HTTP request is sent (logging, retries, tracing, auth headers, metrics, etc.) without changing call sites. 
+An interceptor has the shape:
+
+```go
+type InterceptorFunc func(next http.RoundTripper) http.RoundTripper
+```
+
+Each interceptor receives the "next" RoundTripper and returns a new RoundTripper that calls next.RoundTrip(req) when 
+appropriate. Interceptors are applied by wrapping the base transport so they form a chain: the first interceptor you 
+provide becomes the outermost wrapper.
+
+Basic rules and recommendations:
+- Keep interceptors small and focused (single responsibility).
+- Avoid modifying the incoming *http.Request in place; use req = req.WithContext(...) or req.Clone(...) when changing it.
+- Ensure you always call next.RoundTrip unless you intentionally short-circuit (for example, returning a cached response or an error).
+- Be mindful of retry/interceptor interactions (idempotency, body re-reads). If you need to retry requests with bodies, buffer them or use a replayable body.
+
+**Example: simple logging interceptor**
+```go
+func NewLogInterceptor(logger *slog.Logger) httputil.InterceptorFunc {
+    return func(next http.RoundTripper) http.RoundTripper {
+        return httputil.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+            start := time.Now()
+            logger.DebugContext(
+				req.Context(), 
+				s"Client request started",
+                slog.String("method", req.Method),
+                slog.String("url", req.URL.String()),
+            )
+
+            resp, err := next.RoundTrip(req)
+
+            logger.InfoContext(
+				req.Context(), 
+				"Client request completed",
+                slog.String("method", req.Method),
+                slog.String("url", req.URL.String()),
+                slog.Int("status", resp.StatusCode),
+                slog.Duration("duration", time.Since(start)),
+                slog.Any("error", err),
+            )
+			
+            return resp, err
+        })
+    }
+}
+```
+
 ### Client Options
 
 `httputil.NewClient` accepts `ClientOption`s to customize the underlying `http.Client`:
 
-| Option                     | Default | Description                                       |
-|----------------------------|---------|---------------------------------------------------|
-| `WithClientBasePath`       | `""`    | Sets a base URL path for all requests             |
-| `WithClientCodec`          | JSON    | Sets the codec for request/response serialization |
-| `WithClientCookieJar`      | nil     | Sets the `http.CookieJar` for the client          |
-| `WithClientTimeout`        | 60s     | Sets the total timeout for requests               |
-| `WithClientRedirectPolicy` | nil     | Sets the redirect policy for the client           |
+| Option                     | Default                 | Description                                                     |
+|----------------------------|-------------------------|-----------------------------------------------------------------|
+| `WithClientBasePath`       | `""`                    | Sets a base URL path for all requests                           |
+| `WithClientCodec`          | JSON                    | Sets the codec for request/response serialization               |
+| `WithClientCookieJar`      | nil                     | Sets the `http.CookieJar` for the client                        |
+| `WithClientInterceptor`    | `http.DefaultTransport` | Wraps the `http.DefaultTransport` to provide client middleware. |
+| `WithClientTimeout`        | 60s                     | Sets the total timeout for requests                             |
+| `WithClientRedirectPolicy` | nil                     | Sets the redirect policy for the client                         |
 
 ### Request Options
 
