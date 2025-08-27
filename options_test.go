@@ -2,6 +2,7 @@ package httputil_test
 
 import (
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -74,7 +75,7 @@ func TestServerOptions(t *testing.T) {
 		httputil.WithServerReadHeaderTimeout(time.Duration(2)),
 		httputil.WithServerReadTimeout(time.Duration(3)),
 		httputil.WithServerWriteTimeout(time.Duration(4)),
-		httputil.WithServerCodec(testCodec{}),
+		httputil.WithServerCodec(serverTestCodec{}),
 	)
 
 	netHTTPServer, ok := server.Listener.(*http.Server)
@@ -106,7 +107,7 @@ func TestServerOptions(t *testing.T) {
 		Method: http.MethodGet,
 		Path:   "/",
 		Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
-			// Returning data here forces testCodec.Encode to be called, so we know that
+			// Returning data here forces serverTestCodec.Encode to be called, so we know that
 			// the global server ServerCodec is overwritten by WithServerCodec during setup.
 			return httputil.OK(map[string]any{})
 		}),
@@ -129,11 +130,11 @@ func TestHandlerOptions(t *testing.T) {
 
 		handler := httputil.NewHandler(
 			func(_ httputil.RequestEmpty) (*httputil.Response, error) {
-				// Returning data here forces testCodec.Encode to be called, so we know that
+				// Returning data here forces serverTestCodec.Encode to be called, so we know that
 				// the global server ServerCodec is overwritten by WithServerCodec during setup.
 				return httputil.OK(map[string]any{})
 			},
-			httputil.WithHandlerCodec(testCodec{}),
+			httputil.WithHandlerCodec(serverTestCodec{}),
 		)
 
 		res := httptest.NewRecorder()
@@ -205,17 +206,36 @@ func TestHandlerOptions(t *testing.T) {
 }
 
 type (
-	testCodec struct {
+	serverTestCodec struct {
 		httputil.ServerCodec
 	}
 	testGuard struct{}
 )
 
-func (t testCodec) Encode(w http.ResponseWriter, data any) error {
+func (t serverTestCodec) Encode(w http.ResponseWriter, data any) error {
 	w.Header().Set("X-Test-Codec", "true")
 	return nil
 }
 
 func (g testGuard) Guard(_ *http.Request) (*http.Request, error) {
 	return nil, errors.New("access denied")
+}
+
+type clientTestCodec struct {
+	t           *testing.T
+	contentType string
+	encode      func(data any) (io.Reader, error)
+	decode      func(r io.Reader, into any) error
+}
+
+func (t *clientTestCodec) ContentType() string {
+	return t.contentType
+}
+
+func (t *clientTestCodec) Encode(data any) (io.Reader, error) {
+	return t.encode(data)
+}
+
+func (t *clientTestCodec) Decode(r io.Reader, into any) error {
+	return t.decode(r, into)
 }

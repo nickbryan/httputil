@@ -109,7 +109,7 @@ func (c *Client) Delete(ctx context.Context, path string, options ...RequestOpti
 func (c *Client) do(ctx context.Context, method, path string, body any, options ...RequestOption) (*Result, error) {
 	opts := mapRequestOptionsToDefaults(options)
 
-	reqURL, err := url.JoinPath(c.BasePath(), path) // TODO: test by setting base path to "0x7f" (control character)
+	reqURL, err := url.JoinPath(c.BasePath(), path)
 	if err != nil {
 		return nil, fmt.Errorf("building request url: %w", err)
 	}
@@ -117,12 +117,16 @@ func (c *Client) do(ctx context.Context, method, path string, body any, options 
 	var bodyReader io.Reader
 
 	if body != nil {
-		reader, err := c.codec.Encode(body)
-		if err != nil {
-			return nil, fmt.Errorf("encoding request body: %w", err)
-		}
+		if reader, ok := body.(io.Reader); ok {
+			bodyReader = reader
+		} else {
+			reader, err = c.codec.Encode(body)
+			if err != nil {
+				return nil, fmt.Errorf("encoding request body: %w", err)
+			}
 
-		bodyReader = reader
+			bodyReader = reader
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, reqURL, bodyReader)
