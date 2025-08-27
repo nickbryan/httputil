@@ -44,9 +44,24 @@ func (c *Client) BasePath() string {
 	return c.basePath
 }
 
+// Client returns the underlying *http.Client.
+func (c *Client) Client() *http.Client {
+	return c.client
+}
+
 // Ensure Client implements the ability to close inline with io.Closer.
 var _ io.Closer = &Client{}
 
+// Close closes any connections on its [http.Client.Transport] which were
+// previously connected from previous requests but are now sitting idle in a
+// "keep-alive" state. It does not interrupt any connections currently in use.
+// See the [http.Client.CloseIdleConnections] documentation for details.
+//
+// If [http.Client.Transport] does not have a [http.Client.CloseIdleConnections]
+// method then this method does nothing. Interestingly, the [http.Client] type
+// does not implement the [io.Closer] interface. WithClientInterceptor wraps
+// the [http.Client.Transport] to ensure that the CloseIdleConnections method
+// is called.
 func (c *Client) Close() error {
 	c.client.CloseIdleConnections()
 
@@ -94,7 +109,7 @@ func (c *Client) Delete(ctx context.Context, path string, options ...RequestOpti
 func (c *Client) do(ctx context.Context, method, path string, body any, options ...RequestOption) (*Result, error) {
 	opts := mapRequestOptionsToDefaults(options)
 
-	reqURL, err := url.JoinPath(c.BasePath(), path)
+	reqURL, err := url.JoinPath(c.BasePath(), path) // TODO: test by setting base path to "0x7f" (control character)
 	if err != nil {
 		return nil, fmt.Errorf("building request url: %w", err)
 	}
@@ -145,10 +160,10 @@ type Result struct {
 //
 // Note: This method consumes the response body. Subsequent calls to
 // Decode or AsProblemDetails will fail if the body has already been read.
-func (cr *Result) AsProblemDetails() (*problem.DetailedError, error) {
+func (r *Result) AsProblemDetails() (*problem.DetailedError, error) {
 	var problemDetails *problem.DetailedError
 
-	if err := cr.Decode(&problemDetails); err != nil {
+	if err := r.Decode(&problemDetails); err != nil {
 		return nil, err
 	}
 
@@ -156,13 +171,13 @@ func (cr *Result) AsProblemDetails() (*problem.DetailedError, error) {
 }
 
 // IsError returns true if the HTTP status code is 400 or greater.
-func (cr *Result) IsError() bool {
-	return cr.StatusCode >= 400
+func (r *Result) IsError() bool {
+	return r.StatusCode >= 400
 }
 
 // IsSuccess returns true if the HTTP status code is between 200 and 299 (inclusive).
-func (cr *Result) IsSuccess() bool {
-	return cr.StatusCode > 199 && cr.StatusCode < 300
+func (r *Result) IsSuccess() bool {
+	return r.StatusCode > 199 && r.StatusCode < 300
 }
 
 // Decode decodes the response body into the provided target. It uses the
@@ -170,12 +185,12 @@ func (cr *Result) IsSuccess() bool {
 //
 // Note: This method consumes the response body. Subsequent calls to Decode or
 // AsProblemDetails will fail if the body has already been read.
-func (cr *Result) Decode(into any) (err error) {
+func (r *Result) Decode(into any) (err error) {
 	defer func(Body io.ReadCloser) {
 		if e := Body.Close(); e != nil {
 			err = errors.Join(err, fmt.Errorf("closing response body: %w", e))
 		}
-	}(cr.Body)
+	}(r.Body)
 
-	return cr.codec.Decode(cr.Body, into)
+	return r.codec.Decode(r.Body, into)
 }

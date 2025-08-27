@@ -774,6 +774,7 @@ client := httputil.NewClient(
     httputil.WithClientInterceptor(NewLogInterceptor(logger)), // Add middleware.
     httputil.WithClientTimeout(10 * time.Second),
 )
+defer client.Close()
 ```
 
 ### Making Requests
