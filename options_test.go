@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -17,14 +18,146 @@ import (
 
 /*
 These tests look like they know too much about the underlying implementation, but that is by design.
+We encapsulate the http.Client as a httputil.Client so that we can test our wrapper. We provide
+http.Client as the default implementation, allowing us to confidently check that the values
+get set as expected rather than having to test the behavioral impact they have on the client itself,
+which is already tested within the wrapped http.Client. We just need to know our values are being
+set correctly.
+*/
+func TestClientOptionsDefaults(t *testing.T) {
+	t.Parallel()
+
+	const defaultTimeout = time.Minute
+
+	client := httputil.NewClient()
+	httpClient := client.Client()
+
+	if client.BasePath() != "" {
+		t.Errorf("expected base path to be empty, got: %s", client.BasePath())
+	}
+
+	if httpClient.Timeout != defaultTimeout {
+		t.Errorf("expected timeout to be %s, got: %s", defaultTimeout, httpClient.Timeout)
+	}
+
+	if httpClient.CheckRedirect != nil {
+		t.Errorf("expected redirect check to be nil")
+	}
+
+	if httpClient.Jar != nil {
+		t.Errorf("expected cookie jar to be nil")
+	}
+
+	if httpClient.Transport != http.DefaultTransport {
+		t.Errorf("expected transport to be http.DefaultTransport")
+	}
+}
+
+func TestClientOptions(t *testing.T) {
+	t.Parallel()
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("unexpected error creating cookie jar: %v", err)
+	}
+
+	spy := &interceptorSpy{}
+
+	client := httputil.NewClient(
+		httputil.WithClientBasePath("https://example.com"),
+		httputil.WithClientCodec(&clientTestCodec{
+			contentType: "test/test",
+			encode:      func(data any) (io.Reader, error) { return nil, nil },
+			decode:      func(r io.Reader, into any) error { return nil },
+		}),
+		httputil.WithClientTimeout(10*time.Second),
+		httputil.WithClientCookieJar(jar),
+		httputil.WithClientRedirectPolicy(func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // TODO: find a better way to test this.
+		}),
+		httputil.WithClientInterceptor(func(_ http.RoundTripper) http.RoundTripper {
+			return spy // Call isn't forwarded on to the next interceptor in the spy.
+		}),
+	)
+	httpClient := client.Client()
+
+	_, err = client.Get(t.Context(), "/")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if client.BasePath() != "https://example.com" {
+		t.Errorf("expected base path to be https://example.com, got: %s", client.BasePath())
+	}
+
+	if !spy.roundtripCalled {
+		t.Error("expected roundtrip to be called on the transport")
+	}
+
+	err = client.Close()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !spy.connectionsClosed {
+		t.Error("expected CloseIdleConnections call to be propagated to the transport")
+	}
+
+	if httpClient.Timeout != 10*time.Second {
+		t.Errorf("expected timeout to be 10s, got: %s", httpClient.Timeout)
+	}
+
+	if httpClient.Jar != jar {
+		t.Error("expected cookie jar to be set")
+	}
+
+	if httpClient.CheckRedirect == nil {
+		t.Error("expected redirect policy to be set")
+	}
+}
+
+type clientTestCodec struct {
+	contentType string
+	encode      func(data any) (io.Reader, error)
+	decode      func(r io.Reader, into any) error
+}
+
+func (t *clientTestCodec) ContentType() string {
+	return t.contentType
+}
+
+func (t *clientTestCodec) Encode(data any) (io.Reader, error) {
+	return t.encode(data)
+}
+
+func (t *clientTestCodec) Decode(r io.Reader, into any) error {
+	return t.decode(r, into)
+}
+
+type interceptorSpy struct {
+	roundtripCalled   bool
+	connectionsClosed bool
+}
+
+func (t *interceptorSpy) RoundTrip(_ *http.Request) (*http.Response, error) {
+	t.roundtripCalled = true
+	return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+}
+
+func (t *interceptorSpy) CloseIdleConnections() {
+	t.connectionsClosed = true
+}
+
+/*
+These tests look like they know too much about the underlying implementation, but that is by design.
 We encapsulate the http.Server as a httputil.Listener so that we can test our wrapper. We provide
 http.Server as the default implementation, allowing us to confidently check that the values
 get set as expected rather than having to test the behavioral impact they have on the server itself,
 which is already tested within the wrapped http.Server. We just need to know our values are being
 set correctly.
-*/
 
-// Shutdown timeout is tested as part of Server.Serve.
+Shutdown timeout is tested as part of Server.Serve.
+*/
 func TestServerOptionsDefaults(t *testing.T) {
 	t.Parallel()
 
@@ -212,30 +345,11 @@ type (
 	testGuard struct{}
 )
 
-func (t serverTestCodec) Encode(w http.ResponseWriter, data any) error {
+func (t serverTestCodec) Encode(w http.ResponseWriter, _ any) error {
 	w.Header().Set("X-Test-Codec", "true")
 	return nil
 }
 
 func (g testGuard) Guard(_ *http.Request) (*http.Request, error) {
 	return nil, errors.New("access denied")
-}
-
-type clientTestCodec struct {
-	t           *testing.T
-	contentType string
-	encode      func(data any) (io.Reader, error)
-	decode      func(r io.Reader, into any) error
-}
-
-func (t *clientTestCodec) ContentType() string {
-	return t.contentType
-}
-
-func (t *clientTestCodec) Encode(data any) (io.Reader, error) {
-	return t.encode(data)
-}
-
-func (t *clientTestCodec) Decode(r io.Reader, into any) error {
-	return t.decode(r, into)
 }
