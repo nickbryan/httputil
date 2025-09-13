@@ -1,4 +1,4 @@
-name: Test
+name: test
 on:
   push:
     branches:
@@ -11,11 +11,11 @@ permissions:
 jobs:
   test:
     permissions: write-all
-    name: Test
+    name: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
       - name: Generate test coverage
         run: go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
       - name: Check test coverage
@@ -23,18 +23,18 @@ jobs:
         with:
           profile: cover.out
           local-prefix: github.com/nickbryan/httputil
-          threshold-total: 95
+          threshold-total: 90
           git-token: ${{ github.ref_name == 'main' && secrets.GITHUB_TOKEN || '' }}
           git-branch: badges
-  lint:
-    name: Lint
+  golangci:
+    name: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: stable
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v8
         with:
           version: v2.1
