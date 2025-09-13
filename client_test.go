@@ -3,6 +3,7 @@ package httputil_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -300,6 +301,153 @@ func TestClient(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("returns an error when encoding fails", func(t *testing.T) {
+		t.Parallel()
+
+		client := newSuccessServerClient(t, httputil.WithClientCodec(fakeCodec{
+			contentType: "application/json",
+			encode: func(any) (io.Reader, error) {
+				return nil, errors.New("failed to encode")
+			},
+			decode: func(io.Reader, any) error {
+				return nil
+			},
+		}))
+
+		for _, method := range httpMethods {
+			t.Run(method, func(t *testing.T) {
+				t.Parallel()
+
+				// GET and DELETE methods do not have a request body.
+				if method == http.MethodGet || method == http.MethodDelete {
+					return
+				}
+
+				type request struct {
+					Message string `json:"message"`
+				}
+
+				res, err := callClientMethodWithBody(t, client, method, request{Message: "hello world"})
+				if res != nil {
+					t.Error("expected nil response, got non-nil")
+				}
+
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+
+				message := "encoding request body: failed to encode"
+				if !strings.Contains(err.Error(), message) {
+					t.Fatalf("expected error message to contain %q, got: %q", message, err.Error())
+				}
+			})
+		}
+	})
+
+	t.Run("returns an error when executing the request fails", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		server.Close()
+
+		client := httputil.NewClient(httputil.WithClientBasePath(server.URL))
+
+		for _, method := range httpMethods {
+			t.Run(method, func(t *testing.T) {
+				t.Parallel()
+
+				_, err := callClientMethod(t, client, method)
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+
+				message := "executing request: "
+				if !strings.Contains(err.Error(), message) {
+					t.Fatalf("expected error message to contain %q, got: %q", message, err.Error())
+				}
+			})
+		}
+	})
+
+	t.Run("returns an error when decoding fails", func(t *testing.T) {
+		t.Parallel()
+
+		client := newSuccessServerClient(t, httputil.WithClientCodec(fakeCodec{
+			contentType: "application/json",
+			encode: func(any) (io.Reader, error) {
+				return nil, nil
+			},
+			decode: func(io.Reader, any) error {
+				return errors.New("failed to decode")
+			},
+		}))
+
+		res, err := callClientMethod(t, client, http.MethodGet, httputil.WithRequestParam("code", strconv.Itoa(http.StatusOK)))
+		if err != nil {
+			t.Fatalf("unexpected error from client call: %s", err.Error())
+		}
+
+		var got struct {
+			Status string `json:"status"`
+		}
+		err = res.Decode(&got)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+
+		message := "failed to decode"
+		if !strings.Contains(err.Error(), message) {
+			t.Fatalf("expected error message to contain %q, got: %q", message, err.Error())
+		}
+	})
+
+	t.Run("returns an error when decoding problem details fails", func(t *testing.T) {
+		t.Parallel()
+
+		client := newErrServerClient(t, httputil.WithClientCodec(fakeCodec{
+			contentType: "application/problem+json",
+			encode: func(any) (io.Reader, error) {
+				return nil, nil
+			},
+			decode: func(io.Reader, any) error {
+				return errors.New("failed to decode")
+			},
+		}))
+
+		res, err := callClientMethod(t, client, http.MethodGet, httputil.WithRequestParam("code", strconv.Itoa(http.StatusBadRequest)))
+		if err != nil {
+			t.Fatalf("unexpected error from client call: %s", err.Error())
+		}
+
+		_, err = res.AsProblemDetails()
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+
+		message := "failed to decode"
+		if !strings.Contains(err.Error(), message) {
+			t.Fatalf("expected error message to contain %q, got: %q", message, err.Error())
+		}
+	})
+}
+
+type fakeCodec struct {
+	contentType string
+	encode      func(any) (io.Reader, error)
+	decode      func(io.Reader, any) error
+}
+
+func (f fakeCodec) ContentType() string {
+	return f.contentType
+}
+
+func (f fakeCodec) Encode(data any) (io.Reader, error) {
+	return f.encode(data)
+}
+
+func (f fakeCodec) Decode(r io.Reader, into any) error {
+	return f.decode(r, into)
 }
 
 func callClientMethod(t *testing.T, client *httputil.Client, method string, opts ...httputil.RequestOption) (*httputil.Result, error) {
@@ -336,7 +484,7 @@ func callClientMethodWithBody(t *testing.T, client *httputil.Client, method stri
 	}
 }
 
-func newSuccessServerClient(t *testing.T) *httputil.Client {
+func newSuccessServerClient(t *testing.T, opts ...httputil.ClientOption) *httputil.Client {
 	t.Helper()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -357,10 +505,10 @@ func newSuccessServerClient(t *testing.T) *httputil.Client {
 
 	t.Cleanup(server.Close)
 
-	return httputil.NewClient(httputil.WithClientBasePath(server.URL))
+	return httputil.NewClient(append([]httputil.ClientOption{httputil.WithClientBasePath(server.URL)}, opts...)...)
 }
 
-func newErrServerClient(t *testing.T) *httputil.Client {
+func newErrServerClient(t *testing.T, opts ...httputil.ClientOption) *httputil.Client {
 	t.Helper()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -384,7 +532,7 @@ func newErrServerClient(t *testing.T) *httputil.Client {
 
 	t.Cleanup(server.Close)
 
-	return httputil.NewClient(httputil.WithClientBasePath(server.URL))
+	return httputil.NewClient(append([]httputil.ClientOption{httputil.WithClientBasePath(server.URL)}, opts...)...)
 }
 
 func newBodyAwareServerClient(t *testing.T) *httputil.Client {
