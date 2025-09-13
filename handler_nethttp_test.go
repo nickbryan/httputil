@@ -114,7 +114,7 @@ func TestNewNetHTTPHandler(t *testing.T) {
 					}
 				}),
 			}, httputil.GuardFunc(func(_ *http.Request) (*http.Request, error) {
-				return nil, nil //nolint:nilnil // Required for test case.
+				return nil, nil
 			})),
 			request: httptest.NewRequestWithContext(
 				context.WithValue(t.Context(), addToContextGuardCtxKey{}, addToContextGuard("my original context value")),

@@ -67,13 +67,13 @@ func TestClientOptions(t *testing.T) {
 		httputil.WithClientBasePath("https://example.com"),
 		httputil.WithClientCodec(&clientTestCodec{
 			contentType: "test/test",
-			encode:      func(data any) (io.Reader, error) { return nil, nil },
-			decode:      func(r io.Reader, into any) error { return nil },
+			encode:      func(_ any) (io.Reader, error) { return nil, nil },
+			decode:      func(_ io.Reader, _ any) error { return nil },
 		}),
 		httputil.WithClientTimeout(10*time.Second),
 		httputil.WithClientCookieJar(jar),
-		httputil.WithClientRedirectPolicy(func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse // TODO: find a better way to test this.
+		httputil.WithClientRedirectPolicy(func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
 		}),
 		httputil.WithClientInterceptor(func(_ http.RoundTripper) http.RoundTripper {
 			return spy // Call isn't forwarded on to the next interceptor in the spy.
@@ -284,7 +284,7 @@ func TestHandlerOptions(t *testing.T) {
 
 		logger, _ := slogutil.NewInMemoryLogger(slog.LevelInfo)
 		handler := httputil.NewHandler(
-			func(r httputil.RequestEmpty) (*httputil.Response, error) {
+			func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 				t.Fatal("action should not be called when guard returns an error")
 				return nil, nil
 			},
@@ -309,7 +309,7 @@ func TestHandlerOptions(t *testing.T) {
 		expectedErr := errors.New("unhandled action error")
 
 		handler := httputil.NewHandler(
-			func(r httputil.RequestEmpty) (*httputil.Response, error) {
+			func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 				return nil, expectedErr
 			},
 			httputil.WithHandlerCodec(httputil.NewJSONServerCodec()),

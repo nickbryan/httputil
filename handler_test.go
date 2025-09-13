@@ -282,7 +282,7 @@ func TestNewHandler(t *testing.T) {
 				Method: http.MethodGet,
 				Path:   "/test",
 				Handler: httputil.NewHandler(func(_ httputil.RequestEmpty) (*httputil.Response, error) {
-					return httputil.NewResponse(http.StatusNoContent, nil), errors.New("some error") //nolint:nilnil // Requires both to be set for test.
+					return httputil.NewResponse(http.StatusNoContent, nil), errors.New("some error")
 				}),
 			},
 			wantHeader: http.Header{"Content-Type": {"application/problem+json; charset=utf-8"}},
@@ -518,7 +518,7 @@ func TestNewHandler(t *testing.T) {
 					return httputil.OK(map[string]string{"context": string(ctxVal)})
 				}),
 			}, httputil.GuardFunc(func(_ *http.Request) (*http.Request, error) {
-				return nil, nil //nolint:nilnil // Required for test case.
+				return nil, nil
 			})),
 			request: httptest.NewRequestWithContext(
 				context.WithValue(t.Context(), addToContextGuardCtxKey{}, addToContextGuard("my original context value")),

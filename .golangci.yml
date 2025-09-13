@@ -191,6 +191,7 @@ linters:
     generated: lax
     rules:
       - linters:
+          - gochecknoglobals
           - containedctx
           - cyclop
           - err113
@@ -200,6 +201,8 @@ linters:
           - gocyclo
           - maintidx
           - nestif
+          - nilnil
+          - wrapcheck
         path: _test\.go
       - linters:
           - goconst

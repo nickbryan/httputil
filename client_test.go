@@ -95,6 +95,7 @@ func TestClient(t *testing.T) {
 		}
 
 		var testCases []testData
+
 		for _, method := range httpMethods {
 			for _, code := range successCodes {
 				testCases = append(testCases, testData{method: method, code: code})
@@ -131,9 +132,11 @@ func TestClient(t *testing.T) {
 				var got struct {
 					Status string `json:"status"`
 				}
+
 				if err = res.Decode(&got); err != nil {
 					t.Errorf("unexpected error decoding response for status %d: %s", testCase.code, err.Error())
 				}
+
 				if got.Status != strconv.Itoa(testCase.code) {
 					t.Errorf("unexpected status in decoded response, want: %d, got: %s", testCase.code, got.Status)
 				}
@@ -150,6 +153,7 @@ func TestClient(t *testing.T) {
 		}
 
 		var testCases []testData
+
 		for _, method := range httpMethods {
 			for _, code := range errorCodes {
 				testCases = append(testCases, testData{method: method, code: code})
@@ -187,6 +191,7 @@ func TestClient(t *testing.T) {
 				if err != nil {
 					t.Errorf("unexpected error getting problem details for status %d: %s", testCase.code, err.Error())
 				}
+
 				if got.Status != testCase.code {
 					t.Errorf("unexpected status in problem details, want: %d, got: %d", testCase.code, got.Status)
 				}
@@ -244,6 +249,7 @@ func TestClient(t *testing.T) {
 				type response struct {
 					Content string `json:"content"`
 				}
+
 				var got response
 
 				err = res.Decode(&got)
@@ -288,6 +294,7 @@ func TestClient(t *testing.T) {
 				type response struct {
 					Content string `json:"content"`
 				}
+
 				var got response
 
 				err = res.Decode(&got)
@@ -348,7 +355,7 @@ func TestClient(t *testing.T) {
 	t.Run("returns an error when executing the request fails", func(t *testing.T) {
 		t.Parallel()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 		server.Close()
 
 		client := httputil.NewClient(httputil.WithClientBasePath(server.URL))
@@ -391,6 +398,7 @@ func TestClient(t *testing.T) {
 		var got struct {
 			Status string `json:"status"`
 		}
+
 		err = res.Decode(&got)
 		if err == nil {
 			t.Fatal("expected error, got nil")
@@ -441,6 +449,7 @@ func TestClient(t *testing.T) {
 			if r.Header.Get(headerKey) != headerValue {
 				t.Errorf("expected header %s to be %s, got %s", headerKey, headerValue, r.Header.Get(headerKey))
 			}
+
 			w.WriteHeader(http.StatusOK)
 		}))
 		t.Cleanup(server.Close)
@@ -467,6 +476,7 @@ func TestClient(t *testing.T) {
 					t.Errorf("expected header %s to be %s, got %s", k, v, r.Header.Get(k))
 				}
 			}
+
 			w.WriteHeader(http.StatusOK)
 		}))
 		t.Cleanup(server.Close)
@@ -489,6 +499,7 @@ func TestClient(t *testing.T) {
 			if r.URL.Query().Get(paramKey) != paramValue {
 				t.Errorf("expected query parameter %s to be %s, got %s", paramKey, paramValue, r.URL.Query().Get(paramKey))
 			}
+
 			w.WriteHeader(http.StatusOK)
 		}))
 		t.Cleanup(server.Close)
@@ -515,6 +526,7 @@ func TestClient(t *testing.T) {
 					t.Errorf("expected query parameter %s to be %s, got %s", k, v, r.URL.Query().Get(k))
 				}
 			}
+
 			w.WriteHeader(http.StatusOK)
 		}))
 		t.Cleanup(server.Close)
@@ -548,6 +560,7 @@ func (f fakeCodec) Decode(r io.Reader, into any) error {
 
 func callClientMethod(t *testing.T, client *httputil.Client, method string, opts ...httputil.RequestOption) (*httputil.Result, error) {
 	t.Helper()
+
 	switch method {
 	case http.MethodGet:
 		return client.Get(t.Context(), "/", opts...)
@@ -567,6 +580,7 @@ func callClientMethod(t *testing.T, client *httputil.Client, method string, opts
 
 func callClientMethodWithBody(t *testing.T, client *httputil.Client, method string, body any, opts ...httputil.RequestOption) (*httputil.Result, error) {
 	t.Helper()
+
 	switch method {
 	case http.MethodPost:
 		return client.Post(t.Context(), "/", body, opts...)
@@ -592,7 +606,7 @@ func newSuccessServerClient(t *testing.T, opts ...httputil.ClientOption) *httput
 		w.WriteHeader(responseCode)
 
 		if responseCode != http.StatusNoContent {
-			_, err = w.Write([]byte(fmt.Sprintf(`{"status":"%d"}`, responseCode)))
+			_, err = fmt.Fprintf(w, `{"status":"%d"}`, responseCode)
 			if err != nil {
 				t.Fatalf("unexpected error writing response: %s", err.Error())
 			}
@@ -653,10 +667,11 @@ func newBodyAwareServerClient(t *testing.T) *httputil.Client {
 
 		jsonResponse, err := json.Marshal(response)
 		if err != nil {
-			t.Fatalf("unexpected error marshalling response: %s", err.Error())
+			t.Fatalf("unexpected error marshaling response: %s", err.Error())
 		}
 
 		w.Header().Set("Content-Type", "application/json")
+
 		_, err = w.Write(jsonResponse)
 		if err != nil {
 			t.Fatalf("unexpected error writing response: %s", err.Error())

@@ -332,6 +332,6 @@ func (fl *fakeListener) Shutdown(ctx context.Context) error {
 	case <-simulateConnCloseCtx.Done():
 		return fl.shutdownErr
 	case <-ctx.Done():
-		return ctx.Err() //nolint:wrapcheck // We just want the underlying error here for the test.
+		return ctx.Err()
 	}
 }

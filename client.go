@@ -50,7 +50,7 @@ func (c *Client) Client() *http.Client {
 }
 
 // Ensure Client implements the ability to close inline with io.Closer.
-var _ io.Closer = &Client{}
+var _ io.Closer = &Client{} //nolint:exhaustruct // Compile time implementation check.
 
 // Close closes any connections on its [http.Client.Transport] which were
 // previously connected from previous requests but are now sitting idle in a
@@ -71,7 +71,7 @@ func (c *Client) Close() error {
 // Do executes the provided request using the Client's underlying *http.Client.
 // It returns the raw *http.Response and an error, if any.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
-	return c.client.Do(req)
+	return c.client.Do(req) //nolint:wrapcheck // No additional context to add to the error.
 }
 
 // Get sends an HTTP GET request to the specified path.
@@ -140,7 +140,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any, options 
 	req.Header.Set("Accept", c.codec.ContentType())
 	req.Header.Set("Content-Type", c.codec.ContentType())
 
-	resp, err := c.Do(req)
+	resp, err := c.Do(req) //nolint:bodyclose // The Result closes the response body.
 	if err != nil {
 		return nil, fmt.Errorf("executing request: %w", err)
 	}
@@ -176,7 +176,7 @@ func (r *Result) AsProblemDetails() (*problem.DetailedError, error) {
 
 // IsError returns true if the HTTP status code is 400 or greater.
 func (r *Result) IsError() bool {
-	return r.StatusCode >= 400
+	return r.StatusCode >= 400 //nolint:mnd // The intent is clear with the integer value.
 }
 
 // IsSuccess returns true if the HTTP status code is between 200 and 299 (inclusive).
@@ -196,5 +196,5 @@ func (r *Result) Decode(into any) (err error) {
 		}
 	}(r.Body)
 
-	return r.codec.Decode(r.Body, into)
+	return r.codec.Decode(r.Body, into) //nolint:wrapcheck // No additional context to add to the error.
 }

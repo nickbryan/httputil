@@ -17,11 +17,11 @@ import (
 
 const (
 	// tagQuery is the struct tag for query parameters.
-	tagQuery   = "query"
+	tagQuery = "query"
 	// tagHeader is the struct tag for header parameters.
-	tagHeader  = "header"
+	tagHeader = "header"
 	// tagPath is the struct tag for path parameters.
-	tagPath    = "path"
+	tagPath = "path"
 	// tagDefault is the struct tag for default values.
 	tagDefault = "default"
 )

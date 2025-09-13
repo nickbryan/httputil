@@ -37,7 +37,7 @@ type closeIdleConnectionsPropagatingRoundTripper struct {
 // RoundTrip implements the http.RoundTripper interface for this type and acts as a
 // pass-through to the underlying transport.
 func (rt closeIdleConnectionsPropagatingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	return rt.next.RoundTrip(req)
+	return rt.next.RoundTrip(req) //nolint:wrapcheck // This is a pass-through method.
 }
 
 // CloseIdleConnections propagates the call to CloseIdleConnections to the underlying

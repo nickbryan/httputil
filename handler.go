@@ -183,6 +183,7 @@ func NewHandler[D, P any](action Action[D, P], options ...HandlerOption) http.Ha
 	opts := mapHandlerOptionsToDefaults(options)
 
 	return &handler[D, P]{
+		mu:     sync.Mutex{},
 		action: action,
 		// Cache these early to save on reflection calls.
 		reqTypeKind:    reflect.TypeFor[D]().Kind(),
