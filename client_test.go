@@ -430,6 +430,102 @@ func TestClient(t *testing.T) {
 			t.Fatalf("expected error message to contain %q, got: %q", message, err.Error())
 		}
 	})
+
+	t.Run("WithRequestHeader", func(t *testing.T) {
+		t.Parallel()
+
+		headerKey := "X-Test-Header"
+		headerValue := "test-value"
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get(headerKey) != headerValue {
+				t.Errorf("expected header %s to be %s, got %s", headerKey, headerValue, r.Header.Get(headerKey))
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		t.Cleanup(server.Close)
+
+		client := httputil.NewClient(httputil.WithClientBasePath(server.URL))
+
+		_, err := client.Get(t.Context(), "/", httputil.WithRequestHeader(headerKey, headerValue))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("WithRequestHeaders", func(t *testing.T) {
+		t.Parallel()
+
+		headers := map[string]string{
+			"X-Test-Header-1": "value-1",
+			"X-Test-Header-2": "value-2",
+		}
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			for k, v := range headers {
+				if r.Header.Get(k) != v {
+					t.Errorf("expected header %s to be %s, got %s", k, v, r.Header.Get(k))
+				}
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		t.Cleanup(server.Close)
+
+		client := httputil.NewClient(httputil.WithClientBasePath(server.URL))
+
+		_, err := client.Get(t.Context(), "/", httputil.WithRequestHeaders(headers))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("WithRequestParam", func(t *testing.T) {
+		t.Parallel()
+
+		paramKey := "param1"
+		paramValue := "value1"
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Query().Get(paramKey) != paramValue {
+				t.Errorf("expected query parameter %s to be %s, got %s", paramKey, paramValue, r.URL.Query().Get(paramKey))
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		t.Cleanup(server.Close)
+
+		client := httputil.NewClient(httputil.WithClientBasePath(server.URL))
+
+		_, err := client.Get(t.Context(), "/", httputil.WithRequestParam(paramKey, paramValue))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("WithRequestParams", func(t *testing.T) {
+		t.Parallel()
+
+		params := map[string]string{
+			"param1": "value1",
+			"param2": "value2",
+		}
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			for k, v := range params {
+				if r.URL.Query().Get(k) != v {
+					t.Errorf("expected query parameter %s to be %s, got %s", k, v, r.URL.Query().Get(k))
+				}
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		t.Cleanup(server.Close)
+
+		client := httputil.NewClient(httputil.WithClientBasePath(server.URL))
+
+		_, err := client.Get(t.Context(), "/", httputil.WithRequestParams(params))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
 }
 
 type fakeCodec struct {
