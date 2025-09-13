@@ -16,7 +16,142 @@ import (
 	"github.com/nickbryan/httputil/problem"
 )
 
-func TestJSONCodec_Decode(t *testing.T) {
+func TestJSONClientCodec_ContentType(t *testing.T) {
+	t.Parallel()
+
+	codec := httputil.NewJSONClientCodec()
+	if contentType := codec.ContentType(); contentType != "application/json; charset=utf-8" {
+		t.Errorf("ContentType() = %q, want %q", contentType, "application/json; charset=utf-8")
+	}
+}
+
+func TestJSONClientCodec_Decode(t *testing.T) {
+	t.Parallel()
+
+	type testStruct struct {
+		Foo string `json:"foo"`
+	}
+
+	testCases := map[string]struct {
+		reader    io.Reader
+		into      any
+		wantErr   bool
+		wantErrAs error
+		wantPanic bool
+		wantVal   any
+	}{
+		"panics when reader is nil": {
+			reader:    nil,
+			into:      &testStruct{},
+			wantPanic: true,
+		},
+		"returns an error when into is nil and reader is not empty": {
+			reader:  strings.NewReader(`{"foo":"bar"}`),
+			into:    nil,
+			wantErr: true,
+		},
+		"returns an error for malformed JSON": {
+			reader:  strings.NewReader("foo"),
+			into:    &testStruct{},
+			wantErr: true,
+		},
+		"decodes valid JSON": {
+			reader:  strings.NewReader(`{"foo":"bar"}`),
+			into:    &testStruct{},
+			wantErr: false,
+			wantVal: &testStruct{Foo: "bar"},
+		},
+		"returns io.EOF for empty reader": {
+			reader:    strings.NewReader(""),
+			into:      &testStruct{},
+			wantErr:   true,
+			wantErrAs: io.EOF,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			codec := httputil.NewJSONClientCodec()
+
+			if tc.wantPanic {
+				defer func() {
+					if r := recover(); r == nil {
+						t.Error("expected a panic")
+					}
+				}()
+			}
+
+			err := codec.Decode(tc.reader, tc.into)
+
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("Decode() error = %v, wantErr %v", err, tc.wantErr)
+			}
+
+			if tc.wantErrAs != nil && !errors.Is(err, tc.wantErrAs) {
+				t.Fatalf("Decode() error = %v, wantErrAs %v", err, tc.wantErrAs)
+			}
+
+			if !tc.wantErr {
+				if diff := cmp.Diff(tc.wantVal, tc.into); diff != "" {
+					t.Errorf("Decode() into mismatch (-want +got):\n%s", diff)
+				}
+			}
+		})
+	}
+}
+
+func TestJSONClientCodec_Encode(t *testing.T) {
+	t.Parallel()
+
+	testCases := map[string]struct {
+		data     any
+		wantBody string
+		wantErr  bool
+	}{
+		"encodes nil data to null": {
+			data:     nil,
+			wantBody: "null",
+		},
+		"encodes valid data": {
+			data:     map[string]string{"foo": "bar"},
+			wantBody: `{"foo":"bar"}`,
+		},
+		"returns an error for unsupported json type": {
+			data:    make(chan int),
+			wantErr: true,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			codec := httputil.NewJSONClientCodec()
+			reader, err := codec.Encode(tc.data)
+
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("Encode() error = %v, wantErr %v", err, tc.wantErr)
+			}
+
+			if tc.wantErr {
+				return
+			}
+
+			body, err := io.ReadAll(reader)
+			if err != nil {
+				t.Fatalf("ReadAll() error = %v", err)
+			}
+
+			if diff := testutil.DiffJSON(tc.wantBody, string(body)); diff != "" {
+				t.Errorf("Encode() body mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestJSONServerCodec_Decode(t *testing.T) {
 	t.Parallel()
 
 	type testStruct struct {
@@ -83,7 +218,7 @@ func TestJSONCodec_Decode(t *testing.T) {
 	}
 }
 
-func TestJSONCodec_Encode(t *testing.T) {
+func TestJSONServerCodec_Encode(t *testing.T) {
 	t.Parallel()
 
 	type testStruct struct {
@@ -91,13 +226,12 @@ func TestJSONCodec_Encode(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		data               any
-		wantBody           string
-		wantContentType    string
-		wantStatusCode     int
-		wantErr            bool
-		wantPanic          bool
-		wantPanicSubstring string
+		data            any
+		wantBody        string
+		wantContentType string
+		wantStatusCode  int
+		wantErr         bool
+		wantPanic       bool
 	}{
 		"encodes a struct to json": {
 			data:            &testStruct{Foo: "bar"},
@@ -145,7 +279,7 @@ func TestJSONCodec_Encode(t *testing.T) {
 	}
 }
 
-func TestJSONCodec_EncodeError(t *testing.T) {
+func TestJSONServerCodec_EncodeError(t *testing.T) {
 	t.Parallel()
 
 	testCases := map[string]struct {

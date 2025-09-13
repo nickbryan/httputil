@@ -140,7 +140,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any, options 
 	req.Header.Set("Accept", c.codec.ContentType())
 	req.Header.Set("Content-Type", c.codec.ContentType())
 
-	resp, err := c.client.Do(req)
+	resp, err := c.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("executing request: %w", err)
 	}

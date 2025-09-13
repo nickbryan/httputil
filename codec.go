@@ -40,10 +40,6 @@ func (c JSONClientCodec) ContentType() string {
 
 // Encode encodes the given data into a new io.Reader.
 func (c JSONClientCodec) Encode(data any) (io.Reader, error) {
-	if data == nil {
-		return nil, nil
-	}
-
 	b, err := json.Marshal(data)
 	if err != nil {
 		return nil, fmt.Errorf("encoding request body as JSON: %w", err)

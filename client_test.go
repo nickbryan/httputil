@@ -131,10 +131,10 @@ func TestClient(t *testing.T) {
 					Status string `json:"status"`
 				}
 				if err = res.Decode(&got); err != nil {
-					t.Errorf("unexpected error from res.Decode: %s", err.Error())
+					t.Errorf("unexpected error decoding response for status %d: %s", testCase.code, err.Error())
 				}
 				if got.Status != strconv.Itoa(testCase.code) {
-					t.Errorf("unexpected status, want: %d, got: %s", testCase.code, got.Status)
+					t.Errorf("unexpected status in decoded response, want: %d, got: %s", testCase.code, got.Status)
 				}
 			})
 		}
@@ -184,10 +184,10 @@ func TestClient(t *testing.T) {
 
 				got, err := res.AsProblemDetails()
 				if err != nil {
-					t.Errorf("unexpected error from res.Decode: %s", err.Error())
+					t.Errorf("unexpected error getting problem details for status %d: %s", testCase.code, err.Error())
 				}
 				if got.Status != testCase.code {
-					t.Errorf("unexpected status, want: %d, got: %d", testCase.code, got.Status)
+					t.Errorf("unexpected status in problem details, want: %d, got: %d", testCase.code, got.Status)
 				}
 			})
 		}
@@ -211,7 +211,7 @@ func TestClient(t *testing.T) {
 
 				message := "building request url: "
 				if !strings.Contains(err.Error(), message) {
-					t.Fatalf("unexpected error message, got: %q, want: strings.Contains(%q)", err.Error(), message)
+					t.Fatalf("expected error message to contain %q, got: %q", message, err.Error())
 				}
 			})
 		}
@@ -247,7 +247,7 @@ func TestClient(t *testing.T) {
 
 				err = res.Decode(&got)
 				if err != nil {
-					t.Fatalf("unexpected error from res.Decode: %s", err.Error())
+					t.Fatalf("failed to decode response: %s", err.Error())
 				}
 
 				if got.Content != "hello world" {
@@ -291,7 +291,7 @@ func TestClient(t *testing.T) {
 
 				err = res.Decode(&got)
 				if err != nil {
-					t.Fatalf("unexpected error from res.Decode: %s", err.Error())
+					t.Fatalf("failed to decode response: %s", err.Error())
 				}
 
 				if got.Content != `{"message":"hello world"}` {
