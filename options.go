@@ -8,7 +8,7 @@ import (
 )
 
 type (
-	// ClientOption allows default doer config values to be overridden.
+	// ClientOption allows default client config values to be overridden.
 	ClientOption func(co *clientOptions)
 
 	// RedirectPolicy defines the policy for handling HTTP redirects.
@@ -54,8 +54,8 @@ func WithClientInterceptor(intercept InterceptorFunc) ClientOption {
 	}
 }
 
-// WithClientTimeout sets the timeout for the doer. This is the maximum amount of
-// time the doer will wait for a response from the server.
+// WithClientTimeout sets the timeout for the client. This is the maximum amount of
+// time the client will wait for a response from the server.
 func WithClientTimeout(timeout time.Duration) ClientOption {
 	return func(co *clientOptions) {
 		co.timeout = timeout
@@ -75,7 +75,7 @@ func WithClientRedirectPolicy(policy RedirectPolicy) ClientOption {
 func mapClientOptionsToDefaults(opts []ClientOption) clientOptions {
 	const (
 		// This value aligns with the server's read timeout, providing a reasonable
-		// balance between waiting for slow server responses and preventing the doer
+		// balance between waiting for slow server responses and preventing the client
 		// from being stuck for too long
 		defaultTimeout = 60 * time.Second
 	)

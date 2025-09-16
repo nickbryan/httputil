@@ -13,15 +13,13 @@ import (
 	"github.com/nickbryan/httputil/problem"
 )
 
-type (
-	// Client is an HTTP client that wraps a standard http.Client and provides
-	// convenience methods for making requests and handling responses.
-	Client struct {
-		basePath string
-		client   *http.Client
-		codec    ClientCodec
-	}
-)
+// Client is an HTTP client that wraps a standard http.Client and provides
+// convenience methods for making requests and handling responses.
+type Client struct {
+	basePath string
+	client   *http.Client
+	codec    ClientCodec
+}
 
 // NewClient creates a new Client with the given options.
 func NewClient(options ...ClientOption) *Client {
