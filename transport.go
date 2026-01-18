@@ -21,36 +21,3 @@ var _ http.RoundTripper = RoundTripperFunc(nil)
 func (f RoundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
-
-// closeIdleConnectionsPropagatingRoundTripper is an http.RoundTripper middleware
-// that ensures calls to http.Client.CloseIdleConnections are propagated to the
-// underlying transport.
-//
-// The http.RoundTripper interface does not include the CloseIdleConnections method.
-// Instead, the http.Client uses a type assertion to check if its Transport
-// implements the method. This wrapper ensures that custom transport chains
-// don't break this behavior.
-type closeIdleConnectionsPropagatingRoundTripper struct {
-	next http.RoundTripper
-}
-
-// RoundTrip implements the http.RoundTripper interface for this type and acts as a
-// pass-through to the underlying transport.
-func (rt closeIdleConnectionsPropagatingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	return rt.next.RoundTrip(req) //nolint:wrapcheck // This is a pass-through method.
-}
-
-// CloseIdleConnections propagates the call to CloseIdleConnections to the underlying
-// transport.
-func (rt closeIdleConnectionsPropagatingRoundTripper) CloseIdleConnections() {
-	if n, ok := rt.next.(interface{ CloseIdleConnections() }); ok {
-		n.CloseIdleConnections()
-	}
-}
-
-// newCloseIdleConnectionsPropagatingRoundTripper returns a new
-// closeIdleConnectionsPropagatingRoundTripper that wraps the given
-// http.RoundTripper. It is used by the WithClientInterceptor option.
-func newCloseIdleConnectionsPropagatingRoundTripper(next http.RoundTripper) http.RoundTripper {
-	return closeIdleConnectionsPropagatingRoundTripper{next}
-}

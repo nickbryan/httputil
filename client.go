@@ -16,14 +16,17 @@ import (
 // Client is an HTTP client that wraps a standard http.Client and provides
 // convenience methods for making requests and handling responses.
 type Client struct {
-	basePath string
-	client   *http.Client
-	codec    ClientCodec
+	basePath         string
+	client           *http.Client
+	codec            ClientCodec
+	defaultTransport http.RoundTripper
 }
 
 // NewClient creates a new Client with the given options.
 func NewClient(options ...ClientOption) *Client {
-	opts := mapClientOptionsToDefaults(options)
+	defaultTransport := http.DefaultTransport
+
+	opts := mapClientOptionsToDefaults(defaultTransport, options)
 
 	return &Client{
 		basePath: strings.TrimRight(opts.basePath, "/"),
@@ -33,7 +36,8 @@ func NewClient(options ...ClientOption) *Client {
 			Timeout:       opts.timeout,
 			Transport:     opts.transport,
 		},
-		codec: opts.codec,
+		codec:            opts.codec,
+		defaultTransport: defaultTransport,
 	}
 }
 
@@ -61,7 +65,9 @@ var _ io.Closer = &Client{} //nolint:exhaustruct // Compile time implementation 
 // the [http.Client.Transport] to ensure that the CloseIdleConnections method
 // is called.
 func (c *Client) Close() error {
-	c.client.CloseIdleConnections()
+	if tr, ok := c.defaultTransport.(interface{ CloseIdleConnections() }); ok {
+		tr.CloseIdleConnections()
+	}
 
 	return nil
 }

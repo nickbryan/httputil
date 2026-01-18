@@ -50,7 +50,7 @@ func WithClientCookieJar(jar http.CookieJar) ClientOption {
 // will be executed in the order that it was added.
 func WithClientInterceptor(intercept InterceptorFunc) ClientOption {
 	return func(co *clientOptions) {
-		co.transport = newCloseIdleConnectionsPropagatingRoundTripper(intercept(co.transport))
+		co.transport = intercept(co.transport)
 	}
 }
 
@@ -72,7 +72,7 @@ func WithClientRedirectPolicy(policy RedirectPolicy) ClientOption {
 
 // mapClientOptionsToDefaults applies the provided ClientOption to a default
 // clientOptions struct.
-func mapClientOptionsToDefaults(opts []ClientOption) clientOptions {
+func mapClientOptionsToDefaults(rootTransport http.RoundTripper, opts []ClientOption) clientOptions {
 	const (
 		// This value aligns with the server's read timeout, providing a reasonable
 		// balance between waiting for slow server responses and preventing the client
@@ -86,7 +86,7 @@ func mapClientOptionsToDefaults(opts []ClientOption) clientOptions {
 		codec:         NewJSONClientCodec(),
 		jar:           nil,
 		timeout:       defaultTimeout,
-		transport:     http.DefaultTransport,
+		transport:     rootTransport,
 	}
 
 	for _, opt := range opts {

@@ -99,10 +99,6 @@ func TestClientOptions(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !spy.connectionsClosed {
-		t.Error("expected CloseIdleConnections call to be propagated to the transport")
-	}
-
 	if httpClient.Timeout != 10*time.Second {
 		t.Errorf("expected timeout to be 10s, got: %s", httpClient.Timeout)
 	}
@@ -135,17 +131,12 @@ func (t *clientTestCodec) Decode(r io.Reader, into any) error {
 }
 
 type interceptorSpy struct {
-	roundtripCalled   bool
-	connectionsClosed bool
+	roundtripCalled bool
 }
 
 func (t *interceptorSpy) RoundTrip(_ *http.Request) (*http.Response, error) {
 	t.roundtripCalled = true
 	return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
-}
-
-func (t *interceptorSpy) CloseIdleConnections() {
-	t.connectionsClosed = true
 }
 
 /*
