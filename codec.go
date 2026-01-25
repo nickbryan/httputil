@@ -27,6 +27,9 @@ type ClientCodec interface {
 // HTTP requests and responses.
 type JSONClientCodec struct{}
 
+// Ensure JSONClientCodec implements ClientCodec.
+var _ ClientCodec = JSONClientCodec{}
+
 // NewJSONClientCodec creates a new JSONClientCodec instance.
 func NewJSONClientCodec() JSONClientCodec {
 	return JSONClientCodec{}
@@ -68,15 +71,18 @@ type ServerCodec interface {
 	Decode(r *http.Request, into any) error
 	// Encode writes the given data to the http.ResponseWriter after encoding it,
 	// returning an error if encoding fails.
-	Encode(w http.ResponseWriter, data any) error
+	Encode(w http.ResponseWriter, statusCode int, data any) error
 	// EncodeError encodes the provided error into the HTTP response writer and
 	// returns an error if encoding fails.
-	EncodeError(w http.ResponseWriter, err error) error
+	EncodeError(w http.ResponseWriter, statusCode int, err error) error
 }
 
 // JSONServerCodec provides methods to encode data as JSON or decode data from JSON in
 // HTTP requests and responses.
 type JSONServerCodec struct{}
+
+// Ensure JSONServerCodec implements ServerCodec.
+var _ ServerCodec = JSONServerCodec{}
 
 // NewJSONServerCodec creates a new JSONServerCodec instance.
 func NewJSONServerCodec() JSONServerCodec {
@@ -100,8 +106,9 @@ func (c JSONServerCodec) Decode(r *http.Request, into any) error {
 
 // Encode writes the given data as JSON to the provided HTTP response writer
 // with the appropriate Content-Type header.
-func (c JSONServerCodec) Encode(w http.ResponseWriter, data any) error {
+func (c JSONServerCodec) Encode(w http.ResponseWriter, statusCode int, data any) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(statusCode)
 
 	return writeJSON(w, data)
 }
@@ -109,14 +116,16 @@ func (c JSONServerCodec) Encode(w http.ResponseWriter, data any) error {
 // EncodeError encodes an error into an HTTP response, handling
 // `problem.DetailedError` if applicable to set the correct content type, or
 // falling back to standard JSON encoding otherwise.
-func (c JSONServerCodec) EncodeError(w http.ResponseWriter, err error) error {
+func (c JSONServerCodec) EncodeError(w http.ResponseWriter, statusCode int, err error) error {
 	var problemDetails *problem.DetailedError
 	if errors.As(err, &problemDetails) {
 		w.Header().Set("Content-Type", "application/problem+json; charset=utf-8")
+		w.WriteHeader(statusCode)
+
 		return writeJSON(w, problemDetails)
 	}
 
-	return c.Encode(w, err)
+	return c.Encode(w, statusCode, err)
 }
 
 // writeJSON writes the given data as JSON to the provided writer. It returns an

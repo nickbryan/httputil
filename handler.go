@@ -375,9 +375,7 @@ func (h *handler[D, P]) writeSuccessfulResponse(req *Request[D, P], res *Respons
 		return
 	}
 
-	req.ResponseWriter.WriteHeader(res.code)
-
-	if err := h.codec.Encode(req.ResponseWriter, res.data); err != nil {
+	if err := h.codec.Encode(req.ResponseWriter, res.code, res.data); err != nil {
 		h.logger.ErrorContext(req.Context(), "Handler failed to encode response data", slog.Any("error", err))
 	}
 }
@@ -405,8 +403,6 @@ func (h *handler[D, P]) writeValidationErr(req *Request[D, P], err error) {
 // writeErrorResponse writes an HTTP error response using the provided error and
 // request context, with support for problem details.
 func (h *handler[D, P]) writeErrorResponse(ctx context.Context, req *Request[D, P], err error) {
-	req.ResponseWriter.Header().Set("Content-Type", "application/problem+json")
-
 	var problemDetails *problem.DetailedError
 	if !errors.As(err, &problemDetails) {
 		problemDetails = problem.ServerError(req.Request)
@@ -414,9 +410,7 @@ func (h *handler[D, P]) writeErrorResponse(ctx context.Context, req *Request[D, 
 		h.logger.ErrorContext(ctx, "Handler received an unhandled error", slog.Any("error", err))
 	}
 
-	req.ResponseWriter.WriteHeader(problemDetails.Status)
-
-	if err = h.codec.EncodeError(req.ResponseWriter, problemDetails); err != nil {
+	if err = h.codec.EncodeError(req.ResponseWriter, problemDetails.Status, problemDetails); err != nil {
 		h.logger.ErrorContext(ctx, "Handler failed to encode error data", slog.Any("error", err))
 	}
 }

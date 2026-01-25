@@ -336,7 +336,7 @@ type (
 	testGuard struct{}
 )
 
-func (t serverTestCodec) Encode(w http.ResponseWriter, _ any) error {
+func (t serverTestCodec) Encode(w http.ResponseWriter, _ int, _ any) error {
 	w.Header().Set("X-Test-Codec", "true")
 	return nil
 }

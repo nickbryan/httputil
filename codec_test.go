@@ -227,6 +227,7 @@ func TestJSONServerCodec_Encode(t *testing.T) {
 
 	testCases := map[string]struct {
 		data            any
+		statusCode      int
 		wantBody        string
 		wantContentType string
 		wantStatusCode  int
@@ -235,19 +236,23 @@ func TestJSONServerCodec_Encode(t *testing.T) {
 	}{
 		"encodes a struct to json": {
 			data:            &testStruct{Foo: "bar"},
+			statusCode:      http.StatusOK,
 			wantBody:        `{"foo":"bar"}`,
 			wantContentType: "application/json; charset=utf-8",
 			wantStatusCode:  http.StatusOK,
 		},
 		"encodes a map to json": {
 			data:            map[string]string{"foo": "bar"},
+			statusCode:      http.StatusOK,
 			wantBody:        `{"foo":"bar"}`,
 			wantContentType: "application/json; charset=utf-8",
 			wantStatusCode:  http.StatusOK,
 		},
 		"returns an error when encoding fails": {
-			data:    make(chan int),
-			wantErr: true,
+			data:           make(chan int),
+			statusCode:     http.StatusOK,
+			wantStatusCode: http.StatusOK,
+			wantErr:        true,
 		},
 	}
 
@@ -258,23 +263,9 @@ func TestJSONServerCodec_Encode(t *testing.T) {
 			w := httptest.NewRecorder()
 			codec := httputil.NewJSONServerCodec()
 
-			err := codec.Encode(w, tc.data)
+			err := codec.Encode(w, tc.statusCode, tc.data)
 
-			if (err != nil) != tc.wantErr {
-				t.Fatalf("Encode() error = %v, wantErr %v", err, tc.wantErr)
-			}
-
-			if tc.wantErr {
-				return
-			}
-
-			if contentType := w.Header().Get("Content-Type"); contentType != tc.wantContentType {
-				t.Errorf("Content-Type header = %q, want %q", contentType, tc.wantContentType)
-			}
-
-			if diff := testutil.DiffJSON(tc.wantBody, w.Body.String()); diff != "" {
-				t.Errorf("Body mismatch (-want +got):\n%s", diff)
-			}
+			assertResponse(t, w, err, tc.wantErr, tc.wantStatusCode, tc.wantContentType, tc.wantBody)
 		})
 	}
 }
@@ -284,23 +275,31 @@ func TestJSONServerCodec_EncodeError(t *testing.T) {
 
 	testCases := map[string]struct {
 		err             error
+		statusCode      int
 		wantBody        string
 		wantContentType string
+		wantStatusCode  int
 		wantErr         bool
 	}{
 		"encodes a standard error to json": {
 			err:             errors.New("some error"),
+			statusCode:      http.StatusInternalServerError,
 			wantBody:        `{}`,
 			wantContentType: "application/json; charset=utf-8",
+			wantStatusCode:  http.StatusInternalServerError,
 		},
 		"encodes a problem.DetailedError to json": {
 			err:             problem.BadRequest(httptest.NewRequest(http.MethodGet, "/test", nil)),
+			statusCode:      http.StatusBadRequest,
 			wantBody:        problem.BadRequest(httptest.NewRequest(http.MethodGet, "/test", nil)).MustMarshalJSONString(),
 			wantContentType: "application/problem+json; charset=utf-8",
+			wantStatusCode:  http.StatusBadRequest,
 		},
 		"returns an error when encoding fails": {
-			err:     &jsonUnsupportedError{err: make(chan int)},
-			wantErr: true,
+			err:            &jsonUnsupportedError{err: make(chan int)},
+			statusCode:     http.StatusInternalServerError,
+			wantStatusCode: http.StatusInternalServerError,
+			wantErr:        true,
 		},
 	}
 
@@ -311,24 +310,34 @@ func TestJSONServerCodec_EncodeError(t *testing.T) {
 			w := httptest.NewRecorder()
 			codec := httputil.NewJSONServerCodec()
 
-			err := codec.EncodeError(w, tc.err)
+			err := codec.EncodeError(w, tc.statusCode, tc.err)
 
-			if (err != nil) != tc.wantErr {
-				t.Fatalf("EncodeError() error = %v, wantErr %v", err, tc.wantErr)
-			}
-
-			if tc.wantErr {
-				return
-			}
-
-			if contentType := w.Header().Get("Content-Type"); contentType != tc.wantContentType {
-				t.Errorf("Content-Type header = %q, want %q", contentType, tc.wantContentType)
-			}
-
-			if diff := testutil.DiffJSON(tc.wantBody, w.Body.String()); diff != "" {
-				t.Errorf("Body mismatch (-want +got):\n%s", diff)
-			}
+			assertResponse(t, w, err, tc.wantErr, tc.wantStatusCode, tc.wantContentType, tc.wantBody)
 		})
+	}
+}
+
+func assertResponse(t *testing.T, w *httptest.ResponseRecorder, err error, wantErr bool, wantStatusCode int, wantContentType, wantBody string) {
+	t.Helper()
+
+	if (err != nil) != wantErr {
+		t.Fatalf("Encode() error = %v, wantErr %v", err, wantErr)
+	}
+
+	if wantErr {
+		return
+	}
+
+	if w.Code != wantStatusCode {
+		t.Errorf("Status code = %d, want %d", w.Code, wantStatusCode)
+	}
+
+	if contentType := w.Header().Get("Content-Type"); contentType != wantContentType {
+		t.Errorf("Content-Type header = %q, want %q", contentType, wantContentType)
+	}
+
+	if diff := testutil.DiffJSON(wantBody, w.Body.String()); diff != "" {
+		t.Errorf("Body mismatch (-want +got):\n%s", diff)
 	}
 }
 
