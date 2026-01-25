@@ -250,8 +250,8 @@ func TestJSONServerCodec_Encode(t *testing.T) {
 		},
 		"returns an error when encoding fails": {
 			data:           make(chan int),
-			statusCode:     http.StatusOK,
-			wantStatusCode: http.StatusOK,
+			statusCode:     http.StatusInternalServerError,
+			wantStatusCode: http.StatusInternalServerError,
 			wantErr:        true,
 		},
 	}

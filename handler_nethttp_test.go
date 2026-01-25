@@ -152,8 +152,8 @@ func TestNewNetHTTPHandler(t *testing.T) {
 			)
 			server.ServeHTTP(response, testCase.request)
 
-			if response.Code != testCase.wantResponseStatusCode {
-				t.Errorf("response.Code = %d, want %d", response.Code, testCase.wantResponseStatusCode)
+			if response.Result().StatusCode != testCase.wantResponseStatusCode {
+				t.Errorf("response.Code = %d, want %d", response.Result().StatusCode, testCase.wantResponseStatusCode)
 			}
 
 			if diff := testutil.DiffJSON(testCase.wantResponseBody, response.Body.String()); diff != "" {

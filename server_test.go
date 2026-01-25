@@ -191,8 +191,8 @@ func TestServer_ServeHTTP(t *testing.T) {
 
 		svr.ServeHTTP(response, request)
 
-		if response.Code != http.StatusInternalServerError {
-			t.Errorf("unexpected status code, want: %d, got: %d", http.StatusInternalServerError, response.Code)
+		if response.Result().StatusCode != http.StatusInternalServerError {
+			t.Errorf("unexpected status code, want: %d, got: %d", http.StatusInternalServerError, response.Result().StatusCode)
 		}
 
 		want := []map[string]any{{
@@ -229,8 +229,8 @@ func TestServer_ServeHTTP(t *testing.T) {
 
 		svr.ServeHTTP(response, request)
 
-		if response.Code != http.StatusRequestEntityTooLarge {
-			t.Errorf("unexpected status code, want: %d, got: %d", http.StatusRequestEntityTooLarge, response.Code)
+		if response.Result().StatusCode != http.StatusRequestEntityTooLarge {
+			t.Errorf("unexpected status code, want: %d, got: %d", http.StatusRequestEntityTooLarge, response.Result().StatusCode)
 		}
 
 		query := slogmem.RecordQuery{

@@ -746,16 +746,16 @@ func TestNewHandler(t *testing.T) {
 			)
 			server.ServeHTTP(response, testCase.request)
 
-			if response.Code != testCase.wantResponseStatusCode {
-				t.Errorf("response.Code = %d, want %d", response.Code, testCase.wantResponseStatusCode)
+			if response.Result().StatusCode != testCase.wantResponseStatusCode {
+				t.Errorf("response.Code = %d, want %d", response.Result().StatusCode, testCase.wantResponseStatusCode)
 			}
 
 			if diff := testutil.DiffJSON(testCase.wantResponseBody, response.Body.String()); diff != "" {
 				t.Errorf("response.Body mismatch (-want +got):\n%s", diff)
 			}
 
-			if testCase.wantHeader != nil && !cmp.Equal(testCase.wantHeader, response.Header()) {
-				t.Errorf("response.Header = %v, want: %v", response.Header(), testCase.wantHeader)
+			if testCase.wantHeader != nil && !cmp.Equal(testCase.wantHeader, response.Result().Header) {
+				t.Errorf("response.Header = %v, want: %v", response.Result().Header, testCase.wantHeader)
 			}
 
 			if len(testCase.wantLogs) != logs.Len() {
