@@ -207,7 +207,7 @@ type MyParams struct {
     ID      string `path:"id" validate:"required,uuid"`
     Filter  string `query:"filter"`
     APIKey  string `header:"X-API-Key" validate:"required"`
-    Version int    `query:"version" validate:"omitempty,min=1"`
+    Version int    `query:"version" validate:"required,min=1"`
 }
 ```
 
