@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
@@ -16,14 +17,18 @@ import (
 )
 
 const (
-	// tagQuery is the struct tag for query parameters.
-	tagQuery = "query"
-	// tagHeader is the struct tag for header parameters.
-	tagHeader = "header"
-	// tagPath is the struct tag for path parameters.
-	tagPath = "path"
-	// tagDefault is the struct tag for default values.
-	tagDefault = "default"
+	// tagParam is the struct tag for parameter binding.
+	tagParam = "param"
+	// sourceDefault identifies that the value came from the default declaration.
+	sourceDefault = "default"
+	// sourceQuery identifies that the value came from the URL query.
+	sourceQuery = "query"
+	// sourceHeader identifies that the value came from the HTTP headers.
+	sourceHeader = "header"
+	// sourcePath identifies that the value came from the URL path.
+	sourcePath = "path"
+	// tagPartSize is the expected number of parts when splitting a tag part by "=".
+	tagPartSize = 2
 )
 
 // InvalidOutputTypeError is a custom error type for invalid output types.
@@ -65,26 +70,67 @@ func (e *UnsupportedFieldTypeError) Error() string {
 	return fmt.Sprintf("unsupported field type: %T", e.FieldType)
 }
 
+// paramInfo holds metadata about a resolved parameter for error reporting.
+type paramInfo struct {
+	actualKey  string
+	sourceType string
+}
+
+// resolvedParam represents the result of resolving a parameter value from a
+// request or tag.
+type resolvedParam struct {
+	canonicalName string
+	actualKey     string
+	sourceType    string
+	value         string
+}
+
+// reportingKey returns the key that should be used when reporting errors for the parameter.
+func (p resolvedParam) reportingKey(fieldName string) string {
+	k := p.actualKey
+	if k == "" || k == sourceDefault {
+		k = p.canonicalName
+	}
+
+	if k == "" {
+		k = fieldName
+	}
+
+	return k
+}
+
+// paramTag represents the parsed content of a 'param' struct tag.
+type paramTag struct {
+	canonicalName string
+	firstSource   string
+	parts         []tagPart
+}
+
+// tagPart represents a single source/key pair within a 'param' tag.
+type tagPart struct {
+	source string
+	key    string
+}
+
 // BindValidParameters extracts parameters from an *http.Request, populates the
 // fields of the output struct, and validates the struct. The output parameter
 // must be a pointer to a struct, and the struct fields can be annotated with
 // struct tags to specify the source of the parameters. Supported struct tags
 // and their meanings are:
 //
-// - `query`: Specifies a query parameter to extract from the URL.
-// - `header`: Specifies an HTTP header to extract from the request.
-// - `path`: Specifies a path parameter to extract. Requires an implementation of r.PathValue().
-// - `default`: Provides a default value for the parameter if it's not found in the request.
-// - `validate`: Provides rules for the validator.
+//   - `param`: Specifies sources and options in "key=value" format, separated by commas.
+//     Keys: query, header, path, default.
+//     Order matters: first match wins.
+//   - `validate`: Provides rules for the validator.
 //
 // Example:
 //
 //	 type Params struct {
-//		  Sort	string  `query:"user_id" validate:"required"`
-//		  AuthToken string  `header:"Authorization"`
-//		  Page	  int	 `query:"page" default:"1"`
-//		  IsActive  bool	`query:"is_active" default:"false"`
-//		  ID		uuid.UUID `path:"id"`
+//		  Sort	string  `param:"query=user_id" validate:"required"`
+//		  AuthToken string  `param:"header=Authorization"`
+//		  Page	  int	 `param:"query=page,default=1"`
+//		  IsActive  bool	`param:"query=is_active,default=false"`
+//		  ID		uuid.UUID `param:"path=id"`
 //	 }
 //	 var params Params
 //	 if err := BindValidParameters(r, &params); err != nil {
@@ -104,6 +150,10 @@ func (e *UnsupportedFieldTypeError) Error() string {
 // - A value cannot be converted to the target field type.
 // - Validation fails.
 //
+// Validation is skipped for parameters that were populated from a `default`
+// source. This allows developers to set default values that might strictly violate
+// validation rules (e.g. zero values for required fields) without causing client-facing errors.
+//
 // Returns an error if:
 // - `output` is not a pointer to a struct.
 // - A default value cannot be converted to the target field type.
@@ -116,38 +166,40 @@ func BindValidParameters(r *http.Request, output any) error {
 
 	var paramErrors []problem.Parameter
 
-	paramTypes := make(map[string]string)
+	paramTypes := make(map[string]paramInfo)
+
+	var fieldsToSkip []string
+
+	var query url.Values
+	if r.URL != nil {
+		query = r.URL.Query()
+	}
 
 	for i := range outputVal.NumField() {
 		field := outputVal.Type().Field(i)
-
-		paramName, paramValue, paramType := resolveParamValue(r, field)
-		paramTypes[paramName] = paramType
-
-		if paramValue == "" {
+		if !field.IsExported() {
 			continue
 		}
 
-		if err := setFieldValue(outputVal.Field(i), paramName, paramValue, paramType); err != nil {
-			var paramConversionError *ParamConversionError
-			if paramName != tagDefault && errors.As(err, &paramConversionError) {
-				paramErrors = append(paramErrors, problem.Parameter{
-					Parameter: paramConversionError.ParamName,
-					Detail:    paramConversionError.Err.Error(),
-					Type:      paramConversionError.ParameterType,
-				})
+		res := resolveParamValue(r, query, field)
+		paramTypes[field.Name] = paramInfo{
+			actualKey:  res.reportingKey(field.Name),
+			sourceType: res.sourceType,
+		}
 
-				continue
+		if res.actualKey == sourceDefault {
+			fieldsToSkip = append(fieldsToSkip, field.Name)
+		}
+
+		if res.value != "" {
+			paramErrors, err = setFieldAndHandleError(outputVal.Field(i), res, paramErrors)
+			if err != nil {
+				return err
 			}
-
-			// If the paramName == "default" then the error was on the developer setting the
-			// default value so we don't want to show that in the response, treat it as an
-			// error instead of a problem with the request.
-			return fmt.Errorf("setting field value: %w", err)
 		}
 	}
 
-	paramErrors, err = validateStruct(r.Context(), output, paramTypes, paramErrors)
+	paramErrors, err = validateStruct(r.Context(), output, paramTypes, paramErrors, fieldsToSkip)
 	if err != nil {
 		return err
 	}
@@ -159,9 +211,43 @@ func BindValidParameters(r *http.Request, output any) error {
 	return nil
 }
 
+// setFieldAndHandleError attempts to set a struct field's value and handles any
+// conversion errors that occur by appending them to the provided error slice.
+func setFieldAndHandleError(
+	fieldVal reflect.Value,
+	res resolvedParam,
+	paramErrors []problem.Parameter,
+) ([]problem.Parameter, error) {
+	if err := setFieldValue(fieldVal, res.actualKey, res.value, res.sourceType); err != nil {
+		var paramConversionError *ParamConversionError
+		if res.actualKey != sourceDefault && errors.As(err, &paramConversionError) {
+			paramErrors = append(paramErrors, problem.Parameter{
+				Parameter: paramConversionError.ParamName,
+				Detail:    "must be a valid " + paramConversionError.TargetType,
+				Type:      paramConversionError.ParameterType,
+			})
+
+			return paramErrors, nil
+		}
+
+		// If the paramName == "default" then the error was on the developer setting the
+		// default value, so we don't want to show that in the response, treat it as an
+		// error instead of a problem with the request.
+		return nil, fmt.Errorf("setting field value: %w", err)
+	}
+
+	return paramErrors, nil
+}
+
 // validateStruct performs validation on the struct and processes any errors.
-func validateStruct(ctx context.Context, output any, paramTypes map[string]string, paramErrors []problem.Parameter) ([]problem.Parameter, error) {
-	if err := validate.StructCtx(ctx, output); err != nil {
+func validateStruct(
+	ctx context.Context,
+	output any,
+	paramTypes map[string]paramInfo,
+	paramErrors []problem.Parameter,
+	fieldsToSkip []string,
+) ([]problem.Parameter, error) {
+	if err := validate.StructExceptCtx(ctx, output, fieldsToSkip...); err != nil {
 		var errs validator.ValidationErrors
 
 		if errors.As(err, &errs) {
@@ -175,16 +261,16 @@ func validateStruct(ctx context.Context, output any, paramTypes map[string]strin
 }
 
 // processValidationErrors converts validator errors to problem parameters.
-func processValidationErrors(errs validator.ValidationErrors, paramTypes map[string]string) []problem.Parameter {
+func processValidationErrors(errs validator.ValidationErrors, paramTypes map[string]paramInfo) []problem.Parameter {
 	validationErrors := make([]problem.Parameter, 0, len(errs))
 
 	for _, err := range errs {
-		fieldName := strings.Join(strings.Split(err.Namespace(), ".")[1:], ".")
+		info := paramTypes[err.StructField()]
 
 		validationErrors = append(validationErrors, problem.Parameter{
-			Parameter: fieldName,
+			Parameter: info.actualKey,
 			Detail:    describeValidationError(err),
-			Type:      problem.ParameterType(paramTypes[fieldName]),
+			Type:      problem.ParameterType(info.sourceType),
 		})
 	}
 
@@ -203,56 +289,110 @@ func validateOutputType(output any) (reflect.Value, error) {
 }
 
 // resolveParamValue extracts a named parameter's value from an HTTP request
-// using struct field tags (query, header, path, default). Returns the parameter
-// name, value, and source type; returns empty strings if no value is found.
-func resolveParamValue(r *http.Request, field reflect.StructField) (string, string, string) {
-	var paramName, paramValue, paramType string
-
-	if key := field.Tag.Get(tagQuery); key != "" {
-		paramName, paramValue, paramType = key, r.URL.Query().Get(key), tagQuery
+// using struct field tags (query, header, path, default).
+func resolveParamValue(r *http.Request, query url.Values, field reflect.StructField) resolvedParam {
+	tag := parseParamTag(field.Tag.Get(tagParam))
+	if tag == nil {
+		return resolvedParam{
+			canonicalName: "",
+			actualKey:     "",
+			sourceType:    "",
+			value:         "",
+		}
 	}
 
-	if paramValue != "" {
-		return paramName, paramValue, paramType
+	for _, part := range tag.parts {
+		if part.source == sourceDefault {
+			return resolvedParam{
+				canonicalName: tag.canonicalName,
+				actualKey:     sourceDefault,
+				sourceType:    tag.firstSource,
+				value:         part.key,
+			}
+		}
+
+		if value := getSourceValue(r, query, part.source, part.key); value != "" {
+			return resolvedParam{
+				canonicalName: tag.canonicalName,
+				actualKey:     part.key,
+				sourceType:    part.source,
+				value:         value,
+			}
+		}
 	}
 
-	if key := field.Tag.Get(tagHeader); key != "" {
-		paramName, paramValue, paramType = key, r.Header.Get(key), tagHeader
+	return resolvedParam{
+		canonicalName: tag.canonicalName,
+		actualKey:     tag.canonicalName,
+		sourceType:    tag.firstSource,
+		value:         "",
+	}
+}
+
+// parseParamTag parses a 'param' struct tag into a paramTag struct.
+func parseParamTag(tagStr string) *paramTag {
+	if tagStr == "" {
+		return nil
 	}
 
-	if paramValue != "" {
-		return paramName, paramValue, paramType
+	res := &paramTag{
+		canonicalName: "",
+		firstSource:   "",
+		parts:         nil,
 	}
 
-	if key := field.Tag.Get(tagPath); key != "" {
-		paramName, paramValue, paramType = key, r.PathValue(key), tagPath
+	for _, part := range strings.Split(tagStr, ",") {
+		kv := strings.SplitN(strings.TrimSpace(part), "=", tagPartSize)
+		if len(kv) != tagPartSize {
+			continue
+		}
+
+		source, key := strings.TrimSpace(kv[0]), strings.TrimSpace(kv[1])
+		res.parts = append(res.parts, tagPart{source: source, key: key})
+
+		if res.canonicalName == "" && source != sourceDefault {
+			res.canonicalName, res.firstSource = key, source
+		}
 	}
 
-	if paramValue != "" {
-		return paramName, paramValue, paramType
+	if res.canonicalName == "" && len(res.parts) > 0 {
+		res.canonicalName = sourceDefault
 	}
 
-	if value := field.Tag.Get(tagDefault); value != "" {
-		paramName, paramValue = tagDefault, value
-	}
+	return res
+}
 
-	return paramName, paramValue, paramType
+// getSourceValue retrieves the value for a given source and key from an HTTP
+// request.
+func getSourceValue(r *http.Request, query url.Values, source, key string) string {
+	switch source {
+	case sourceQuery:
+		return query.Get(key)
+	case sourceHeader:
+		return r.Header.Get(key)
+	case sourcePath:
+		return r.PathValue(key)
+	default:
+		return ""
+	}
 }
 
 // setFieldValue assigns a parameter value to a struct field, converting it to
 // the appropriate type or returning an error.
 func setFieldValue(fieldVal reflect.Value, paramName, paramValue, paramType string) error {
-	switch fieldVal.Interface().(type) {
-	case string:
-		return setStringField(fieldVal, paramValue)
-	case int:
-		return setIntField(fieldVal, paramName, paramValue, paramType)
-	case bool:
-		return setBoolField(fieldVal, paramName, paramValue, paramType)
-	case float64:
-		return setFloatField(fieldVal, paramName, paramValue, paramType)
-	case uuid.UUID:
+	if _, ok := fieldVal.Interface().(uuid.UUID); ok {
 		return setUUIDField(fieldVal, paramName, paramValue, paramType)
+	}
+
+	switch fieldVal.Kind() {
+	case reflect.String:
+		return setStringField(fieldVal, paramValue)
+	case reflect.Int:
+		return setIntField(fieldVal, paramName, paramValue, paramType)
+	case reflect.Bool:
+		return setBoolField(fieldVal, paramName, paramValue, paramType)
+	case reflect.Float64:
+		return setFloatField(fieldVal, paramName, paramValue, paramType)
 	default:
 		return &UnsupportedFieldTypeError{FieldType: fieldVal.Interface()}
 	}

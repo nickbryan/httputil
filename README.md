@@ -200,21 +200,40 @@ httputil.NewHandler(func(r httputil.Request[MyRequestType, MyParamsType]) (*http
 
 ### Parameter Binding
 
-Parameters can be bound from different sources using struct tags:
+Parameters can be bound from different sources using the single `param` struct tag. This tag supports a comma-separated list of sources, allowing for sophisticated fallback strategies.
 
 ```go
 type MyParams struct {
-    ID      string `path:"id" validate:"required,uuid"`
-    Filter  string `query:"filter"`
-    APIKey  string `header:"X-API-Key" validate:"required"`
-    Version int    `query:"version" validate:"required,min=1"`
+    // Simple binding: look for "id" in the path
+    ID string `param:"path=id" validate:"required,uuid"`
+
+    // Fallback strategy: try query param "filter", then header "X-Filter"
+    Filter string `param:"query=filter,header=X-Filter"`
+
+    // Default value: try header "X-API-Key", if missing use "default-key"
+    APIKey string `param:"header=X-API-Key,default=default-key"`
+
+    // Complex chain: Query -> Header -> Default
+    Version int `param:"query=v,header=X-Version,default=1" validate:"min=1"`
 }
 ```
 
-Supported parameter sources:
-- `path` - URL path parameters
-- `query` - Query string parameters
-- `header` - HTTP headers
+**Supported Sources:**
+- `path`: URL path parameters (e.g., `/users/{id}`).
+- `query`: URL query string parameters (e.g., `?filter=active`).
+- `header`: HTTP request headers (e.g., `X-API-Key: abc`).
+- `default`: A static default value if no other sources match.
+
+**Binding Strategy:**
+1.  **First Match Wins:** The `param` tag is processed from left to right. The first source that provides a non-empty value is used.
+    *   *Example:* `param:"query=id,header=X-ID,default=1"`
+    *   Check query parameter `id`. If present, use it.
+    *   If not, check header `X-ID`. If present, use it.
+    *   If neither is found, use the default value `1`.
+2.  **Default is Terminal:** If a `default` source is reached, it is always used, and subsequent sources in the tag are ignored.
+3.  **Validation on Defaults:** Parameters populated from a `default` source are **excluded from validation**. This allows developers to set safe defaults (e.g., `default=0` for an integer) without triggering validation errors (e.g., `min=1`) that would confusingly blame the client.
+4.  **Error Reporting:** Validation errors will correctly reflect the **actual source** key used to populate the parameter, providing clear feedback to the client.
+    *   *Example:* Given `param:"query=q,header=H"`. If the value is missing from query `q` but provided in header `H`, and that value fails validation, the error response will indicate that parameter `H` is invalid.
 
 ### Validation
 
@@ -625,7 +644,7 @@ func main() {
 
 func newGreetingsEndpoint() httputil.Endpoint {
     type params struct {
-        Name string `path:"name" validate:"required"`
+        Name string `param:"path=name" validate:"required"`
     }
 
     return httputil.Endpoint{
@@ -683,7 +702,7 @@ func main() {
 func userEndpoint() httputil.Endpoint {
     type (
         params struct {
-            ID string `path:"id" validate:"required,uuid"`
+            ID string `param:"path=id" validate:"required,uuid"`
         }
         request struct {
             Name  string `json:"name" validate:"required"`

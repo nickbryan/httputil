@@ -2,7 +2,6 @@
 package httputil
 
 import (
-	"fmt"
 	"reflect"
 	"strings"
 
@@ -42,18 +41,6 @@ func defaultValidator() *validator.Validate {
 			return ""
 		}
 
-		if name == "" {
-			name = f.Tag.Get("query")
-		}
-
-		if name == "" {
-			name = f.Tag.Get("path")
-		}
-
-		if name == "" {
-			name = f.Tag.Get("header")
-		}
-
 		return name
 	})
 
@@ -65,17 +52,17 @@ func defaultValidator() *validator.Validate {
 func describeValidationError(err validator.FieldError) string {
 	switch err.Tag() {
 	case "required":
-		return err.Field() + " is required"
+		return "is required"
 	case "email":
-		return err.Field() + " should be a valid email"
+		return "should be a valid email"
 	case "e164":
-		return err.Field() + " should be a valid international phone number (e.g. +33 6 06 06 06 06)"
+		return "should be a valid international phone number (e.g. +33 6 06 06 06 06)"
 	default:
 		if strings.Contains(err.Tag(), "uuid") {
-			return err.Field() + " should be a valid " + strings.ToUpper(err.Tag())
+			return "should be a valid " + strings.ToUpper(err.Tag())
 		}
 
-		resp := fmt.Sprintf("%s should be %s", err.Field(), err.Tag())
+		resp := "should be " + err.Tag()
 		if err.Param() != "" {
 			resp += "=" + err.Param()
 		}

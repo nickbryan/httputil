@@ -167,7 +167,7 @@ func TestNewHandler(t *testing.T) {
 			wantHeader: http.Header{"Content-Type": {"application/problem+json; charset=utf-8"}},
 			wantResponseBody: problem.ConstraintViolation(
 				problemtest.NewRequest("/test"),
-				problem.Property{Detail: "thing is required", Pointer: "/inner/thing"},
+				problem.Property{Detail: "is required", Pointer: "/inner/thing"},
 			).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusUnprocessableEntity,
 		},
@@ -194,12 +194,12 @@ func TestNewHandler(t *testing.T) {
 			wantHeader: http.Header{"Content-Type": {"application/problem+json; charset=utf-8"}},
 			wantResponseBody: problem.ConstraintViolation(
 				problemtest.NewRequest("/test"),
-				problem.Property{Detail: "required is required", Pointer: "/required"},
-				problem.Property{Detail: "email should be a valid email", Pointer: "/email"},
-				problem.Property{Detail: "uuid should be a valid UUID", Pointer: "/uuid"},
-				problem.Property{Detail: "uuid4 should be a valid UUID4", Pointer: "/uuid4"},
-				problem.Property{Detail: "phone should be a valid international phone number (e.g. +33 6 06 06 06 06)", Pointer: "/phone"},
-				problem.Property{Detail: "field should be min=3", Pointer: "/field"},
+				problem.Property{Detail: "is required", Pointer: "/required"},
+				problem.Property{Detail: "should be a valid email", Pointer: "/email"},
+				problem.Property{Detail: "should be a valid UUID", Pointer: "/uuid"},
+				problem.Property{Detail: "should be a valid UUID4", Pointer: "/uuid4"},
+				problem.Property{Detail: "should be a valid international phone number (e.g. +33 6 06 06 06 06)", Pointer: "/phone"},
+				problem.Property{Detail: "should be min=3", Pointer: "/field"},
 			).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusUnprocessableEntity,
 		},
@@ -567,9 +567,9 @@ func TestNewHandler(t *testing.T) {
 		"sets zero values when request params are missing and there is no validation": {
 			endpoint: func() httputil.Endpoint {
 				type params struct {
-					Name          string `query:"name"`
-					CorrelationID string `header:"X-Correlation-Id"`
-					User          string `path:"user"`
+					Name          string `param:"query=name"`
+					CorrelationID string `param:"header=X-Correlation-Id"`
+					User          string `param:"path=user"`
 				}
 
 				return httputil.Endpoint{
@@ -591,9 +591,9 @@ func TestNewHandler(t *testing.T) {
 		"sets default values when request params are missing and there is no validation": {
 			endpoint: func() httputil.Endpoint {
 				type params struct {
-					Name          string `query:"name"              default:"some-name"`
-					CorrelationID string `header:"X-Correlation-Id" default:"some-correlation-id"`
-					User          string `path:"user"               default:"some-user"`
+					Name          string `param:"query=name,default=some-name"`
+					CorrelationID string `param:"header=X-Correlation-Id,default=some-correlation-id"`
+					User          string `param:"path=user,default=some-user"`
 				}
 
 				return httputil.Endpoint{
@@ -615,9 +615,9 @@ func TestNewHandler(t *testing.T) {
 		"sets default values when request params are missing and there is validation requiring fields to be set": {
 			endpoint: func() httputil.Endpoint {
 				type params struct {
-					Name          string `query:"name"              default:"some-name"           validate:"required"`
-					CorrelationID string `header:"X-Correlation-Id" default:"some-correlation-id" validate:"required"`
-					User          string `path:"user"               default:"some-user"           validate:"required"`
+					Name          string `validate:"required" param:"query=name,default=some-name"`
+					CorrelationID string `validate:"required" param:"header=X-Correlation-Id,default=some-correlation-id"`
+					User          string `validate:"required" param:"path=user,default=some-user"`
 				}
 
 				return httputil.Endpoint{
@@ -639,9 +639,9 @@ func TestNewHandler(t *testing.T) {
 		"returns an error when request params are missing and there is validation but no defaults set": {
 			endpoint: func() httputil.Endpoint {
 				type params struct {
-					Name          string `query:"name"              validate:"required"`
-					CorrelationID string `header:"X-Correlation-Id" validate:"required"`
-					User          string `path:"user"               validate:"required"`
+					Name          string `validate:"required" param:"query=name"`
+					CorrelationID string `validate:"required" param:"header=X-Correlation-Id"`
+					User          string `validate:"required" param:"path=user"`
 				}
 
 				return httputil.Endpoint{
@@ -659,9 +659,9 @@ func TestNewHandler(t *testing.T) {
 			request: httptest.NewRequest(http.MethodGet, "/test", nil),
 			wantResponseBody: problem.BadParameters(
 				problemtest.NewRequest("/test"),
-				problem.Parameter{Parameter: "name", Detail: "name is required", Type: "query"},
-				problem.Parameter{Parameter: "X-Correlation-Id", Detail: "X-Correlation-Id is required", Type: "header"},
-				problem.Parameter{Parameter: "user", Detail: "user is required", Type: "path"},
+				problem.Parameter{Parameter: "name", Detail: "is required", Type: "query"},
+				problem.Parameter{Parameter: "X-Correlation-Id", Detail: "is required", Type: "header"},
+				problem.Parameter{Parameter: "user", Detail: "is required", Type: "path"},
 			).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusBadRequest,
 		},
@@ -687,7 +687,7 @@ func TestNewHandler(t *testing.T) {
 		"logs and returns an error when params extraction fails unexpectedly": {
 			endpoint: func() httputil.Endpoint {
 				type params struct {
-					Name int `query:"name" default:"not an int"`
+					Name int `param:"query=name,default=not an int"`
 				}
 
 				return httputil.Endpoint{
