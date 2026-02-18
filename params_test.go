@@ -614,8 +614,8 @@ func TestBindValidParameters(t *testing.T) {
 				}
 
 				if len(testCase.expectedParamErrors) > 0 {
-					var detailedErr *problem.DetailedError
-					if !errors.As(err, &detailedErr) {
+					detailedErr, ok := errors.AsType[*problem.DetailedError](err)
+					if !ok {
 						t.Fatalf("expected error to be *problem.DetailedError, got %T", err)
 					}
 

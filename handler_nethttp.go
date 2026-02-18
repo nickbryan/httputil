@@ -42,8 +42,8 @@ func (h *netHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			w.Header().Set("Content-Type", "application/problem+text")
 
-			var problemDetails *problem.DetailedError
-			if !errors.As(err, &problemDetails) {
+			problemDetails, ok := errors.AsType[*problem.DetailedError](err)
+			if !ok {
 				problemDetails = problem.ServerError(r)
 				err = fmt.Errorf("calling guard: %w", err)
 				h.logger.ErrorContext(r.Context(), "net/http handler received an unhandled error", slog.Any("error", err))
@@ -51,7 +51,7 @@ func (h *netHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 			w.WriteHeader(problemDetails.Status)
 
-			_, err = w.Write([]byte(problemDetails.Error()))
+			_, err = w.Write([]byte(problemDetails.Error())) //nolint:gosec // G705: writes structured problem error, not user input.
 			if err != nil {
 				err = fmt.Errorf("writing guard error: %w", err)
 				h.logger.ErrorContext(r.Context(), "net/http handler failed to write error", slog.Any("error", err))

@@ -117,8 +117,7 @@ func (c JSONServerCodec) Encode(w http.ResponseWriter, statusCode int, data any)
 // `problem.DetailedError` if applicable to set the correct content type, or
 // falling back to standard JSON encoding otherwise.
 func (c JSONServerCodec) EncodeError(w http.ResponseWriter, statusCode int, err error) error {
-	var problemDetails *problem.DetailedError
-	if errors.As(err, &problemDetails) {
+	if problemDetails, ok := errors.AsType[*problem.DetailedError](err); ok {
 		w.Header().Set("Content-Type", "application/problem+json; charset=utf-8")
 		w.WriteHeader(statusCode)
 

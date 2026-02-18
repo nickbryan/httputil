@@ -219,8 +219,7 @@ func setFieldAndHandleError(
 	paramErrors []problem.Parameter,
 ) ([]problem.Parameter, error) {
 	if err := setFieldValue(fieldVal, res.actualKey, res.value, res.sourceType); err != nil {
-		var paramConversionError *ParamConversionError
-		if res.actualKey != sourceDefault && errors.As(err, &paramConversionError) {
+		if paramConversionError, ok := errors.AsType[*ParamConversionError](err); res.actualKey != sourceDefault && ok {
 			paramErrors = append(paramErrors, problem.Parameter{
 				Parameter: paramConversionError.ParamName,
 				Detail:    "must be a valid " + paramConversionError.TargetType,
@@ -248,9 +247,7 @@ func validateStruct(
 	fieldsToSkip []string,
 ) ([]problem.Parameter, error) {
 	if err := validate.StructExceptCtx(ctx, output, fieldsToSkip...); err != nil {
-		var errs validator.ValidationErrors
-
-		if errors.As(err, &errs) {
+		if errs, ok := errors.AsType[validator.ValidationErrors](err); ok {
 			paramErrors = append(paramErrors, processValidationErrors(errs, paramTypes)...)
 		} else {
 			return nil, fmt.Errorf("validating struct: %w", err)
@@ -281,7 +278,7 @@ func processValidationErrors(errs validator.ValidationErrors, paramTypes map[str
 // its dereferenced value or an error.
 func validateOutputType(output any) (reflect.Value, error) {
 	outputVal := reflect.ValueOf(output)
-	if outputVal.Kind() != reflect.Ptr || outputVal.Elem().Kind() != reflect.Struct {
+	if outputVal.Kind() != reflect.Pointer || outputVal.Elem().Kind() != reflect.Struct {
 		return reflect.Value{}, &InvalidOutputTypeError{ProvidedType: output}
 	}
 
@@ -341,7 +338,7 @@ func parseParamTag(tagStr string) *paramTag {
 		parts:         nil,
 	}
 
-	for _, part := range strings.Split(tagStr, ",") {
+	for part := range strings.SplitSeq(tagStr, ",") {
 		kv := strings.SplitN(strings.TrimSpace(part), "=", tagPartSize)
 		if len(kv) != tagPartSize {
 			continue

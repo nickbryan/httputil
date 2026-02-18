@@ -328,8 +328,7 @@ func (h *handler[D, P]) paramsHydratedOK(req *Request[D, P]) bool {
 	}
 
 	if err := BindValidParameters(req.Request, &req.Params); err != nil {
-		var detailedError *problem.DetailedError
-		if !errors.As(err, &detailedError) {
+		if _, ok := errors.AsType[*problem.DetailedError](err); !ok {
 			h.logger.WarnContext(req.Context(), "Handler failed to decode params data", slog.Any("error", err))
 			h.writeErrorResponse(req.Context(), req, problem.ServerError(req.Request))
 
@@ -384,8 +383,7 @@ func (h *handler[D, P]) writeSuccessfulResponse(req *Request[D, P], res *Respons
 // objects and writing error responses. If the error is not a validation error,
 // it logs the error and sends a generic server error response.
 func (h *handler[D, P]) writeValidationErr(req *Request[D, P], err error) {
-	var errs validator.ValidationErrors
-	if errors.As(err, &errs) {
+	if errs, ok := errors.AsType[validator.ValidationErrors](err); ok {
 		properties := make([]problem.Property, 0, len(errs))
 		for _, err := range errs {
 			properties = append(properties, problem.Property{Detail: describeValidationError(err), Pointer: "/" + strings.Join(strings.Split(err.Namespace(), ".")[1:], "/")})
@@ -403,8 +401,8 @@ func (h *handler[D, P]) writeValidationErr(req *Request[D, P], err error) {
 // writeErrorResponse writes an HTTP error response using the provided error and
 // request context, with support for problem details.
 func (h *handler[D, P]) writeErrorResponse(ctx context.Context, req *Request[D, P], err error) {
-	var problemDetails *problem.DetailedError
-	if !errors.As(err, &problemDetails) {
+	problemDetails, ok := errors.AsType[*problem.DetailedError](err)
+	if !ok {
 		problemDetails = problem.ServerError(req.Request)
 
 		h.logger.ErrorContext(ctx, "Handler received an unhandled error", slog.Any("error", err))
