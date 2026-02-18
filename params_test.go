@@ -606,7 +606,7 @@ func TestBindValidParameters(t *testing.T) {
 
 			if testCase.expectErr {
 				if err == nil {
-					t.Fatalf("want: error, got: nil")
+					t.Fatal("want: error, got: nil")
 				}
 
 				if err.Error() != testCase.expectedErr {

@@ -58,6 +58,7 @@ type (
 	// parameters, and a response writer.
 	Request[D, P any] struct {
 		*http.Request
+
 		// Data holds the request-specific data of generic type D, which is provided
 		// when initializing the request. A [Handler] will attempt to decode the http.Request
 		// body into this type.

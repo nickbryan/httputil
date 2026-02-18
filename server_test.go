@@ -275,7 +275,7 @@ func TestNetHTTPServerLogAdapter(t *testing.T) {
 
 	netHTTPServer, ok := server.Listener.(*http.Server)
 	if !ok {
-		t.Fatalf("listener is not a http.Server")
+		t.Fatal("listener is not a http.Server")
 	}
 
 	netHTTPServer.ErrorLog.Print("some internal server error message")

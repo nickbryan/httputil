@@ -16,6 +16,7 @@ linters:
     - dupl
     - dupword
     - durationcheck
+    - embeddedstructfieldcheck
     - err113
     - errcheck
     - errchkjson
@@ -26,6 +27,7 @@ linters:
     - exptostd
     - fatcontext
     - forcetypeassert
+    - funcorder
     - funlen
     - gocheckcompilerdirectives
     - gochecknoglobals
@@ -35,6 +37,7 @@ linters:
     - goconst
     - gocritic
     - gocyclo
+    - godoclint
     - godot
     - godox
     - gomoddirectives
@@ -48,12 +51,14 @@ linters:
     - ineffassign
     - interfacebloat
     - intrange
+    - iotamixing
     - ireturn
     - maintidx
     - makezero
     - mirror
     - misspell
     - mnd
+    - modernize
     - musttag
     - nakedret
     - nestif
@@ -107,6 +112,8 @@ linters:
             - github.com/go-playground/validator/v10
             - github.com/google/go-cmp/cmp
             - github.com/google/uuid
+    embeddedstructfieldcheck:
+      forbid-mutex: true
     errcheck:
       check-type-assertions: true
     exhaustive:
@@ -123,6 +130,8 @@ linters:
       min-complexity: 15
     gocyclo:
       min-complexity: 15
+    goconst:
+      find-duplicates: true
     grouper:
       const-require-grouping: true
       import-require-grouping: true
@@ -150,11 +159,21 @@ linters:
     rowserrcheck:
       packages:
         - github.com/jackc/pgx
+    revive:
+      rules:
+        - name: time-date
+        - name: unnecessary-format
+        - name: forbidden-call-in-wg-go
+        - name: unnecessary-if
+        - name: inefficient-map-lookup
+        - name: epoch-naming
+        - name: use-slices-sort
     sloglint:
       attr-only: true
       no-global: all
       context: all
       static-msg: true
+      msg-style: capitalized
       key-naming-case: snake
       forbidden-keys:
         - time
@@ -171,6 +190,7 @@ linters:
         - validate
     usestdlibvars:
       time-month: true
+      time-date-month: true
       time-layout: true
       crypto-hash: true
       default-rpc-path: true

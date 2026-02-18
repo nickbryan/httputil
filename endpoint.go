@@ -88,6 +88,12 @@ type handlerMiddlewareWrapper struct {
 	middleware MiddlewareFunc
 }
 
+// ServeHTTP processes HTTP requests using the wrapped handler and middleware,
+// allowing additional middleware logic.
+func (h handlerMiddlewareWrapper) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.middleware(h.handler).ServeHTTP(w, r)
+}
+
 func (h handlerMiddlewareWrapper) setCodec(c ServerCodec) {
 	if codecSetter, ok := h.handler.(interface{ setCodec(c ServerCodec) }); ok {
 		codecSetter.setCodec(c)
@@ -104,12 +110,6 @@ func (h handlerMiddlewareWrapper) setLogger(l *slog.Logger) {
 	if logSetter, ok := h.handler.(interface{ setLogger(l *slog.Logger) }); ok {
 		logSetter.setLogger(l)
 	}
-}
-
-// ServeHTTP processes HTTP requests using the wrapped handler and middleware,
-// allowing additional middleware logic.
-func (h handlerMiddlewareWrapper) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h.middleware(h.handler).ServeHTTP(w, r)
 }
 
 // WithMiddleware applies the given middleware to all provided endpoints. It

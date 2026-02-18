@@ -41,15 +41,15 @@ func TestClientOptionsDefaults(t *testing.T) {
 	}
 
 	if httpClient.CheckRedirect != nil {
-		t.Errorf("expected redirect check to be nil")
+		t.Error("expected redirect check to be nil")
 	}
 
 	if httpClient.Jar != nil {
-		t.Errorf("expected cookie jar to be nil")
+		t.Error("expected cookie jar to be nil")
 	}
 
 	if httpClient.Transport != http.DefaultTransport {
-		t.Errorf("expected transport to be http.DefaultTransport")
+		t.Error("expected transport to be http.DefaultTransport")
 	}
 }
 
@@ -157,7 +157,7 @@ func TestServerOptionsDefaults(t *testing.T) {
 
 	netHTTPServer, ok := server.Listener.(*http.Server)
 	if !ok {
-		t.Fatalf("listener is not a http.Server")
+		t.Fatal("listener is not a http.Server")
 	}
 
 	const (
@@ -204,7 +204,7 @@ func TestServerOptions(t *testing.T) {
 
 	netHTTPServer, ok := server.Listener.(*http.Server)
 	if !ok {
-		t.Fatalf("listener is not a http.Server")
+		t.Fatal("listener is not a http.Server")
 	}
 
 	if got, want := netHTTPServer.Addr, "someaddr:8765"; got != want {
@@ -242,7 +242,7 @@ func TestServerOptions(t *testing.T) {
 	server.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	if res.Header().Get("X-Test-Codec") != "true" {
-		t.Errorf("expected X-Test-ServerCodec header to be set by the test codec")
+		t.Error("expected X-Test-ServerCodec header to be set by the test codec")
 	}
 }
 

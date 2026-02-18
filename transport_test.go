@@ -27,7 +27,7 @@ func TestRoundTripperFunc(t *testing.T) {
 			return &http.Response{StatusCode: responseCode}, errors.New("test error")
 		}).RoundTrip(httptest.NewRequest(http.MethodGet, "/?code=418", nil)) //nolint:bodyclose // Nothing to close.
 		if err == nil {
-			t.Fatalf("expected error, got: nil")
+			t.Fatal("expected error, got: nil")
 		}
 
 		if err.Error() != "test error" {

@@ -1,4 +1,3 @@
-// Package httputil provides utilities for building HTTP clients and servers.
 package httputil
 
 import (
@@ -159,6 +158,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any, options 
 // decoding the response body and checking status codes.
 type Result struct {
 	*http.Response
+
 	codec ClientCodec
 }
 

@@ -118,11 +118,11 @@ func TestClient(t *testing.T) {
 				}
 
 				if !res.IsSuccess() {
-					t.Errorf("unexpected IsSuccess() result, want: true, got: false")
+					t.Error("unexpected IsSuccess() result, want: true, got: false")
 				}
 
 				if res.IsError() {
-					t.Errorf("unexpected IsError() result, want: false, got: true")
+					t.Error("unexpected IsError() result, want: false, got: true")
 				}
 
 				if testCase.code == http.StatusNoContent {
@@ -176,11 +176,11 @@ func TestClient(t *testing.T) {
 				}
 
 				if res.IsSuccess() {
-					t.Errorf("unexpected IsSuccess() result, want: false, got: true")
+					t.Error("unexpected IsSuccess() result, want: false, got: true")
 				}
 
 				if !res.IsError() {
-					t.Errorf("unexpected IsError() result, want: true, got: false")
+					t.Error("unexpected IsError() result, want: true, got: false")
 				}
 
 				if testCase.code == http.StatusNoContent {

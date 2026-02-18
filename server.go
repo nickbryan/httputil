@@ -1,4 +1,3 @@
-// Package httputil provides utilities for working with HTTP servers and clients.
 package httputil
 
 import (

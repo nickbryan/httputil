@@ -452,7 +452,7 @@ func TestGuardStack(t *testing.T) {
 			}
 
 			if testCase.wantReq && req == nil {
-				t.Fatalf("want request returned, got: nil")
+				t.Fatal("want request returned, got: nil")
 			}
 
 			if !testCase.wantReq && req != nil {

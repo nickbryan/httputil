@@ -55,7 +55,7 @@ func TestNewNetHTTPHandler(t *testing.T) {
 				}),
 			}, errorGuard{}),
 			wantLogs: []slogmem.RecordQuery{{
-				Message: "net/http handler received an unhandled error",
+				Message: "Unhandled error received by net/http handler",
 				Level:   slog.LevelError,
 				Attrs: map[string]slog.Value{
 					"error": slog.AnyValue("calling guard: some error"),
