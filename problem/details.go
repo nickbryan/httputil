@@ -70,9 +70,7 @@ func (d *DetailedError) Error() string { return fmt.Sprintf("%d %s: %s", d.Statu
 func (d *DetailedError) MarshalJSON() ([]byte, error) {
 	fields := make(map[string]any)
 
-	for k, v := range d.ExtensionMembers {
-		fields[k] = v
-	}
+	maps.Copy(fields, d.ExtensionMembers)
 
 	fields["type"] = d.Type
 	fields["title"] = d.Title
