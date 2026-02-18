@@ -30,7 +30,7 @@ lint: ##@Test
 	-v $(shell go env GOCACHE):/.cache/go-build -e GOCACHE=/.cache/go-build \
 	-v $(shell go env GOMODCACHE):/.cache/mod -e GOMODCACHE=/.cache/mod \
 	-v ~/.cache/golangci-lint:/.cache/golangci-lint -e GOLANGCI_LINT_CACHE=/.cache/golangci-lint \
-	golangci/golangci-lint:v2.1 golangci-lint run $(args) ./...
+	golangci/golangci-lint:v2.10 golangci-lint run $(args) ./...
 
 lint-fix: ##@Test
 	@make lint args="--fix"

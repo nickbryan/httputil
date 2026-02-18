@@ -43,6 +43,7 @@ func TestDetailedErrorMarshalJSON(t *testing.T) {
 		"updates the detail field when WithDetail is called": {
 			newDetailedError: func(t *testing.T) *problem.DetailedError {
 				t.Helper()
+
 				return problem.BadRequest(newRequest(t, http.MethodGet, "/tests")).
 					WithDetail("This is the overridden detail")
 			},
@@ -59,6 +60,7 @@ func TestDetailedErrorMarshalJSON(t *testing.T) {
 		"takes the last call to WithDetail into account when multiple calls are made": {
 			newDetailedError: func(t *testing.T) *problem.DetailedError {
 				t.Helper()
+
 				return problem.BadRequest(newRequest(t, http.MethodGet, "/tests")).
 					WithDetail("This is the overridden detail").
 					WithDetail("This is the other overridden detail").
@@ -77,6 +79,7 @@ func TestDetailedErrorMarshalJSON(t *testing.T) {
 		"adds extensions to the problem details when WithExtension is called": {
 			newDetailedError: func(t *testing.T) *problem.DetailedError {
 				t.Helper()
+
 				return problem.BadRequest(newRequest(t, http.MethodGet, "/tests")).
 					WithExtension("validation", "error")
 			},
@@ -93,6 +96,7 @@ func TestDetailedErrorMarshalJSON(t *testing.T) {
 		"takes the last call to WithExtension into account when multiple calls are made with the same key": {
 			newDetailedError: func(t *testing.T) *problem.DetailedError {
 				t.Helper()
+
 				return problem.BadRequest(newRequest(t, http.MethodGet, "/tests")).
 					WithExtension("validation", "error").
 					WithExtension("validation", "error2")
@@ -110,6 +114,7 @@ func TestDetailedErrorMarshalJSON(t *testing.T) {
 		"the base values can not be overridden by extensions": {
 			newDetailedError: func(t *testing.T) *problem.DetailedError {
 				t.Helper()
+
 				return problem.BadRequest(newRequest(t, http.MethodGet, "/tests")).
 					WithExtension("detail", "detail-override").
 					WithExtension("instance", "instance-override").
@@ -310,6 +315,7 @@ func TestDetailedErrorUnmarshalJSON(t *testing.T) {
 			t.Parallel()
 
 			var got problem.DetailedError
+
 			err := got.UnmarshalJSON([]byte(testCase.input))
 
 			if testCase.wantErr {

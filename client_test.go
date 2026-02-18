@@ -94,7 +94,7 @@ func TestClient(t *testing.T) {
 			code   int
 		}
 
-		var testCases []testData
+		testCases := make([]testData, 0, len(successCodes)*len(httpMethods))
 
 		for _, method := range httpMethods {
 			for _, code := range successCodes {
@@ -152,7 +152,7 @@ func TestClient(t *testing.T) {
 			code   int
 		}
 
-		var testCases []testData
+		testCases := make([]testData, 0, len(errorCodes)*len(httpMethods))
 
 		for _, method := range httpMethods {
 			for _, code := range errorCodes {

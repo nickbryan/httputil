@@ -75,7 +75,7 @@ func (c *Client) Close() error {
 // Do executes the provided request using the Client's underlying *http.Client.
 // It returns the raw *http.Response and an error, if any.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
-	return c.client.Do(req) //nolint:wrapcheck // No additional context to add to the error.
+	return c.client.Do(req) //nolint:wrapcheck,gosec // No additional context to add; G704: URL built from configured base path.
 }
 
 // Get sends an HTTP GET request to the specified path.

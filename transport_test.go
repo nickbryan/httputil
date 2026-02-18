@@ -18,6 +18,7 @@ func TestRoundTripperFunc(t *testing.T) {
 
 		resp, err := httputil.RoundTripperFunc(func(r *http.Request) (*http.Response, error) {
 			code := r.URL.Query().Get("code")
+
 			responseCode, err := strconv.Atoi(code)
 			if err != nil {
 				t.Fatalf("unexpected error parsing response code: %s", err.Error())
@@ -25,7 +26,6 @@ func TestRoundTripperFunc(t *testing.T) {
 
 			return &http.Response{StatusCode: responseCode}, errors.New("test error")
 		}).RoundTrip(httptest.NewRequest(http.MethodGet, "/?code=418", nil)) //nolint:bodyclose // Nothing to close.
-
 		if err == nil {
 			t.Fatalf("expected error, got: nil")
 		}

@@ -91,7 +91,7 @@ linters:
     - wastedassign
     - whitespace
     - wrapcheck
-    - wsl
+    - wsl_v5
   settings:
     copyloopvar:
       check-alias: true
@@ -199,11 +199,15 @@ linters:
           - funlen
           - gocognit
           - gocyclo
+          - gosec
           - maintidx
           - nestif
           - nilnil
           - wrapcheck
         path: _test\.go
+      - linters:
+          - revive
+        text: "var-naming: avoid package names that conflict"
       - linters:
           - goconst
         path: (.+)_test\.go

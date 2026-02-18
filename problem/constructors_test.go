@@ -29,6 +29,7 @@ func TestConstructors(t *testing.T) {
 		"bad parameters sets the expected problem details for the resource instance when a single field is passed": {
 			newDetailedError: func(t *testing.T) *problem.DetailedError {
 				t.Helper()
+
 				return problem.BadParameters(newRequest(t, http.MethodGet, "/tests"), problem.Parameter{
 					Parameter: "thing",
 					Detail:    "Invalid",
@@ -48,6 +49,7 @@ func TestConstructors(t *testing.T) {
 		"bad parameters sets the expected problem details for the resource instance when multiple fields are passed": {
 			newDetailedError: func(t *testing.T) *problem.DetailedError {
 				t.Helper()
+
 				return problem.BadParameters(
 					newRequest(t, http.MethodGet, "/tests"),
 					problem.Parameter{Detail: "Invalid", Parameter: "thing", Type: problem.ParameterTypeHeader},
@@ -98,6 +100,7 @@ func TestConstructors(t *testing.T) {
 		"business rule violation sets the expected problem details for the resource instance when a single field is passed": {
 			newDetailedError: func(t *testing.T) *problem.DetailedError {
 				t.Helper()
+
 				return problem.BusinessRuleViolation(newRequest(t, http.MethodGet, "/tests"), problem.Property{
 					Detail:  "Invalid",
 					Pointer: "/",
@@ -116,6 +119,7 @@ func TestConstructors(t *testing.T) {
 		"business rule violation sets the expected problem details for the resource instance when multiple fields are passed": {
 			newDetailedError: func(t *testing.T) *problem.DetailedError {
 				t.Helper()
+
 				return problem.BusinessRuleViolation(
 					newRequest(t, http.MethodGet, "/tests"),
 					problem.Property{Detail: "Invalid", Pointer: "/thing"},
@@ -150,6 +154,7 @@ func TestConstructors(t *testing.T) {
 		"constraint violation sets the expected problem details for the resource instance when a single field is passed": {
 			newDetailedError: func(t *testing.T) *problem.DetailedError {
 				t.Helper()
+
 				return problem.ConstraintViolation(newRequest(t, http.MethodGet, "/tests"), problem.Property{
 					Detail:  "Invalid",
 					Pointer: "/",
@@ -168,6 +173,7 @@ func TestConstructors(t *testing.T) {
 		"constraint violation sets the expected problem details for the resource instance when multiple fields are passed": {
 			newDetailedError: func(t *testing.T) *problem.DetailedError {
 				t.Helper()
+
 				return problem.ConstraintViolation(
 					newRequest(t, http.MethodGet, "/tests"),
 					problem.Property{Detail: "Invalid", Pointer: "/thing"},
