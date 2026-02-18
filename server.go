@@ -84,6 +84,7 @@ func (s *Server) Register(endpoints ...Endpoint) {
 // shuts down the server when it receives an SIGINT, SIGTERM, or SIGQUIT signal.
 func (s *Server) Serve(ctx context.Context) {
 	awaitSignalCtx, cancelAwaitSignal := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+
 	go func() {
 		defer cancelAwaitSignal()
 
@@ -94,6 +95,8 @@ func (s *Server) Serve(ctx context.Context) {
 
 	s.logger.InfoContext(ctx, "Server started", slog.String("address", s.address))
 	<-awaitSignalCtx.Done()
+
+	s.logger.InfoContext(ctx, "Server shutting down", slog.Any("reason", context.Cause(awaitSignalCtx)))
 
 	// We use a new context here as inheriting from ctx would create an instant
 	// timeout if ctx was canceled. We want to ensure that we still attempt a graceful

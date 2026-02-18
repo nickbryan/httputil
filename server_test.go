@@ -39,6 +39,26 @@ func TestServer_Serve(t *testing.T) {
 			Message: "Server shutdown",
 			Attrs:   nil,
 		}
+		shuttingDownSIGINT = slogmem.RecordQuery{
+			Level:   slog.LevelInfo,
+			Message: "Server shutting down",
+			Attrs:   map[string]slog.Value{"reason": slog.AnyValue("interrupt signal received")},
+		}
+		shuttingDownSIGTERM = slogmem.RecordQuery{
+			Level:   slog.LevelInfo,
+			Message: "Server shutting down",
+			Attrs:   map[string]slog.Value{"reason": slog.AnyValue("terminated signal received")},
+		}
+		shuttingDownSIGQUIT = slogmem.RecordQuery{
+			Level:   slog.LevelInfo,
+			Message: "Server shutting down",
+			Attrs:   map[string]slog.Value{"reason": slog.AnyValue("quit signal received")},
+		}
+		shuttingDownCtxCanceled = slogmem.RecordQuery{
+			Level:   slog.LevelInfo,
+			Message: "Server shutting down",
+			Attrs:   map[string]slog.Value{"reason": slog.AnyValue("context canceled")},
+		}
 	)
 
 	testCases := map[string]struct {
@@ -55,7 +75,7 @@ func TestServer_Serve(t *testing.T) {
 			listenAndServeErr:    nil,
 			shutdownErr:          nil,
 			simulateLongShutdown: false,
-			wantLogs:             []slogmem.RecordQuery{startedLog, shutdownLog},
+			wantLogs:             []slogmem.RecordQuery{startedLog, shuttingDownSIGINT, shutdownLog},
 		},
 		"shuts down successfully after receiving SIGTERM": {
 			ctxFactory:           t.Context,
@@ -63,7 +83,7 @@ func TestServer_Serve(t *testing.T) {
 			listenAndServeErr:    nil,
 			shutdownErr:          nil,
 			simulateLongShutdown: false,
-			wantLogs:             []slogmem.RecordQuery{startedLog, shutdownLog},
+			wantLogs:             []slogmem.RecordQuery{startedLog, shuttingDownSIGTERM, shutdownLog},
 		},
 		"shuts down successfully after receiving SIGQUIT": {
 			ctxFactory:           t.Context,
@@ -71,7 +91,7 @@ func TestServer_Serve(t *testing.T) {
 			listenAndServeErr:    nil,
 			shutdownErr:          nil,
 			simulateLongShutdown: false,
-			wantLogs:             []slogmem.RecordQuery{startedLog, shutdownLog},
+			wantLogs:             []slogmem.RecordQuery{startedLog, shuttingDownSIGQUIT, shutdownLog},
 		},
 		"shuts down successfully if the context is canceled": {
 			ctxFactory: func() context.Context {
@@ -84,7 +104,7 @@ func TestServer_Serve(t *testing.T) {
 			listenAndServeErr:    nil,
 			shutdownErr:          nil,
 			simulateLongShutdown: false,
-			wantLogs:             []slogmem.RecordQuery{startedLog, shutdownLog},
+			wantLogs:             []slogmem.RecordQuery{startedLog, shuttingDownCtxCanceled, shutdownLog},
 		},
 		"shuts down with an error log if listening and serving fails": {
 			ctxFactory:           t.Context,
@@ -96,7 +116,7 @@ func TestServer_Serve(t *testing.T) {
 				Level:   slog.LevelError,
 				Message: "Server failed to listen and serve",
 				Attrs:   map[string]slog.Value{"error": slog.StringValue("listen and serve error")},
-			}, shutdownLog},
+			}, shuttingDownCtxCanceled, shutdownLog},
 		},
 		"shuts down with an error log if shutdown returns an error": {
 			ctxFactory:           t.Context,
@@ -104,7 +124,7 @@ func TestServer_Serve(t *testing.T) {
 			listenAndServeErr:    nil,
 			shutdownErr:          errors.New("shutdown error"),
 			simulateLongShutdown: false,
-			wantLogs: []slogmem.RecordQuery{startedLog, {
+			wantLogs: []slogmem.RecordQuery{startedLog, shuttingDownSIGINT, {
 				Level:   slog.LevelError,
 				Message: "Server failed to shutdown gracefully",
 				Attrs:   map[string]slog.Value{"error": slog.StringValue("shutdown error")},
@@ -116,7 +136,7 @@ func TestServer_Serve(t *testing.T) {
 			listenAndServeErr:    nil,
 			shutdownErr:          nil,
 			simulateLongShutdown: true,
-			wantLogs: []slogmem.RecordQuery{startedLog, {
+			wantLogs: []slogmem.RecordQuery{startedLog, shuttingDownSIGINT, {
 				Level:   slog.LevelError,
 				Message: "Server failed to shutdown gracefully",
 				Attrs:   map[string]slog.Value{"error": slog.StringValue("context deadline exceeded")},
