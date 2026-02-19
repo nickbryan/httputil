@@ -159,15 +159,6 @@ linters:
     rowserrcheck:
       packages:
         - github.com/jackc/pgx
-    revive:
-      rules:
-        - name: time-date
-        - name: unnecessary-format
-        - name: forbidden-call-in-wg-go
-        - name: unnecessary-if
-        - name: inefficient-map-lookup
-        - name: epoch-naming
-        - name: use-slices-sort
     sloglint:
       attr-only: true
       no-global: all
