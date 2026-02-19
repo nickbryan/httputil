@@ -24,7 +24,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Generate test coverage
-        run: go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
+        run: go test ./... -coverprofile=./cover.out -covermode=atomic
       - name: Check test coverage
         uses: vladopajic/go-test-coverage@v2
         with:
