@@ -42,6 +42,7 @@ handling, error management, and more.
   - [JSON Handler with Request/Response](#json-handler-requestresponse)
   - [JSON Handler with Path Parameters](#json-handler-with-path-parameters)
   - [Basic net/http Handler](#basic-nethttp-handler)
+  - [HTML Handler with Form Data](#html-handler-with-form-data)
   - [Advanced Examples](#advanced-examples)
 - [Client Usage](#client-usage)
 - [Design Choices](#design-choices)
@@ -62,6 +63,7 @@ handling, error management, and more.
 - Easy conversion between different handler types
 - Support for standard `http.Handler` interfaces
 - JSON request/response handling with automatic marshaling/unmarshaling
+- HTML template rendering with form data decoding for HTMX and traditional web apps
 - Request interception and middleware support
 
 ### Error Handling
@@ -265,7 +267,7 @@ Example with custom handler options:
 ```go
 handler := httputil.NewHandler(
     myHandlerFunc,
-    httputil.WithHandlerCodec(httputil.NewJSONCodec()),
+    httputil.WithHandlerCodec(httputil.NewJSONServerCodec()),  // or httputil.NewHTMLServerCodec(tmpl)
     httputil.WithHandlerGuard(myAuthGuard),
     httputil.WithHandlerLogger(logger),
 )
@@ -693,6 +695,81 @@ func main() {
     // ["Hello, World!","Hola Mundo!"]
 }
 ```
+
+### HTML Handler with Form Data
+
+Use `HTMLServerCodec` to build endpoints that accept form submissions and render HTML templates. This is ideal for HTMX-powered or traditional server-rendered web applications.
+
+```go
+package main
+
+import (
+    "context"
+    "html/template"
+    "net/http"
+
+    "github.com/nickbryan/slogutil"
+
+    "github.com/nickbryan/httputil"
+)
+
+func main() {
+    logger := slogutil.NewJSONLogger()
+
+    tmpl := template.Must(template.New("app").Parse(""))
+    template.Must(tmpl.New("greeting").Parse(`<p>Hello, {{.Name}}!</p>`))
+    template.Must(tmpl.New("error").Parse(
+        `<div class="error"><h1>{{.Title}}</h1><p>{{.Detail}}</p></div>`,
+    ))
+
+    server := httputil.NewServer(
+        logger,
+        httputil.WithServerCodec(httputil.NewHTMLServerCodec(
+            tmpl,
+            httputil.WithHTMLErrorTemplate("error"),
+        )),
+    )
+
+    server.Register(newGreetingFormEndpoint(tmpl))
+
+    server.Serve(context.Background())
+
+    // curl -X POST -d 'name=Nick' localhost:8080/greet
+    // <p>Hello, Nick!</p>
+}
+
+func newGreetingFormEndpoint(tmpl *template.Template) httputil.Endpoint {
+    type formData struct {
+        Name string `form:"name" validate:"required"`
+    }
+
+    return httputil.Endpoint{
+        Method: http.MethodPost,
+        Path:   "/greet",
+        Handler: httputil.NewHandler(
+            func(r httputil.RequestData[formData]) (*httputil.Response, error) {
+                return httputil.OK(httputil.Template{
+                    Name: "greeting",
+                    Data: r.Data,
+                })
+            },
+            httputil.WithHandlerCodec(httputil.NewHTMLServerCodec(tmpl)),
+        ),
+    }
+}
+```
+
+The `HTMLServerCodec` decodes `application/x-www-form-urlencoded` and `multipart/form-data` text fields using a `FormDecoder` interface (defaulting to [`go-playground/form`](https://github.com/go-playground/form)), and renders responses through Go's `html/template` package. File uploads are not handled by the codec; use `r.FormFile()` or `r.MultipartReader()` directly in your action handler. Pass an `httputil.Template{Name, Data}` as the response data to execute a specific named template from the template set.
+
+**HTML Codec Options:**
+
+| Option                       | Default                    | Description                                                                          |
+|------------------------------|----------------------------|--------------------------------------------------------------------------------------|
+| `WithHTMLErrorTemplate`      | Minimal default error page | Name of a template in the set for error pages (receives `*problem.DetailedError`)    |
+| `WithHTMLFormDecoder`        | `go-playground/form`       | Sets a custom `FormDecoder` implementation for form data parsing                     |
+| `WithHTMLMultipartMaxMemory` | 32 MB                      | Sets max memory used when parsing multipart/form-data forms                          |
+
+Error templates always receive a `*problem.DetailedError` as their data, providing access to `Title`, `Detail`, `Status`, `Type`, `Code`, `Instance`, and `ExtensionMembers`. When the original error is not a `DetailedError`, one is constructed from the HTTP status code.
 
 ### Advanced Examples
 

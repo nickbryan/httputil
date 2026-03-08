@@ -5,8 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
+
+	"github.com/go-playground/form/v4"
 
 	"github.com/nickbryan/httputil/problem"
 )
@@ -132,6 +137,215 @@ func (c JSONServerCodec) EncodeError(w http.ResponseWriter, statusCode int, err 
 func writeJSON(w io.Writer, data any) error {
 	if err := json.NewEncoder(w).Encode(data); err != nil {
 		return fmt.Errorf("encoding response data as JSON: %w", err)
+	}
+
+	return nil
+}
+
+// FormDecoder defines the interface for decoding form values into a struct.
+// The default implementation uses [github.com/go-playground/form], but any
+// compatible decoder can be substituted via [WithHTMLFormDecoder].
+type FormDecoder interface {
+	Decode(v any, values url.Values) error
+}
+
+// ErrTemplateNil is returned by [HTMLServerCodec.Encode] when the codec was
+// constructed without a template set.
+var ErrTemplateNil = errors.New("encoding response data as HTML: template is nil")
+
+// EncodeTypeError is returned by [HTMLServerCodec.Encode] when the data
+// argument is not an [httputil.Template].
+type EncodeTypeError struct {
+	Got any
+}
+
+// Error implements the error interface.
+func (e *EncodeTypeError) Error() string {
+	return fmt.Sprintf("encoding response data as HTML: data must be a httputil.Template, got %T", e.Got)
+}
+
+// HTMLServerCodecOption allows default HTMLServerCodec config values to be
+// overridden.
+type HTMLServerCodecOption func(c *HTMLServerCodec)
+
+// WithHTMLErrorTemplate sets the name of a template within the main template
+// set to use for rendering error pages. The named template receives a
+// [*problem.DetailedError] as its data. If the named template is not found or
+// the main template is nil, a minimal default error page is used.
+func WithHTMLErrorTemplate(name string) HTMLServerCodecOption {
+	return func(c *HTMLServerCodec) {
+		c.errorTmplName = name
+	}
+}
+
+// WithHTMLFormDecoder sets a custom [FormDecoder] for decoding form data. This
+// allows full control over the form decoding strategy. If not set, a default
+// decoder from [github.com/go-playground/form] is used.
+func WithHTMLFormDecoder(decoder FormDecoder) HTMLServerCodecOption {
+	return func(c *HTMLServerCodec) {
+		c.decoder = decoder
+	}
+}
+
+// WithHTMLMultipartMaxMemory sets the maximum number of bytes of a multipart
+// form that will be stored in memory, with the remainder stored on disk. If
+// not set, it defaults to 32 MB.
+func WithHTMLMultipartMaxMemory(maxMemory int64) HTMLServerCodecOption {
+	return func(c *HTMLServerCodec) {
+		c.multipartMaxMemory = maxMemory
+	}
+}
+
+// defaultErrorTemplate is the minimal HTML error page template used when no
+// custom error template is provided or the named template is not found.
+var defaultErrorTemplate = template.Must(template.New("error").Parse( //nolint:gochecknoglobals // Package-level default improves API.
+	`<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>{{.Title}}</title></head>
+<body><h1>{{.Title}}</h1><p>{{.Detail}}</p></body></html>`))
+
+// HTMLServerCodec provides methods to decode form data from HTTP requests and
+// encode response data as HTML using Go templates. Form data is decoded using
+// an implementation of [FormDecoder], which defaults to
+// [github.com/go-playground/form].
+type HTMLServerCodec struct {
+	decoder            FormDecoder
+	errorTmpl          *template.Template
+	errorTmplName      string
+	multipartMaxMemory int64
+	tmpl               *template.Template
+}
+
+// Ensure HTMLServerCodec implements ServerCodec.
+var _ ServerCodec = HTMLServerCodec{} //nolint:exhaustruct // Compile time implementation check.
+
+// NewHTMLServerCodec creates a new HTMLServerCodec instance configured with the
+// provided template for rendering HTML responses. The template may be nil if
+// only Decode functionality is required; however, Encode will return an error
+// if called without a template. Options can be used to customize the error
+// template name and form decoder.
+func NewHTMLServerCodec(tmpl *template.Template, opts ...HTMLServerCodecOption) HTMLServerCodec {
+	codec := HTMLServerCodec{
+		decoder:            form.NewDecoder(),
+		errorTmpl:          defaultErrorTemplate,
+		errorTmplName:      "",
+		multipartMaxMemory: defaultMaxMemory,
+		tmpl:               tmpl,
+	}
+
+	for _, opt := range opts {
+		opt(&codec)
+	}
+
+	if codec.errorTmplName != "" && codec.tmpl != nil {
+		if t := codec.tmpl.Lookup(codec.errorTmplName); t != nil {
+			codec.errorTmpl = t
+		}
+	}
+
+	return codec
+}
+
+// defaultMaxMemory is the maximum number of bytes of a multipart form that
+// will be stored in memory, with the remainder stored on disk. This matches
+// the default used by [http.Request.FormValue].
+const (
+	defaultMaxMemory = 32 << 20 // 32 MB
+)
+
+// Decode parses the form data from an HTTP request and decodes it into the
+// provided target struct. It supports both application/x-www-form-urlencoded
+// and multipart/form-data content types for text fields. This method does not
+// handle file uploads; use [http.Request.FormFile] or
+// [http.Request.MultipartReader] directly for file access. Fields are mapped
+// using the "form" struct tag. Returns nil when the request body is nil.
+func (c HTMLServerCodec) Decode(r *http.Request, into any) error {
+	if r.Body == nil {
+		return nil
+	}
+
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/") {
+		if err := r.ParseMultipartForm(c.multipartMaxMemory); err != nil {
+			return fmt.Errorf("parsing multipart form data: %w", err)
+		}
+	} else {
+		if err := r.ParseForm(); err != nil {
+			return fmt.Errorf("parsing form data: %w", err)
+		}
+	}
+
+	if err := c.decoder.Decode(into, r.Form); err != nil {
+		return fmt.Errorf("decoding form data: %w", err)
+	}
+
+	return nil
+}
+
+// Template wraps response data with a named template to execute from the
+// template set. When passed as the data argument to [HTMLServerCodec.Encode],
+// the named template is executed with the provided Data. For codecs that do not
+// support template selection (such as [JSONServerCodec]), the Template struct is
+// marshaled as-is.
+//
+// Usage:
+//
+//	return httputil.OK(httputil.Template{Name: "greeting", Data: myData})
+type Template struct {
+	// Name is the name of the template to execute from the template set.
+	Name string
+	// Data is passed to the template as its execution data.
+	Data any
+}
+
+// Encode executes a named HTML template with the given data and writes the
+// result to the HTTP response writer with the appropriate Content-Type header.
+// The data argument must be a [Template] specifying the template name to
+// execute from the template set and the data to pass to it. Returns an error
+// if no template set is configured, if data is not a [Template], or if
+// template execution fails.
+func (c HTMLServerCodec) Encode(w http.ResponseWriter, statusCode int, data any) error {
+	if c.tmpl == nil {
+		return ErrTemplateNil
+	}
+
+	td, ok := data.(Template)
+	if !ok {
+		return &EncodeTypeError{Got: data}
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(statusCode)
+
+	if err := c.tmpl.ExecuteTemplate(w, td.Name, td.Data); err != nil {
+		return fmt.Errorf("encoding response data as HTML: %w", err)
+	}
+
+	return nil
+}
+
+// EncodeError encodes an error into an HTML HTTP response. The error template
+// always receives a [*problem.DetailedError]. If the error is already a
+// [*problem.DetailedError], it is used directly. Otherwise, a new
+// [*problem.DetailedError] is constructed from the status code. The error
+// template is resolved once during construction via [WithHTMLErrorTemplate].
+func (c HTMLServerCodec) EncodeError(w http.ResponseWriter, statusCode int, err error) error {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(statusCode)
+
+	details, ok := errors.AsType[*problem.DetailedError](err)
+	if !ok {
+		details = &problem.DetailedError{
+			Type:             "",
+			Title:            http.StatusText(statusCode),
+			Status:           statusCode,
+			Detail:           "An unexpected error occurred.",
+			Instance:         "",
+			Code:             "",
+			ExtensionMembers: nil,
+		}
+	}
+
+	if execErr := c.errorTmpl.Execute(w, details); execErr != nil {
+		return fmt.Errorf("encoding error response as HTML: %w", execErr)
 	}
 
 	return nil
