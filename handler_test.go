@@ -203,6 +203,71 @@ func TestNewHandler(t *testing.T) {
 			).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusUnprocessableEntity,
 		},
+		"custom MessageFunc overrides validation error messages in constraint violation response": {
+			endpoint: func() httputil.Endpoint {
+				type request struct {
+					Name  string `json:"name"  validate:"required"`
+					Email string `json:"email" validate:"required,email"`
+				}
+
+				return httputil.Endpoint{
+					Method: http.MethodPost,
+					Path:   "/test",
+					Handler: httputil.NewHandler(
+						func(_ httputil.RequestData[request]) (*httputil.Response, error) {
+							return httputil.NoContent()
+						},
+						httputil.WithHandlerMessages(func(tag, _ string) string {
+							switch tag {
+							case "required":
+								return "ce champ est obligatoire"
+							default:
+								return "valeur invalide"
+							}
+						}),
+					),
+				}
+			}(),
+			request:    httptest.NewRequest(http.MethodPost, "/test", strings.NewReader("{}")),
+			wantHeader: http.Header{"Content-Type": {"application/problem+json; charset=utf-8"}},
+			wantResponseBody: problem.ConstraintViolation(
+				problemtest.NewRequest("/test"),
+				problem.Property{Detail: "ce champ est obligatoire", Pointer: "/name"},
+				problem.Property{Detail: "ce champ est obligatoire", Pointer: "/email"},
+			).MustMarshalJSONString(),
+			wantResponseStatusCode: http.StatusUnprocessableEntity,
+		},
+		"custom MessageFunc receives tag and param for parameterised validators": {
+			endpoint: func() httputil.Endpoint {
+				type request struct {
+					Name string `json:"name" validate:"required,min=3"`
+				}
+
+				return httputil.Endpoint{
+					Method: http.MethodPost,
+					Path:   "/test",
+					Handler: httputil.NewHandler(
+						func(_ httputil.RequestData[request]) (*httputil.Response, error) {
+							return httputil.NoContent()
+						},
+						httputil.WithHandlerMessages(func(tag, param string) string {
+							if tag == "min" {
+								return "doit contenir au moins " + param + " caractères"
+							}
+
+							return "valeur invalide"
+						}),
+					),
+				}
+			}(),
+			request:    httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`{"name":"ab"}`)),
+			wantHeader: http.Header{"Content-Type": {"application/problem+json; charset=utf-8"}},
+			wantResponseBody: problem.ConstraintViolation(
+				problemtest.NewRequest("/test"),
+				problem.Property{Detail: "doit contenir au moins 3 caractères", Pointer: "/name"},
+			).MustMarshalJSONString(),
+			wantResponseStatusCode: http.StatusUnprocessableEntity,
+		},
 		"the request body is mapped to the requests data": {
 			endpoint: httputil.Endpoint{
 				Method: http.MethodGet,
@@ -852,4 +917,491 @@ type addToContextGuardCtxKey struct{}
 
 func (ri addToContextGuard) Guard(r *http.Request) (*http.Request, error) {
 	return r.WithContext(context.WithValue(r.Context(), addToContextGuardCtxKey{}, ri)), nil
+}
+
+func TestNewFormHandler(t *testing.T) {
+	t.Parallel()
+
+	t.Run("passes data validation errors to the action", func(t *testing.T) {
+		t.Parallel()
+
+		type request struct {
+			Name  string `json:"name"  validate:"required"`
+			Email string `json:"email" validate:"required,email"`
+		}
+
+		var capturedErrors httputil.BindErrors
+
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+		server := httputil.NewServer(logger)
+
+		server.Register(httputil.Endpoint{
+			Method: http.MethodPost,
+			Path:   "/test",
+			Handler: httputil.NewFormHandler(
+				func(r httputil.RequestData[request]) (*httputil.Response, error) {
+					capturedErrors = r.Errors
+					return httputil.OK(map[string]string{"errors": "captured"})
+				},
+			),
+		})
+
+		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`{}`))
+		res := httptest.NewRecorder()
+
+		server.ServeHTTP(res, req)
+
+		if res.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, res.Code)
+		}
+
+		if !capturedErrors.HasAny() {
+			t.Fatal("expected errors to be present")
+		}
+
+		if capturedErrors.Data == nil {
+			t.Fatal("expected Data error to be set")
+		}
+
+		if capturedErrors.Params != nil {
+			t.Error("expected Params error to be nil")
+		}
+
+		// Check translated messages via Get.
+		if got := capturedErrors.Get("name"); got != "is required" {
+			t.Errorf("Get(\"name\") = %q, want %q", got, "is required")
+		}
+
+		if got := capturedErrors.Get("email"); got != "is required" {
+			t.Errorf("Get(\"email\") = %q, want %q", got, "is required")
+		}
+
+		// Check All() returns all errors.
+		all := capturedErrors.All()
+		if len(all) != 2 {
+			t.Errorf("All() returned %d entries, want 2", len(all))
+		}
+	})
+
+	t.Run("passes decode errors to the action", func(t *testing.T) {
+		t.Parallel()
+
+		type request struct {
+			Name string `json:"name"`
+		}
+
+		var capturedErrors httputil.BindErrors
+
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+		server := httputil.NewServer(logger)
+
+		server.Register(httputil.Endpoint{
+			Method: http.MethodPost,
+			Path:   "/test",
+			Handler: httputil.NewFormHandler(
+				func(r httputil.RequestData[request]) (*httputil.Response, error) {
+					capturedErrors = r.Errors
+					return httputil.OK(map[string]string{"status": "action called"})
+				},
+			),
+		})
+
+		// Invalid JSON.
+		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`{invalid`))
+		res := httptest.NewRecorder()
+
+		server.ServeHTTP(res, req)
+
+		if res.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, res.Code)
+		}
+
+		if !capturedErrors.HasAny() {
+			t.Fatal("expected errors to be present")
+		}
+
+		if capturedErrors.Data == nil {
+			t.Fatal("expected Data error to be set")
+		}
+	})
+
+	t.Run("passes param errors to the action", func(t *testing.T) {
+		t.Parallel()
+
+		type params struct {
+			Name string `validate:"required" param:"query=name"`
+		}
+
+		var capturedErrors httputil.BindErrors
+
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+		server := httputil.NewServer(logger)
+
+		server.Register(httputil.Endpoint{
+			Method: http.MethodGet,
+			Path:   "/test",
+			Handler: httputil.NewFormHandler(
+				func(r httputil.RequestParams[params]) (*httputil.Response, error) {
+					capturedErrors = r.Errors
+					return httputil.OK(map[string]string{"status": "action called"})
+				},
+			),
+		})
+
+		// Missing required query param "name".
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		res := httptest.NewRecorder()
+
+		server.ServeHTTP(res, req)
+
+		if res.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, res.Code)
+		}
+
+		if !capturedErrors.HasAny() {
+			t.Fatal("expected errors to be present")
+		}
+
+		if capturedErrors.Params == nil {
+			t.Fatal("expected Params error to be set")
+		}
+
+		if got := capturedErrors.Get("name"); got == "" {
+			t.Error("expected Get(\"name\") to return an error message")
+		}
+	})
+
+	t.Run("no errors when data is valid", func(t *testing.T) {
+		t.Parallel()
+
+		type request struct {
+			Name string `json:"name" validate:"required"`
+		}
+
+		var capturedErrors httputil.BindErrors
+
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+		server := httputil.NewServer(logger)
+
+		server.Register(httputil.Endpoint{
+			Method: http.MethodPost,
+			Path:   "/test",
+			Handler: httputil.NewFormHandler(
+				func(r httputil.RequestData[request]) (*httputil.Response, error) {
+					capturedErrors = r.Errors
+					return httputil.OK(map[string]string{"name": r.Data.Name})
+				},
+			),
+		})
+
+		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`{"name":"Nick"}`))
+		res := httptest.NewRecorder()
+
+		server.ServeHTTP(res, req)
+
+		if res.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, res.Code)
+		}
+
+		if capturedErrors.HasAny() {
+			t.Error("expected no errors on valid request")
+		}
+	})
+
+	t.Run("custom MessageFunc overrides default messages", func(t *testing.T) {
+		t.Parallel()
+
+		type request struct {
+			Name string `json:"name" validate:"required"`
+		}
+
+		var capturedErrors httputil.BindErrors
+
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+		server := httputil.NewServer(logger)
+
+		server.Register(httputil.Endpoint{
+			Method: http.MethodPost,
+			Path:   "/test",
+			Handler: httputil.NewFormHandler(
+				func(r httputil.RequestData[request]) (*httputil.Response, error) {
+					capturedErrors = r.Errors
+					return httputil.OK(nil)
+				},
+				httputil.WithHandlerMessages(func(tag, _ string) string {
+					if tag == "required" {
+						return "ce champ est obligatoire"
+					}
+
+					return "valeur invalide"
+				}),
+			),
+		})
+
+		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`{}`))
+		res := httptest.NewRecorder()
+
+		server.ServeHTTP(res, req)
+
+		if got := capturedErrors.Get("name"); got != "ce champ est obligatoire" {
+			t.Errorf("Get(\"name\") = %q, want %q", got, "ce champ est obligatoire")
+		}
+	})
+
+	t.Run("custom MessageFunc receives tag and param for parameterised validators", func(t *testing.T) {
+		t.Parallel()
+
+		type request struct {
+			Name string `json:"name" validate:"required,min=3"`
+		}
+
+		var capturedErrors httputil.BindErrors
+
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+		server := httputil.NewServer(logger)
+
+		server.Register(httputil.Endpoint{
+			Method: http.MethodPost,
+			Path:   "/test",
+			Handler: httputil.NewFormHandler(
+				func(r httputil.RequestData[request]) (*httputil.Response, error) {
+					capturedErrors = r.Errors
+					return httputil.OK(nil)
+				},
+				httputil.WithHandlerMessages(func(tag, param string) string {
+					if tag == "min" {
+						return "doit contenir au moins " + param + " caractères"
+					}
+
+					return "valeur invalide"
+				}),
+			),
+		})
+
+		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`{"name":"ab"}`))
+		res := httptest.NewRecorder()
+
+		server.ServeHTTP(res, req)
+
+		if res.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, res.Code)
+		}
+
+		if got := capturedErrors.Get("name"); got != "doit contenir au moins 3 caractères" {
+			t.Errorf("Get(\"name\") = %q, want %q", got, "doit contenir au moins 3 caractères")
+		}
+	})
+
+	t.Run("both data and params errors are captured simultaneously", func(t *testing.T) {
+		t.Parallel()
+
+		type (
+			request struct {
+				Age int `json:"age" validate:"required,min=1"`
+			}
+			params struct {
+				ID string `validate:"required" param:"query=id"`
+			}
+		)
+
+		var capturedErrors httputil.BindErrors
+
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+		server := httputil.NewServer(logger)
+
+		server.Register(httputil.Endpoint{
+			Method: http.MethodPost,
+			Path:   "/test",
+			Handler: httputil.NewFormHandler(
+				func(r httputil.Request[request, params]) (*httputil.Response, error) {
+					capturedErrors = r.Errors
+					return httputil.OK(nil)
+				},
+			),
+		})
+
+		// Missing query param "id" AND missing required "age" field.
+		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`{}`))
+		res := httptest.NewRecorder()
+
+		server.ServeHTTP(res, req)
+
+		if res.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, res.Code)
+		}
+
+		if capturedErrors.Params == nil {
+			t.Error("expected Params error to be set")
+		}
+
+		if capturedErrors.Data == nil {
+			t.Error("expected Data error to be set")
+		}
+
+		// Get should aggregate both.
+		all := capturedErrors.All()
+		if len(all) < 2 {
+			t.Errorf("All() returned %d entries, want at least 2", len(all))
+		}
+	})
+
+	t.Run("nested struct fields use dot-separated keys", func(t *testing.T) {
+		t.Parallel()
+
+		type address struct {
+			City    string `json:"city"    validate:"required"`
+			ZipCode string `json:"zipcode" validate:"required"`
+		}
+
+		type request struct {
+			Name    string  `json:"name"    validate:"required"`
+			Address address `json:"address"`
+		}
+
+		var capturedErrors httputil.BindErrors
+
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+		server := httputil.NewServer(logger)
+
+		server.Register(httputil.Endpoint{
+			Method: http.MethodPost,
+			Path:   "/test",
+			Handler: httputil.NewFormHandler(
+				func(r httputil.RequestData[request]) (*httputil.Response, error) {
+					capturedErrors = r.Errors
+					return httputil.OK(nil)
+				},
+			),
+		})
+
+		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`{"name":"Nick","address":{}}`))
+		res := httptest.NewRecorder()
+
+		server.ServeHTTP(res, req)
+
+		if res.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, res.Code)
+		}
+
+		if !capturedErrors.HasAny() {
+			t.Fatal("expected errors to be present")
+		}
+
+		// Nested fields should use dot notation.
+		if got := capturedErrors.Get("address.city"); got != "is required" {
+			t.Errorf("Get(\"address.city\") = %q, want %q", got, "is required")
+		}
+
+		if got := capturedErrors.Get("address.zipcode"); got != "is required" {
+			t.Errorf("Get(\"address.zipcode\") = %q, want %q", got, "is required")
+		}
+
+		// Top-level field should not have errors (name was provided).
+		if got := capturedErrors.Get("name"); got != "" {
+			t.Errorf("Get(\"name\") = %q, want empty", got)
+		}
+	})
+
+	t.Run("uses form struct tags for validation error field names", func(t *testing.T) {
+		t.Parallel()
+
+		type request struct {
+			Email string `validate:"required,email" form:"email"`
+			Name  string `validate:"required"       form:"full_name"`
+		}
+
+		var capturedErrors httputil.BindErrors
+
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+		server := httputil.NewServer(logger,
+			httputil.WithServerCodec(httputil.NewHTMLServerCodec(nil)),
+		)
+
+		server.Register(httputil.Endpoint{
+			Method: http.MethodPost,
+			Path:   "/test",
+			Handler: httputil.NewFormHandler(
+				func(r httputil.RequestData[request]) (*httputil.Response, error) {
+					capturedErrors = r.Errors
+					return httputil.OK(nil)
+				},
+			),
+		})
+
+		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader("email=notanemail"))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		res := httptest.NewRecorder()
+
+		server.ServeHTTP(res, req)
+
+		if res.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, res.Code)
+		}
+
+		if !capturedErrors.HasAny() {
+			t.Fatal("expected errors to be present")
+		}
+
+		// Field names should match the form tag, not the Go field name.
+		if got := capturedErrors.Get("email"); got == "" {
+			t.Error("expected Get(\"email\") to return an error message")
+		}
+
+		if got := capturedErrors.Get("full_name"); got != "is required" {
+			t.Errorf("Get(\"full_name\") = %q, want %q", got, "is required")
+		}
+
+		// Go field names should NOT be used.
+		if got := capturedErrors.Get("Email"); got != "" {
+			t.Errorf("Get(\"Email\") = %q, want empty (should use form tag name)", got)
+		}
+
+		if got := capturedErrors.Get("Name"); got != "" {
+			t.Errorf("Get(\"Name\") = %q, want empty (should use form tag name)", got)
+		}
+	})
+
+	t.Run("json tag takes precedence over form tag for field names", func(t *testing.T) {
+		t.Parallel()
+
+		type request struct {
+			Name string `json:"jsonName" validate:"required" form:"form_name"`
+		}
+
+		var capturedErrors httputil.BindErrors
+
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+		server := httputil.NewServer(logger)
+
+		server.Register(httputil.Endpoint{
+			Method: http.MethodPost,
+			Path:   "/test",
+			Handler: httputil.NewFormHandler(
+				func(r httputil.RequestData[request]) (*httputil.Response, error) {
+					capturedErrors = r.Errors
+					return httputil.OK(nil)
+				},
+			),
+		})
+
+		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`{}`))
+		res := httptest.NewRecorder()
+
+		server.ServeHTTP(res, req)
+
+		if res.Code != http.StatusOK {
+			t.Errorf("expected status %d, got %d", http.StatusOK, res.Code)
+		}
+
+		// json tag should win over form tag.
+		if got := capturedErrors.Get("jsonName"); got != "is required" {
+			t.Errorf("Get(\"jsonName\") = %q, want %q", got, "is required")
+		}
+
+		// form tag should NOT be used when json tag is present.
+		if got := capturedErrors.Get("form_name"); got != "" {
+			t.Errorf("Get(\"form_name\") = %q, want empty (json tag should take precedence)", got)
+		}
+	})
 }

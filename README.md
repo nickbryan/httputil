@@ -1,8 +1,8 @@
 # httputil
 
-Package `httputil` provides utility helpers for working with `net/http`, adding sensible defaults, bootstrapping, 
-and eliminating boilerplate code commonly required when building web services. This package aims to streamline the 
-development of HTTP-based applications by offering a cohesive set of tools for HTTP server configuration, request 
+Package `httputil` provides utility helpers for working with `net/http`, adding sensible defaults, bootstrapping,
+and eliminating boilerplate code commonly required when building web services. This package aims to streamline the
+development of HTTP-based applications by offering a cohesive set of tools for HTTP server configuration, request
 handling, error management, and more.
 
 <div align="center">
@@ -15,6 +15,7 @@ handling, error management, and more.
 </div>
 
 ## Table of Contents
+
 - [Features](#features)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
@@ -25,6 +26,7 @@ handling, error management, and more.
   - [Parameter Binding](#parameter-binding)
   - [Validation](#validation)
 - [Handler Options](#handler-options)
+- [Form Handlers](#form-handlers)
 - [Response Helpers](#response-helpers)
 - [Error Handling](#error-handling)
   - [RFC 7807 Problem Details](#rfc-7807-problem-details)
@@ -107,10 +109,10 @@ import (
 func main() {
     // Create a logger
     logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-    
+
     // Create a server with default options
     server := httputil.NewServer(logger)
-    
+
     // Register an endpoint
     server.Register(
         httputil.Endpoint{
@@ -123,7 +125,7 @@ func main() {
             ),
         },
     )
-    
+
     // Start the server
     server.Serve(context.Background())
 }
@@ -134,7 +136,7 @@ func main() {
 `httputil.NewServer` can be configured with the following options:
 
 | Option                        | Default | Description                                           |
-|-------------------------------|---------|-------------------------------------------------------|
+| ----------------------------- | ------- | ----------------------------------------------------- |
 | `WithServerAddress`           | `:8080` | Sets the address the server will listen on            |
 | `WithServerCodec`             | JSON    | Sets the default codec for request/response encoding  |
 | `WithServerIdleTimeout`       | 30s     | Controls how long connections are kept open when idle |
@@ -221,21 +223,23 @@ type MyParams struct {
 ```
 
 **Supported Sources:**
+
 - `path`: URL path parameters (e.g., `/users/{id}`).
 - `query`: URL query string parameters (e.g., `?filter=active`).
 - `header`: HTTP request headers (e.g., `X-API-Key: abc`).
 - `default`: A static default value if no other sources match.
 
 **Binding Strategy:**
+
 1.  **First Match Wins:** The `param` tag is processed from left to right. The first source that provides a non-empty value is used.
-    *   *Example:* `param:"query=id,header=X-ID,default=1"`
-    *   Check query parameter `id`. If present, use it.
-    *   If not, check header `X-ID`. If present, use it.
-    *   If neither is found, use the default value `1`.
+    - _Example:_ `param:"query=id,header=X-ID,default=1"`
+    - Check query parameter `id`. If present, use it.
+    - If not, check header `X-ID`. If present, use it.
+    - If neither is found, use the default value `1`.
 2.  **Default is Terminal:** If a `default` source is reached, it is always used, and subsequent sources in the tag are ignored.
 3.  **Validation on Defaults:** Parameters populated from a `default` source are **excluded from validation**. This allows developers to set safe defaults (e.g., `default=0` for an integer) without triggering validation errors (e.g., `min=1`) that would confusingly blame the client.
 4.  **Error Reporting:** Validation errors will correctly reflect the **actual source** key used to populate the parameter, providing clear feedback to the client.
-    *   *Example:* Given `param:"query=q,header=H"`. If the value is missing from query `q` but provided in header `H`, and that value fails validation, the error response will indicate that parameter `H` is invalid.
+    - _Example:_ Given `param:"query=q,header=H"`. If the value is missing from query `q` but provided in header `H`, and that value fails validation, the error response will indicate that parameter `H` is invalid.
 
 ### Validation
 
@@ -254,13 +258,14 @@ Validation errors are automatically converted to RFC 7807 problem details respon
 
 ## Handler Options
 
-When creating handlers with `httputil.NewHandler()`, you can customize their behavior using the following options:
+When creating handlers with `httputil.NewHandler()` or `httputil.NewFormHandler()`, you can customize their behavior using the following options:
 
-| Option                | Default | Description                                           |
-|-----------------------|---------|-------------------------------------------------------|
-| `WithHandlerCodec`    | nil     | Sets the codec used for request/response serialization |
-| `WithHandlerGuard`    | nil     | Sets a guard for request interception                  |
-| `WithHandlerLogger`   | nil     | Sets the logger used by the handler                    |
+| Option                | Default | Description                                                    |
+| --------------------- | ------- | -------------------------------------------------------------- |
+| `WithHandlerCodec`    | nil     | Sets the codec used for request/response serialization         |
+| `WithHandlerGuard`    | nil     | Sets a guard for request interception                          |
+| `WithHandlerLogger`   | nil     | Sets the logger used by the handler                            |
+| `WithHandlerMessages` | nil     | Sets a custom `MessageFunc` for validation error messages (i18n) |
 
 Example with custom handler options:
 
@@ -274,6 +279,68 @@ handler := httputil.NewHandler(
 ```
 
 If handler options are not specified, the handler will inherit settings from the server when registered.
+
+## Form Handlers
+
+`NewFormHandler` is a variant of `NewHandler` designed for HTML form workflows. Instead of automatically writing an RFC 7807 error response when binding or validation fails, it passes the errors to your action via `Request.Errors`, allowing you to re-render the form with inline validation messages.
+
+```go
+type CreateUserRequest struct {
+    Name  string `form:"name"  validate:"required"`
+    Email string `form:"email" validate:"required,email"`
+}
+
+server.Register(httputil.Endpoint{
+    Method: http.MethodPost,
+    Path:   "/users",
+    Handler: httputil.NewFormHandler(
+        func(r httputil.RequestData[CreateUserRequest]) (*httputil.Response, error) {
+            if r.Errors.HasAny() {
+                // Re-render the form with errors and the submitted data.
+                return httputil.OK(FormPage{Data: r.Data, Errors: r.Errors})
+            }
+
+            // Validation passed — process the form.
+            return httputil.SeeOther("/users")
+        },
+    ),
+})
+```
+
+### BindErrors API
+
+`BindErrors` aggregates validation and binding errors from request processing. Field keys use dot-separated paths matching struct tag names (e.g. `address.city` for a nested `City` field).
+
+| Method    | Description                                                                                         |
+| --------- | --------------------------------------------------------------------------------------------------- |
+| `HasAny()` | Returns `true` if any data or parameter binding error occurred                                     |
+| `Get(field)` | Returns the translated error message for a field (checks data errors first, then parameter errors) |
+| `All()`   | Returns a flat map of all field-to-message errors (data errors take precedence on key collision)     |
+
+`HasAny()` reports whether any error occurred during binding, but `Get` and `All` only contain entries for error types that can be mapped to individual fields. If the error is not a recognised validation or decode error (e.g. a malformed JSON body), `HasAny()` will return `true` while `Get` and `All` remain empty — inspect `BindErrors.Data` or `BindErrors.Params` directly in that case.
+
+### Custom Error Messages (i18n)
+
+Use `WithHandlerMessages` to provide a custom `MessageFunc` that controls user-facing validation messages. This works with both `NewHandler` (customising RFC 7807 constraint violation details) and `NewFormHandler` (customising `BindErrors.Get` and `BindErrors.All`). It applies to request body (Data) validation only — parameter validation messages are generated by the parameter binding pipeline.
+
+```go
+messages := httputil.WithHandlerMessages(func(tag, param string) string {
+    switch tag {
+    case "required":
+        return "ce champ est obligatoire"
+    case "email":
+        return "adresse e-mail invalide"
+    default:
+        return "valeur invalide"
+    }
+})
+
+// Works with form handlers (errors passed to action via Request.Errors):
+httputil.NewFormHandler(action, messages)
+
+// Works with standard handlers (errors written as RFC 7807 responses):
+httputil.NewHandler(action, messages)
+```
 
 ## Response Helpers
 
@@ -374,10 +441,10 @@ func loggingMiddleware(logger *slog.Logger) httputil.MiddlewareFunc {
     return func(next http.Handler) http.Handler {
         return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
             start := time.Now()
-            
+
             // Call the next handler
             next.ServeHTTP(w, r)
-            
+
             // Log after the request is processed
             logger.InfoContext(r.Context(), "Request processed",
                 slog.String("method", r.Method),
@@ -427,9 +494,9 @@ func (g *AuthGuard) Guard(r *http.Request) (*http.Request, error) {
     if token == "" {
         return nil, problem.Unauthorized("Missing authorization token")
     }
-    
+
     // Validate token...
-    
+
     // Add user info to context
     ctx := context.WithValue(r.Context(), "user", userInfo)
     return r.WithContext(ctx), nil
@@ -510,16 +577,16 @@ func TestUserHandler(t *testing.T) {
     handler := httputil.NewHandler(func(r httputil.RequestEmpty) (*httputil.Response, error) {
         return httputil.OK(map[string]string{"message": "Hello, World!"})
     })
-    
+
     req := httptest.NewRequest(http.MethodGet, "/users", nil)
     w := httptest.NewRecorder()
-    
+
     handler.ServeHTTP(w, req)
-    
+
     if w.Code != http.StatusOK {
         t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
     }
-    
+
     // Use the testutil package for JSON comparison
     expected := `{"message":"Hello, World!"}`
     if err := testutil.JSONEquals(expected, w.Body.String()); err != nil {
@@ -545,19 +612,19 @@ import (
 )
 
 func main() {
-    logger := slogutil.NewJSONLogger()  
+    logger := slogutil.NewJSONLogger()
     server := httputil.NewServer(logger)
-	
+
     server.Register(
         httputil.Endpoint{
-            Method: http.MethodGet, 
-            Path:   "/greetings", 
+            Method: http.MethodGet,
+            Path:   "/greetings",
             Handler: httputil.NewHandler(
                 func(_ httputil.RequestEmpty) (*httputil.Response, error) {
                     return httputil.OK([]string{"Hello, World!", "Hola Mundo!"})
-                }, 
+                },
             ),
-        }, 
+        },
     )
 
     server.Serve(context.Background())
@@ -690,7 +757,7 @@ func main() {
     )
 
     server.Serve(context.Background())
-	
+
     // curl localhost:8080/greetings
     // ["Hello, World!","Hola Mundo!"]
 }
@@ -763,11 +830,11 @@ The `HTMLServerCodec` decodes `application/x-www-form-urlencoded` and `multipart
 
 **HTML Codec Options:**
 
-| Option                       | Default                    | Description                                                                          |
-|------------------------------|----------------------------|--------------------------------------------------------------------------------------|
-| `WithHTMLErrorTemplate`      | Minimal default error page | Name of a template in the set for error pages (receives `*problem.DetailedError`)    |
-| `WithHTMLFormDecoder`        | `go-playground/form`       | Sets a custom `FormDecoder` implementation for form data parsing                     |
-| `WithHTMLMultipartMaxMemory` | 32 MB                      | Sets max memory used when parsing multipart/form-data forms                          |
+| Option                       | Default                    | Description                                                                       |
+| ---------------------------- | -------------------------- | --------------------------------------------------------------------------------- |
+| `WithHTMLErrorTemplate`      | Minimal default error page | Name of a template in the set for error pages (receives `*problem.DetailedError`) |
+| `WithHTMLFormDecoder`        | `go-playground/form`       | Sets a custom `FormDecoder` implementation for form data parsing                  |
+| `WithHTMLMultipartMaxMemory` | 32 MB                      | Sets max memory used when parsing multipart/form-data forms                       |
 
 Error templates always receive a `*problem.DetailedError` as their data, providing access to `Title`, `Detail`, `Status`, `Type`, `Code`, `Instance`, and `ExtensionMembers`. When the original error is not a `DetailedError`, one is constructed from the HTTP status code.
 
@@ -812,8 +879,8 @@ func setupServer() *httputil.Server {
     // Create middleware
     loggingMiddleware := func(next http.Handler) http.Handler {
         return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-            logger.InfoContext(r.Context(), "Request started", 
-                slog.String("method", r.Method), 
+            logger.InfoContext(r.Context(), "Request started",
+                slog.String("method", r.Method),
                 slog.String("path", r.URL.Path))
             next.ServeHTTP(w, r)
         })
@@ -849,14 +916,14 @@ func setupServer() *httputil.Server {
         WithPrefix("/api/v1")
 
     server.Register(secureEndpoints...)
-    
+
     return server
 }
 ```
 
 ## Client Usage
 
-`httputil.Client` provides a convenient and idiomatic way to make HTTP requests to external services. It wraps the 
+`httputil.Client` provides a convenient and idiomatic way to make HTTP requests to external services. It wraps the
 standard `net/http.Client` and offers simplified methods for common HTTP operations, along with robust response handling.
 
 ### Creating a Client
@@ -880,7 +947,7 @@ The `Client` provides methods for common HTTP verbs. All methods return a `*http
 ```go
 // GET request
 resp, err := client.Get(
-	context.Background(), 
+	context.Background(),
 	"/users/123",
     httputil.WithRequestHeader("Authorization", "Bearer token"),
     httputil.WithRequestParam("version", "v1"),
@@ -921,7 +988,7 @@ if resp.IsSuccess() {
     if err := resp.Decode(&data); err != nil {
         fmt.Printf("Error decoding success response: %v\n", err)
     }
-	
+
     fmt.Printf("Success: %s\n", data.Message)
 } else if resp.IsError() {
     // Decodes as RFC 7807 Problem Details
@@ -937,32 +1004,35 @@ if resp.IsSuccess() {
 ```
 
 ### Client Middleware with Interceptors
-The client uses an interceptor model that wraps the underlying http.RoundTripper. Interceptors let you run logic before 
-and after an HTTP request is sent (logging, retries, tracing, auth headers, metrics, etc.) without changing call sites. 
+
+The client uses an interceptor model that wraps the underlying http.RoundTripper. Interceptors let you run logic before
+and after an HTTP request is sent (logging, retries, tracing, auth headers, metrics, etc.) without changing call sites.
 An interceptor has the shape:
 
 ```go
 type InterceptorFunc func(next http.RoundTripper) http.RoundTripper
 ```
 
-Each interceptor receives the "next" RoundTripper and returns a new RoundTripper that calls next.RoundTrip(req) when 
-appropriate. Interceptors are applied by wrapping the base transport so they form a chain: the first interceptor you 
+Each interceptor receives the "next" RoundTripper and returns a new RoundTripper that calls next.RoundTrip(req) when
+appropriate. Interceptors are applied by wrapping the base transport so they form a chain: the first interceptor you
 provide becomes the outermost wrapper.
 
 Basic rules and recommendations:
+
 - Keep interceptors small and focused (single responsibility).
-- Avoid modifying the incoming *http.Request in place; use req = req.WithContext(...) or req.Clone(...) when changing it.
+- Avoid modifying the incoming \*http.Request in place; use req = req.WithContext(...) or req.Clone(...) when changing it.
 - Ensure you always call next.RoundTrip unless you intentionally short-circuit (for example, returning a cached response or an error).
 - Be mindful of retry/interceptor interactions (idempotency, body re-reads). If you need to retry requests with bodies, buffer them or use a replayable body.
 
 **Example: simple logging interceptor**
+
 ```go
 func NewLogInterceptor(logger *slog.Logger) httputil.InterceptorFunc {
     return func(next http.RoundTripper) http.RoundTripper {
         return httputil.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
             start := time.Now()
             logger.DebugContext(
-				req.Context(), 
+				req.Context(),
 				s"Client request started",
                 slog.String("method", req.Method),
                 slog.String("url", req.URL.String()),
@@ -971,7 +1041,7 @@ func NewLogInterceptor(logger *slog.Logger) httputil.InterceptorFunc {
             resp, err := next.RoundTrip(req)
 
             logger.InfoContext(
-				req.Context(), 
+				req.Context(),
 				"Client request completed",
                 slog.String("method", req.Method),
                 slog.String("url", req.URL.String()),
@@ -979,7 +1049,7 @@ func NewLogInterceptor(logger *slog.Logger) httputil.InterceptorFunc {
                 slog.Duration("duration", time.Since(start)),
                 slog.Any("error", err),
             )
-			
+
             return resp, err
         })
     }
@@ -991,7 +1061,7 @@ func NewLogInterceptor(logger *slog.Logger) httputil.InterceptorFunc {
 `httputil.NewClient` accepts `ClientOption`s to customize the underlying `http.Client`:
 
 | Option                     | Default                 | Description                                                     |
-|----------------------------|-------------------------|-----------------------------------------------------------------|
+| -------------------------- | ----------------------- | --------------------------------------------------------------- |
 | `WithClientBasePath`       | `""`                    | Sets a base URL path for all requests                           |
 | `WithClientCodec`          | JSON                    | Sets the codec for request/response serialization               |
 | `WithClientCookieJar`      | nil                     | Sets the `http.CookieJar` for the client                        |
@@ -1004,7 +1074,7 @@ func NewLogInterceptor(logger *slog.Logger) httputil.InterceptorFunc {
 Request-specific options can be passed to individual HTTP method calls:
 
 | Option               | Description                                  |
-|----------------------|----------------------------------------------|
+| -------------------- | -------------------------------------------- |
 | `WithRequestHeader`  | Adds a single HTTP header to the request     |
 | `WithRequestHeaders` | Adds multiple HTTP headers from a map        |
 | `WithRequestParam`   | Adds a single query parameter to the request |
@@ -1013,21 +1083,26 @@ Request-specific options can be passed to individual HTTP method calls:
 ## Design Choices
 
 ### RFC 7807 Problem Details
-Error responses follow the RFC 7807 standard for Problem Details for HTTP APIs, providing consistent, readable 
+
+Error responses follow the RFC 7807 standard for Problem Details for HTTP APIs, providing consistent, readable
 error information.
 
 ### Middleware Architecture
-Middleware can be applied at both the server and endpoint level, providing a flexible way to implement cross-cutting 
+
+Middleware can be applied at both the server and endpoint level, providing a flexible way to implement cross-cutting
 concerns like logging, authentication, and metrics.
 
 ### Handler Interfaces
-The package provides a consistent interface for handlers while supporting multiple styles (standard http.Handler, 
+
+The package provides a consistent interface for handlers while supporting multiple styles (standard http.Handler,
 functional handlers, and JSON-specific handlers).
 
 ### Type Safety with Generics
+
 The package uses Go generics to provide type-safe request handling, ensuring that request data and parameters are properly typed.
 
 ### Graceful Shutdown
+
 The server implementation includes graceful shutdown handling, ensuring that in-flight requests are completed before the server stops.
 
 ## Contributing
