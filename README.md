@@ -908,6 +908,7 @@ func loadTemplates() (*httputil.TemplateSet, error) {
     })
 
     // Read page sources into a map. Each page gets its own clone of base.
+    // Names use the full path relative to the filesystem root (e.g. "pages/home.html").
     pages := make(map[string]string)
 
     entries, _ := fs.ReadDir(fsys, "pages")
@@ -915,8 +916,8 @@ func loadTemplates() (*httputil.TemplateSet, error) {
         if e.IsDir() || filepath.Ext(e.Name()) != ".html" {
             continue
         }
-        src, _ := fs.ReadFile(fsys, filepath.Join("pages", e.Name()))
-        name := strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
+        name := filepath.Join("pages", e.Name())
+        src, _ := fs.ReadFile(fsys, name)
         pages[name] = string(src)
     }
 
@@ -933,7 +934,7 @@ if err != nil {
 }
 
 codec := httputil.NewHTMLServerCodec(ts,
-    httputil.WithHTMLErrorTemplate(ts.Lookup("error")),
+    httputil.WithHTMLErrorTemplate(ts.Lookup("pages/error.html")),
 )
 ```
 

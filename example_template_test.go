@@ -73,13 +73,13 @@ func ExampleNewTemplateSet_fromDisk() {
 	// Step 4: Create the codec. The error page is a page template like any
 	// other - use Lookup to retrieve it and pass it to WithHTMLErrorTemplate.
 	_ = httputil.NewHTMLServerCodec(ts,
-		httputil.WithHTMLErrorTemplate(ts.Lookup("error")),
+		httputil.WithHTMLErrorTemplate(ts.Lookup("pages/error.html")),
 	)
 
 	// Render each page to verify isolation.
 	var buf bytes.Buffer
 
-	if err := ts.ExecuteTemplate(&buf, "home", map[string]string{"Name": "Nick"}); err != nil {
+	if err := ts.ExecuteTemplate(&buf, "pages/home.html", map[string]string{"Name": "Nick"}); err != nil {
 		log.Fatal(err)
 	}
 
@@ -88,7 +88,7 @@ func ExampleNewTemplateSet_fromDisk() {
 
 	buf.Reset()
 
-	if err := ts.ExecuteTemplate(&buf, "about", map[string]string{"Body": "About us."}); err != nil {
+	if err := ts.ExecuteTemplate(&buf, "pages/about.html", map[string]string{"Body": "About us."}); err != nil {
 		log.Fatal(err)
 	}
 
@@ -138,7 +138,7 @@ func parseDir(t *template.Template, fsys fs.FS, dir string) error {
 
 // readDir reads each .html file in a directory and returns a map of name to
 // source string, suitable for passing to [httputil.NewTemplateSet]. The name is
-// the filename without its extension (e.g. "home" from "pages/home.html").
+// the path relative to the filesystem root (e.g. "pages/home.html").
 func readDir(fsys fs.FS, dir string) (map[string]string, error) {
 	entries, err := fs.ReadDir(fsys, dir)
 	if err != nil {
@@ -152,12 +152,13 @@ func readDir(fsys fs.FS, dir string) (map[string]string, error) {
 			continue
 		}
 
-		src, err := fs.ReadFile(fsys, filepath.Join(dir, e.Name()))
+		name := filepath.Join(dir, e.Name())
+
+		src, err := fs.ReadFile(fsys, name)
 		if err != nil {
-			return nil, fmt.Errorf("reading %s: %w", e.Name(), err)
+			return nil, fmt.Errorf("reading %s: %w", name, err)
 		}
 
-		name := strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
 		pages[name] = string(src)
 	}
 
