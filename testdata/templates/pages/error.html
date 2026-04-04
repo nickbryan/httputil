@@ -1,0 +1,3 @@
+{{ template "layouts/base.html" . }}
+{{ define "title" }}{{ .Title }}{{ end }}
+{{ define "content" }}<h1>{{ .Title }}</h1><p>{{ .Detail }}</p>{{ end }}

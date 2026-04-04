@@ -272,7 +272,7 @@ Example with custom handler options:
 ```go
 handler := httputil.NewHandler(
     myHandlerFunc,
-    httputil.WithHandlerCodec(httputil.NewJSONServerCodec()),  // or httputil.NewHTMLServerCodec(tmpl)
+    httputil.WithHandlerCodec(htmlCodec),  // or httputil.NewJSONServerCodec()
     httputil.WithHandlerGuard(myAuthGuard),
     httputil.WithHandlerLogger(logger),
 )
@@ -765,7 +765,7 @@ func main() {
 
 ### HTML Handler with Form Data
 
-Use `HTMLServerCodec` to build endpoints that accept form submissions and render HTML templates. This is ideal for HTMX-powered or traditional server-rendered web applications.
+Use `HTMLServerCodec` to build endpoints that accept form submissions and render HTML templates. This is ideal for HTMX-powered or traditional server-rendered web applications. The codec accepts any `TemplateExecutor` — both `*template.Template` and `*TemplateSet` implement this interface.
 
 ```go
 package main
@@ -793,7 +793,7 @@ func main() {
         logger,
         httputil.WithServerCodec(httputil.NewHTMLServerCodec(
             tmpl,
-            httputil.WithHTMLErrorTemplate("error"),
+            httputil.WithHTMLErrorTemplate(tmpl.Lookup("error")),
         )),
     )
 
@@ -826,17 +826,118 @@ func newGreetingFormEndpoint(tmpl *template.Template) httputil.Endpoint {
 }
 ```
 
+#### Using TemplateSet for Page Isolation
+
+When multiple pages define the same block names (e.g. `{{ define "content" }}`), use `TemplateSet` to give each page its own isolated copy of the base templates. Each entry in the set is cloned from the shared base, so block definitions in one page do not conflict with another.
+
+```go
+base := template.Must(template.New("").Parse(""))
+template.Must(base.New("layout").Parse(
+    `<html><body>{{ block "content" . }}{{ end }}</body></html>`))
+template.Must(base.New("error").Parse(
+    `<html><body><h1>{{ .Title }}</h1><p>{{ .Detail }}</p></body></html>`))
+
+ts, err := httputil.NewTemplateSet(base, map[string]string{
+    "home":    `{{ template "layout" . }}{{ define "content" }}<h1>{{ .Title }}</h1>{{ end }}`,
+    "about":   `{{ template "layout" . }}{{ define "content" }}<p>{{ .Body }}</p>{{ end }}`,
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+codec := httputil.NewHTMLServerCodec(ts,
+    httputil.WithHTMLErrorTemplate(ts.Lookup("error")),
+)
+```
+
 The `HTMLServerCodec` decodes `application/x-www-form-urlencoded` and `multipart/form-data` text fields using a `FormDecoder` interface (defaulting to [`go-playground/form`](https://github.com/go-playground/form)), and renders responses through Go's `html/template` package. File uploads are not handled by the codec; use `r.FormFile()` or `r.MultipartReader()` directly in your action handler. Pass an `httputil.Template{Name, Data}` as the response data to execute a specific named template from the template set.
 
 **HTML Codec Options:**
 
-| Option                       | Default                    | Description                                                                       |
-| ---------------------------- | -------------------------- | --------------------------------------------------------------------------------- |
-| `WithHTMLErrorTemplate`      | Minimal default error page | Name of a template in the set for error pages (receives `*problem.DetailedError`) |
-| `WithHTMLFormDecoder`        | `go-playground/form`       | Sets a custom `FormDecoder` implementation for form data parsing                  |
-| `WithHTMLMultipartMaxMemory` | 32 MB                      | Sets max memory used when parsing multipart/form-data forms                       |
+| Option                       | Default                    | Description                                                                                   |
+| ---------------------------- | -------------------------- | --------------------------------------------------------------------------------------------- |
+| `WithHTMLErrorTemplate`      | Minimal default error page | Sets a `*template.Template` for error pages (receives `*problem.DetailedError` as its data)   |
+| `WithHTMLFormDecoder`        | `go-playground/form`       | Sets a custom `FormDecoder` implementation for form data parsing                              |
+| `WithHTMLMultipartMaxMemory` | 32 MB                      | Sets max memory used when parsing multipart/form-data forms                                   |
 
 Error templates always receive a `*problem.DetailedError` as their data, providing access to `Title`, `Detail`, `Status`, `Type`, `Code`, `Instance`, and `ExtensionMembers`. When the original error is not a `DetailedError`, one is constructed from the HTTP status code.
+
+#### Loading Templates from Disk
+
+In a real application, templates typically live on disk (or in an embedded filesystem) rather than inline strings. The pattern is to parse shared layouts and partials into a base template, then read page sources into the map for `NewTemplateSet`. Error pages are just regular pages — they define their own blocks and use the shared layout like any other page.
+
+```
+templates/
+  layouts/
+    base.html        # shared layout with {{ block "content" . }}
+  partials/
+    nav.html         # reusable partial
+  pages/
+    home.html        # defines "content" block
+    about.html       # defines "content" block (no conflict with home)
+    error.html       # error page, also defines "content" block
+```
+
+```go
+//go:embed templates
+var templateFS embed.FS
+
+func loadTemplates() (*httputil.TemplateSet, error) {
+    fsys, _ := fs.Sub(templateFS, "templates")
+
+    // Parse layouts and partials into the shared base. Use path-based names
+    // (e.g. "layouts/base.html") so page templates can reference them.
+    base := template.New("")
+
+    fs.WalkDir(fsys, "layouts", func(path string, d fs.DirEntry, err error) error {
+        if err != nil || d.IsDir() || filepath.Ext(path) != ".html" {
+            return err
+        }
+        src, _ := fs.ReadFile(fsys, path)
+        template.Must(base.New(path).Parse(string(src)))
+        return nil
+    })
+
+    fs.WalkDir(fsys, "partials", func(path string, d fs.DirEntry, err error) error {
+        if err != nil || d.IsDir() || filepath.Ext(path) != ".html" {
+            return err
+        }
+        src, _ := fs.ReadFile(fsys, path)
+        template.Must(base.New(path).Parse(string(src)))
+        return nil
+    })
+
+    // Read page sources into a map. Each page gets its own clone of base.
+    pages := make(map[string]string)
+
+    entries, _ := fs.ReadDir(fsys, "pages")
+    for _, e := range entries {
+        if e.IsDir() || filepath.Ext(e.Name()) != ".html" {
+            continue
+        }
+        src, _ := fs.ReadFile(fsys, filepath.Join("pages", e.Name()))
+        name := strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
+        pages[name] = string(src)
+    }
+
+    return httputil.NewTemplateSet(base, pages)
+}
+```
+
+Wire the error page into the codec using `Lookup`:
+
+```go
+ts, err := loadTemplates()
+if err != nil {
+    log.Fatal(err)
+}
+
+codec := httputil.NewHTMLServerCodec(ts,
+    httputil.WithHTMLErrorTemplate(ts.Lookup("error")),
+)
+```
+
+A runnable version of this pattern is available in the `ExampleNewTemplateSet_fromDisk` test.
 
 ### Advanced Examples
 

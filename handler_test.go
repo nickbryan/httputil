@@ -1313,6 +1313,7 @@ func TestNewFormHandler(t *testing.T) {
 		var capturedErrors httputil.BindErrors
 
 		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+
 		server := httputil.NewServer(logger,
 			httputil.WithServerCodec(httputil.NewHTMLServerCodec(nil)),
 		)

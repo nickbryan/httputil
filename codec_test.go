@@ -446,6 +446,7 @@ func TestHTMLServerCodec_Decode(t *testing.T) {
 			t.Parallel()
 
 			codec := httputil.NewHTMLServerCodec(nil)
+
 			err := codec.Decode(tc.request, tc.into)
 
 			if (err != nil) != tc.wantErr {
@@ -469,7 +470,7 @@ func TestHTMLServerCodec_Encode(t *testing.T) {
 	t.Parallel()
 
 	testCases := map[string]struct {
-		tmpl            *template.Template
+		tmpl            httputil.TemplateExecutor
 		data            any
 		statusCode      int
 		wantBody        string
@@ -528,6 +529,7 @@ func TestHTMLServerCodec_Encode(t *testing.T) {
 			t.Parallel()
 
 			w := httptest.NewRecorder()
+
 			codec := httputil.NewHTMLServerCodec(tc.tmpl)
 
 			err := codec.Encode(w, tc.statusCode, tc.data)
@@ -616,6 +618,7 @@ func TestHTMLServerCodec_EncodeError(t *testing.T) {
 			t.Parallel()
 
 			w := httptest.NewRecorder()
+
 			codec := httputil.NewHTMLServerCodec(nil)
 
 			err := codec.EncodeError(w, tc.statusCode, tc.err)
@@ -644,16 +647,16 @@ func TestHTMLServerCodec_EncodeError(t *testing.T) {
 func TestHTMLServerCodec_WithHTMLErrorTemplate(t *testing.T) {
 	t.Parallel()
 
-	t.Run("renders with a named error template from the template set", func(t *testing.T) {
+	t.Run("renders with a custom error template", func(t *testing.T) {
 		t.Parallel()
 
-		tmpl := template.Must(template.New("page").Parse(`<p>page</p>`))
-		template.Must(tmpl.New("custom-error").Parse(
+		errTmpl := template.Must(template.New("custom-error").Parse(
 			`<div class="error"><strong>{{.Title}}</strong>: {{.Detail}}</div>`,
 		))
 
 		w := httptest.NewRecorder()
-		codec := httputil.NewHTMLServerCodec(tmpl, httputil.WithHTMLErrorTemplate("custom-error"))
+
+		codec := httputil.NewHTMLServerCodec(nil, httputil.WithHTMLErrorTemplate(errTmpl))
 
 		err := codec.EncodeError(w, http.StatusInternalServerError, errors.New("something went wrong"))
 		if err != nil {
@@ -666,54 +669,52 @@ func TestHTMLServerCodec_WithHTMLErrorTemplate(t *testing.T) {
 		}
 	})
 
-	t.Run("falls back to default when named template is not found", func(t *testing.T) {
+	t.Run("returns an error when custom error template execution fails", func(t *testing.T) {
 		t.Parallel()
 
-		tmpl := template.Must(template.New("page").Parse(`<p>page</p>`))
+		errTmpl := template.Must(template.New("bad-error").Option("missingkey=error").Parse(`{{.NonExistent}}`))
 
 		w := httptest.NewRecorder()
-		codec := httputil.NewHTMLServerCodec(tmpl, httputil.WithHTMLErrorTemplate("nonexistent"))
 
-		err := codec.EncodeError(w, http.StatusNotFound, errors.New("missing"))
-		if err != nil {
-			t.Fatalf("EncodeError() error = %v", err)
-		}
-
-		body := w.Body.String()
-		if !strings.Contains(body, "<h1>Not Found</h1>") {
-			t.Errorf("Expected default error page, got:\n%s", body)
-		}
-	})
-
-	t.Run("falls back to default when main template is nil", func(t *testing.T) {
-		t.Parallel()
-
-		w := httptest.NewRecorder()
-		codec := httputil.NewHTMLServerCodec(nil, httputil.WithHTMLErrorTemplate("error"))
-
-		err := codec.EncodeError(w, http.StatusInternalServerError, errors.New("some error"))
-		if err != nil {
-			t.Fatalf("EncodeError() error = %v", err)
-		}
-
-		body := w.Body.String()
-		if !strings.Contains(body, "<h1>Internal Server Error</h1>") {
-			t.Errorf("Expected default error page, got:\n%s", body)
-		}
-	})
-
-	t.Run("returns an error when named error template execution fails", func(t *testing.T) {
-		t.Parallel()
-
-		tmpl := template.Must(template.New("page").Parse(`<p>page</p>`))
-		template.Must(tmpl.New("bad-error").Option("missingkey=error").Parse(`{{.NonExistent}}`))
-
-		w := httptest.NewRecorder()
-		codec := httputil.NewHTMLServerCodec(tmpl, httputil.WithHTMLErrorTemplate("bad-error"))
+		codec := httputil.NewHTMLServerCodec(nil, httputil.WithHTMLErrorTemplate(errTmpl))
 
 		err := codec.EncodeError(w, http.StatusInternalServerError, errors.New("some error"))
 		if err == nil {
 			t.Fatal("EncodeError() expected an error, got nil")
+		}
+	})
+
+	t.Run("renders a page-style error template with layout blocks", func(t *testing.T) {
+		t.Parallel()
+
+		base := template.Must(template.New("").Parse(""))
+		template.Must(base.New("layout").Parse(
+			`<html><head><title>{{ block "title" . }}App{{ end }}</title></head>` +
+				`<body>{{ block "content" . }}{{ end }}</body></html>`))
+
+		ts, err := httputil.NewTemplateSet(base, map[string]string{
+			"error": `{{ template "layout" . }}{{ define "title" }}{{ .Title }}{{ end }}` +
+				`{{ define "content" }}<h1>{{ .Title }}</h1><p>{{ .Detail }}</p>{{ end }}`,
+		})
+		if err != nil {
+			t.Fatalf("NewTemplateSet() error = %v", err)
+		}
+
+		codec := httputil.NewHTMLServerCodec(ts,
+			httputil.WithHTMLErrorTemplate(ts.Lookup("error")),
+		)
+
+		w := httptest.NewRecorder()
+
+		err = codec.EncodeError(w, http.StatusNotFound, errors.New("missing"))
+		if err != nil {
+			t.Fatalf("EncodeError() error = %v", err)
+		}
+
+		want := `<html><head><title>Not Found</title></head>` +
+			`<body><h1>Not Found</h1><p>An unexpected error occurred.</p></body></html>`
+		if diff := cmp.Diff(want, w.Body.String()); diff != "" {
+			t.Errorf("Body mismatch (-want +got):\n%s", diff)
 		}
 	})
 }
@@ -805,6 +806,88 @@ func TestHTMLServerCodec_WithHTMLMultipartMaxMemory(t *testing.T) {
 		// The form values should still be present
 		if len(req.MultipartForm.Value["name"]) == 0 {
 			t.Fatal("Expected 'name' field to be parsed")
+		}
+	})
+}
+
+func TestHTMLServerCodec_WithTemplateSet(t *testing.T) {
+	t.Parallel()
+
+	t.Run("renders a page through TemplateSet via Encode", func(t *testing.T) {
+		t.Parallel()
+
+		base := template.Must(template.New("").Parse(""))
+		template.Must(base.New("layout").Parse(
+			`<html><body>{{ block "content" . }}{{ end }}</body></html>`))
+
+		ts, err := httputil.NewTemplateSet(base, map[string]string{
+			"home": `{{ template "layout" . }}{{ define "content" }}<h1>{{ . }}</h1>{{ end }}`,
+		})
+		if err != nil {
+			t.Fatalf("NewTemplateSet() error = %v", err)
+		}
+
+		codec := httputil.NewHTMLServerCodec(ts)
+
+		w := httptest.NewRecorder()
+
+		err = codec.Encode(w, http.StatusOK, httputil.Template{Name: "home", Data: "Welcome"})
+		if err != nil {
+			t.Fatalf("Encode() error = %v", err)
+		}
+
+		want := `<html><body><h1>Welcome</h1></body></html>`
+		if diff := cmp.Diff(want, w.Body.String()); diff != "" {
+			t.Errorf("Body mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("uses error template looked up from TemplateSet", func(t *testing.T) {
+		t.Parallel()
+
+		base := template.Must(template.New("").Parse(""))
+		template.Must(base.New("error").Parse(`<p>Error: {{.Title}}</p>`))
+
+		ts, err := httputil.NewTemplateSet(base, map[string]string{
+			"page": `<p>page</p>`,
+		})
+		if err != nil {
+			t.Fatalf("NewTemplateSet() error = %v", err)
+		}
+
+		codec := httputil.NewHTMLServerCodec(ts, httputil.WithHTMLErrorTemplate(ts.Lookup("error")))
+
+		w := httptest.NewRecorder()
+
+		err = codec.EncodeError(w, http.StatusNotFound, errors.New("missing"))
+		if err != nil {
+			t.Fatalf("EncodeError() error = %v", err)
+		}
+
+		want := `<p>Error: Not Found</p>`
+		if diff := cmp.Diff(want, w.Body.String()); diff != "" {
+			t.Errorf("Body mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("backward compatible with plain *template.Template", func(t *testing.T) {
+		t.Parallel()
+
+		tmpl := template.Must(template.New("root").Parse(""))
+		template.Must(tmpl.New("page").Parse(`<p>Hello, {{.}}</p>`))
+
+		codec := httputil.NewHTMLServerCodec(tmpl)
+
+		w := httptest.NewRecorder()
+
+		err := codec.Encode(w, http.StatusOK, httputil.Template{Name: "page", Data: "World"})
+		if err != nil {
+			t.Fatalf("Encode() error = %v", err)
+		}
+
+		want := `<p>Hello, World</p>`
+		if diff := cmp.Diff(want, w.Body.String()); diff != "" {
+			t.Errorf("Body mismatch (-want +got):\n%s", diff)
 		}
 	})
 }

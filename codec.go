@@ -150,7 +150,7 @@ type FormDecoder interface {
 }
 
 // ErrTemplateNil is returned by [HTMLServerCodec.Encode] when the codec was
-// constructed without a template set.
+// constructed without a [TemplateExecutor].
 var ErrTemplateNil = errors.New("encoding response data as HTML: template is nil")
 
 // EncodeTypeError is returned by [HTMLServerCodec.Encode] when the data
@@ -168,13 +168,13 @@ func (e *EncodeTypeError) Error() string {
 // overridden.
 type HTMLServerCodecOption func(c *HTMLServerCodec)
 
-// WithHTMLErrorTemplate sets the name of a template within the main template
-// set to use for rendering error pages. The named template receives a
-// [*problem.DetailedError] as its data. If the named template is not found or
-// the main template is nil, a minimal default error page is used.
-func WithHTMLErrorTemplate(name string) HTMLServerCodecOption {
+// WithHTMLErrorTemplate sets a custom [*template.Template] to use for rendering
+// error pages. The template receives a [*problem.DetailedError] as its data,
+// providing access to Title, Detail, Status, and other fields. If not set, a
+// minimal default error page is used.
+func WithHTMLErrorTemplate(tmpl *template.Template) HTMLServerCodecOption {
 	return func(c *HTMLServerCodec) {
-		c.errorTmplName = name
+		c.errorTmpl = tmpl
 	}
 }
 
@@ -197,7 +197,7 @@ func WithHTMLMultipartMaxMemory(maxMemory int64) HTMLServerCodecOption {
 }
 
 // defaultErrorTemplate is the minimal HTML error page template used when no
-// custom error template is provided or the named template is not found.
+// custom error template is provided via [WithHTMLErrorTemplate].
 var defaultErrorTemplate = template.Must(template.New("error").Parse( //nolint:gochecknoglobals // Package-level default improves API.
 	`<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><title>{{.Title}}</title></head>
@@ -210,36 +210,28 @@ var defaultErrorTemplate = template.Must(template.New("error").Parse( //nolint:g
 type HTMLServerCodec struct {
 	decoder            FormDecoder
 	errorTmpl          *template.Template
-	errorTmplName      string
 	multipartMaxMemory int64
-	tmpl               *template.Template
+	tmpl               TemplateExecutor
 }
 
 // Ensure HTMLServerCodec implements ServerCodec.
 var _ ServerCodec = HTMLServerCodec{} //nolint:exhaustruct // Compile time implementation check.
 
 // NewHTMLServerCodec creates a new HTMLServerCodec instance configured with the
-// provided template for rendering HTML responses. The template may be nil if
-// only Decode functionality is required; however, Encode will return an error
-// if called without a template. Options can be used to customize the error
-// template name and form decoder.
-func NewHTMLServerCodec(tmpl *template.Template, opts ...HTMLServerCodecOption) HTMLServerCodec {
+// provided [TemplateExecutor] for rendering HTML responses. The executor may be
+// nil if only Decode functionality is required; however, Encode will return an
+// error if called without one. Options can be used to customize the error
+// template and form decoder.
+func NewHTMLServerCodec(tmpl TemplateExecutor, opts ...HTMLServerCodecOption) HTMLServerCodec {
 	codec := HTMLServerCodec{
 		decoder:            form.NewDecoder(),
 		errorTmpl:          defaultErrorTemplate,
-		errorTmplName:      "",
 		multipartMaxMemory: defaultMaxMemory,
 		tmpl:               tmpl,
 	}
 
 	for _, opt := range opts {
 		opt(&codec)
-	}
-
-	if codec.errorTmplName != "" && codec.tmpl != nil {
-		if t := codec.tmpl.Lookup(codec.errorTmplName); t != nil {
-			codec.errorTmpl = t
-		}
 	}
 
 	return codec
@@ -325,8 +317,9 @@ func (c HTMLServerCodec) Encode(w http.ResponseWriter, statusCode int, data any)
 // EncodeError encodes an error into an HTML HTTP response. The error template
 // always receives a [*problem.DetailedError]. If the error is already a
 // [*problem.DetailedError], it is used directly. Otherwise, a new
-// [*problem.DetailedError] is constructed from the status code. The error
-// template is resolved once during construction via [WithHTMLErrorTemplate].
+// [*problem.DetailedError] is constructed from the status code. When a custom
+// error template is configured via [WithHTMLErrorTemplate], it is used;
+// otherwise the default error page is used.
 func (c HTMLServerCodec) EncodeError(w http.ResponseWriter, statusCode int, err error) error {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(statusCode)
