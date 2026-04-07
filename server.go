@@ -19,12 +19,12 @@ type Server struct {
 		Shutdown(ctx context.Context) error
 	}
 
-	logger *slog.Logger
-	router *http.ServeMux
+	codec   ServerCodec
+	handler http.Handler
+	logger  *slog.Logger
+	router  *http.ServeMux
 
 	address         string
-	codec           ServerCodec
-	maxBodySize     int64
 	shutdownTimeout time.Duration
 }
 
@@ -34,13 +34,20 @@ type Server struct {
 func NewServer(logger *slog.Logger, options ...ServerOption) *Server {
 	opts := mapServerOptionsToDefaults(options)
 
+	router := http.NewServeMux()
+
 	server := &Server{
-		Listener:        nil, // We need to set Listener after we have a server as we pass server as the handler.
-		logger:          logger,
-		router:          http.NewServeMux(),
+		Listener: nil, // We need to set Listener after we have a server as we pass server as the handler.
+		logger:   logger,
+		router:   router,
+		// Build the middleware chain once at construction rather than per request.
+		handler: newPanicRecoveryMiddleware(logger)(
+			newMaxBodySizeMiddleware(logger, opts.maxBodySize)(
+				router,
+			),
+		),
 		address:         opts.address,
 		codec:           opts.codec,
-		maxBodySize:     opts.maxBodySize,
 		shutdownTimeout: opts.shutdownTimeout,
 	}
 
@@ -63,19 +70,19 @@ func NewServer(logger *slog.Logger, options ...ServerOption) *Server {
 // underlying router.
 func (s *Server) Register(endpoints ...Endpoint) {
 	for _, endpoint := range endpoints {
-		if codecSetter, ok := endpoint.Handler.(interface{ setCodec(c ServerCodec) }); ok {
-			codecSetter.setCodec(s.codec)
+		// Allocate hc outside the closure so each endpoint gets its own
+		// handlerContext at registration time (one allocation per
+		// endpoint, not per request).
+		hc := &handlerContext{
+			codec:  s.codec,
+			guard:  endpoint.guard,
+			logger: s.logger,
 		}
 
-		if guardSetter, ok := endpoint.Handler.(interface{ setGuard(guard Guard) }); ok {
-			guardSetter.setGuard(endpoint.guard)
-		}
-
-		if loggerSetter, ok := endpoint.Handler.(interface{ setLogger(l *slog.Logger) }); ok {
-			loggerSetter.setLogger(s.logger)
-		}
-
-		s.router.Handle(endpoint.Method+" "+endpoint.Path, endpoint.Handler)
+		s.router.Handle(endpoint.Method+" "+endpoint.Path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := context.WithValue(r.Context(), handlerCtxKey{}, hc)
+			endpoint.Handler.ServeHTTP(w, r.WithContext(ctx))
+		}))
 	}
 }
 
@@ -115,11 +122,7 @@ func (s *Server) Serve(ctx context.Context) {
 // ServeHTTP delegates the request handling to the underlying router. Exposing
 // ServeHTTP allows endpoints to be tested without a running server.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	newPanicRecoveryMiddleware(s.logger)(
-		newMaxBodySizeMiddleware(s.logger, s.maxBodySize)(
-			s.router,
-		),
-	).ServeHTTP(w, r)
+	s.handler.ServeHTTP(w, r)
 }
 
 // netHTTPServerLogAdapter adapts a slog.Handler to meet the logging

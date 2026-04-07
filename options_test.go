@@ -252,6 +252,7 @@ func TestHandlerOptions(t *testing.T) {
 	t.Run("WithHandlerCodec", func(t *testing.T) {
 		t.Parallel()
 
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
 		handler := httputil.NewHandler(
 			func(_ httputil.RequestEmpty) (*httputil.Response, error) {
 				// Returning data here forces serverTestCodec.Encode to be called, so we know that
@@ -259,6 +260,7 @@ func TestHandlerOptions(t *testing.T) {
 				return httputil.OK(map[string]any{})
 			},
 			httputil.WithHandlerCodec(serverTestCodec{}),
+			httputil.WithHandlerLogger(logger),
 		)
 
 		res := httptest.NewRecorder()

@@ -244,7 +244,7 @@ func TestEndpointGroup_WithMiddleware(t *testing.T) {
 		endpointsWithMiddleware := httputil.EndpointGroup{{
 			Method:  http.MethodPost,
 			Path:    "/users",
-			Handler: httputil.WrapNetHTTPHandler(newTestHandler(t)),
+			Handler: newTestHandler(t),
 		}}.WithMiddleware(injectContextValueMiddleware)
 
 		if len(endpointsWithMiddleware) != 1 {
@@ -260,8 +260,8 @@ func TestEndpointGroup_WithMiddleware(t *testing.T) {
 		t.Parallel()
 
 		endpoints := httputil.EndpointGroup{
-			{Method: http.MethodGet, Path: "/users", Handler: httputil.WrapNetHTTPHandler(newTestHandler(t))},
-			{Method: http.MethodPost, Path: "/users", Handler: httputil.WrapNetHTTPHandler(newTestHandler(t))},
+			{Method: http.MethodGet, Path: "/users", Handler: newTestHandler(t)},
+			{Method: http.MethodPost, Path: "/users", Handler: newTestHandler(t)},
 		}
 
 		endpointsWithMiddleware := endpoints.WithMiddleware(injectContextValueMiddleware)

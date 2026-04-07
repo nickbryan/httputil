@@ -175,7 +175,7 @@ func Redirect(code int, url string) (*Response, error) {
 var _ http.Handler = &handler[any, any]{} //nolint:exhaustruct // Compile time implementation check.
 
 type handler[D, P any] struct {
-	mu                          sync.Mutex
+	resolveOnce                 sync.Once
 	action                      Action[D, P]
 	bindErrorPassthrough        bool
 	codec                       ServerCodec
@@ -211,61 +211,72 @@ func newHandler[D, P any](action Action[D, P], bindErrorPassthrough bool, option
 	opts := mapHandlerOptionsToDefaults(options)
 
 	return &handler[D, P]{
-		mu:     sync.Mutex{},
-		action: action,
+		resolveOnce: sync.Once{},
+		action:      action,
 		// Cache these early to save on reflection calls.
 		reqTypeKind:    reflect.TypeFor[D]().Kind(),
 		paramsTypeKind: reflect.TypeFor[P]().Kind(),
 		//
 		bindErrorPassthrough: bindErrorPassthrough,
 		messageFunc:          opts.messageFunc,
-		// The server will inject these if they are not set by an option.
+		// codec and logger are resolved via sync.Once on first request if not
+		// set by options. guard is read from context per-request when
+		// WithHandlerGuard is not used.
 		codec:  opts.codec,
 		guard:  opts.guard,
 		logger: opts.logger,
 	}
 }
 
-// setCodec sets the codec for the handler if it has not already been set.
-func (h *handler[D, P]) setCodec(c ServerCodec) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+// resolve sets codec and logger from handlerContext. Fields already set via
+// handler options are not overwritten. Guard is NOT resolved here -- it is
+// read per-request in ServeHTTP so the same handler works across endpoints
+// with different guards.
+//
+// Because sync.Once is used, the first Server to trigger resolution wins.
+// Registering the same handler on multiple Servers with different codecs or
+// loggers is unsupported and the second registration will silently use the
+// first server's dependencies.
+func (h *handler[D, P]) resolve(hc *handlerContext) {
+	h.resolveOnce.Do(func() {
+		if h.codec == nil {
+			h.codec = hc.codec
+		}
 
-	if h.codec == nil {
-		h.codec = c
-	}
-}
-
-// setGuard sets the guard for the handler if it has not already been set.
-func (h *handler[D, P]) setGuard(g Guard) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	if h.guard == nil {
-		h.guard = g
-	}
-}
-
-// setLogger sets the logger for the handler if it has not already been set.
-func (h *handler[D, P]) setLogger(l *slog.Logger) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	if h.logger == nil {
-		h.logger = l
-	}
+		if h.logger == nil {
+			h.logger = hc.logger
+		}
+	})
 }
 
 // ServeHTTP implements the http.Handler interface. It reads the request body,
 // decodes it into the request data, validates it if a validator is set, calls
 // the wrapped Action, and writes the response back in JSON format.
 func (h *handler[D, P]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	hc := handlerContextFrom(r.Context())
+	if hc != nil {
+		h.resolve(hc)
+	}
+
+	if h.codec == nil {
+		panic(fmt.Sprintf("httputil: handler %T served without being registered on a Server (missing codec)", h))
+	}
+
+	if h.logger == nil {
+		panic(fmt.Sprintf("httputil: handler %T served without being registered on a Server (missing logger)", h))
+	}
+
 	defer closeRequestBody(r.Context(), h.logger, r.Body)
 
 	//nolint:exhaustruct // Zero value for D and P is unknown.
 	request := Request[D, P]{Request: r, ResponseWriter: w}
 
-	if err := h.protect(&request); err != nil {
+	guard := h.guard
+	if guard == nil && hc != nil {
+		guard = hc.guard
+	}
+
+	if err := h.protect(&request, guard); err != nil {
 		h.writeErrorResponse(r.Context(), &request, err)
 		return
 	}
@@ -285,12 +296,12 @@ func (h *handler[D, P]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // protect runs the guard if one is set which may modify the request
 // or block further processing if an error is returned.
-func (h *handler[D, P]) protect(req *Request[D, P]) error {
-	if h.guard == nil {
+func (h *handler[D, P]) protect(req *Request[D, P], guard Guard) error {
+	if guard == nil {
 		return nil
 	}
 
-	protectedRequest, err := h.guard.Guard(req.Request)
+	protectedRequest, err := guard.Guard(req.Request)
 	if err != nil {
 		return fmt.Errorf("calling guard: %w", err)
 	}

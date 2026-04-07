@@ -1,7 +1,6 @@
 package httputil
 
 import (
-	"log/slog"
 	"net/http"
 )
 
@@ -81,37 +80,6 @@ func (eg EndpointGroup) WithGuard(g Guard) EndpointGroup {
 	})
 }
 
-// handlerMiddlewareWrapper is a struct that wraps a Handler with MiddlewareFunc
-// to ensure that dependencies are passed through the middleware to the Handler.
-type handlerMiddlewareWrapper struct {
-	handler    http.Handler
-	middleware MiddlewareFunc
-}
-
-// ServeHTTP processes HTTP requests using the wrapped handler and middleware,
-// allowing additional middleware logic.
-func (h handlerMiddlewareWrapper) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h.middleware(h.handler).ServeHTTP(w, r)
-}
-
-func (h handlerMiddlewareWrapper) setCodec(c ServerCodec) {
-	if codecSetter, ok := h.handler.(interface{ setCodec(c ServerCodec) }); ok {
-		codecSetter.setCodec(c)
-	}
-}
-
-func (h handlerMiddlewareWrapper) setGuard(g Guard) {
-	if guardSetter, ok := h.handler.(interface{ setGuard(g Guard) }); ok {
-		guardSetter.setGuard(g)
-	}
-}
-
-func (h handlerMiddlewareWrapper) setLogger(l *slog.Logger) {
-	if logSetter, ok := h.handler.(interface{ setLogger(l *slog.Logger) }); ok {
-		logSetter.setLogger(l)
-	}
-}
-
 // WithMiddleware applies the given middleware to all provided endpoints. It
 // returns a new slice of EndpointGroup with the middleware applied to their
 // handlers. The original endpoints are not modified.
@@ -121,10 +89,7 @@ func (eg EndpointGroup) WithMiddleware(middleware MiddlewareFunc) EndpointGroup 
 	}
 
 	return cloneAndUpdate(eg, func(e *Endpoint) {
-		e.Handler = handlerMiddlewareWrapper{
-			handler:    e.Handler,
-			middleware: middleware,
-		}
+		e.Handler = middleware(e.Handler)
 	})
 }
 
