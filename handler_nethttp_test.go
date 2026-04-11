@@ -13,7 +13,6 @@ import (
 	"github.com/nickbryan/httputil"
 	"github.com/nickbryan/httputil/internal/testutil"
 	"github.com/nickbryan/httputil/problem"
-	"github.com/nickbryan/httputil/problem/problemtest"
 )
 
 func TestNewNetHTTPHandler(t *testing.T) {
@@ -61,7 +60,7 @@ func TestNewNetHTTPHandler(t *testing.T) {
 					"error": slog.AnyValue("calling guard: some error"),
 				},
 			}},
-			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).Error(),
+			wantResponseBody:       problem.ServerError(httptest.NewRequest(http.MethodGet, "/test", http.NoBody)).Error(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"returns a problem error when the guard blocks the handler by returning a problem error type": {
@@ -72,7 +71,7 @@ func TestNewNetHTTPHandler(t *testing.T) {
 					w.WriteHeader(http.StatusNoContent)
 				}),
 			}, problemGuard{}),
-			wantResponseBody:       problem.BadRequest(problemtest.NewRequest("/test")).Error(),
+			wantResponseBody:       problem.BadRequest(httptest.NewRequest(http.MethodGet, "/test", http.NoBody)).Error(),
 			wantResponseStatusCode: http.StatusBadRequest,
 		},
 		"allows the guard to add to the request context which is passed to the handler for consumption": {

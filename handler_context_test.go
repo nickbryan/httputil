@@ -13,7 +13,6 @@ import (
 	"github.com/nickbryan/httputil"
 	"github.com/nickbryan/httputil/internal/testutil"
 	"github.com/nickbryan/httputil/problem"
-	"github.com/nickbryan/httputil/problem/problemtest"
 )
 
 // opaqueMiddleware wraps a handler in a new http.Handler, hiding the inner
@@ -183,7 +182,7 @@ func TestHandlerContextResolution(t *testing.T) {
 			t.Errorf("status = %d, want %d", res.Code, http.StatusInternalServerError)
 		}
 
-		if diff := testutil.DiffJSON(problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(), res.Body.String()); diff != "" {
+		if diff := testutil.DiffJSON(problem.ServerError(httptest.NewRequest(http.MethodGet, "/test", http.NoBody)).MustMarshalJSONString(), res.Body.String()); diff != "" {
 			t.Errorf("body mismatch (-want +got):\n%s", diff)
 		}
 	})

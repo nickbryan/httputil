@@ -18,7 +18,6 @@ import (
 	"github.com/nickbryan/httputil"
 	"github.com/nickbryan/httputil/internal/testutil"
 	"github.com/nickbryan/httputil/problem"
-	"github.com/nickbryan/httputil/problem/problemtest"
 )
 
 func TestNewHandler(t *testing.T) {
@@ -71,7 +70,7 @@ func TestNewHandler(t *testing.T) {
 					"error": slog.AnyValue("calling action: some error"),
 				},
 			}},
-			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
+			wantResponseBody:       problem.ServerError(httptest.NewRequest(http.MethodGet, "/test", http.NoBody)).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"the response content type is application/problem+json when a problem response is returned": {
@@ -83,7 +82,7 @@ func TestNewHandler(t *testing.T) {
 				}),
 			},
 			wantHeader:             http.Header{"Content-Type": {"application/problem+json; charset=utf-8"}},
-			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
+			wantResponseBody:       problem.ServerError(httptest.NewRequest(http.MethodGet, "/test", http.NoBody)).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"returns an internal server error status code and logs a warning when the request body cannot be read": {
@@ -102,7 +101,7 @@ func TestNewHandler(t *testing.T) {
 					"error": slog.AnyValue("decoding request body as JSON: the request body was invalid"),
 				},
 			}},
-			wantResponseBody:       problem.BadRequest(problemtest.NewRequest("/test")).MustMarshalJSONString(),
+			wantResponseBody:       problem.BadRequest(httptest.NewRequest(http.MethodGet, "/test", http.NoBody)).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusBadRequest,
 		},
 		"returns a bad request status code with errors if the payload is empty but request data is expected": {
@@ -121,7 +120,7 @@ func TestNewHandler(t *testing.T) {
 			}(),
 			request:                httptest.NewRequest(http.MethodGet, "/test", strings.NewReader("")),
 			wantHeader:             http.Header{"Content-Type": {"application/problem+json; charset=utf-8"}},
-			wantResponseBody:       problem.BadRequest(problemtest.NewRequest("/test")).WithDetail("The server received an unexpected empty request body").MustMarshalJSONString(),
+			wantResponseBody:       problem.BadRequest(httptest.NewRequest(http.MethodGet, "/test", http.NoBody)).WithDetail("The server received an unexpected empty request body").MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusBadRequest,
 		},
 		"returns a bad request status code and logs a warning when the request body cannot be decoded as json": {
@@ -141,7 +140,7 @@ func TestNewHandler(t *testing.T) {
 					"error": slog.AnyValue("decoding request body as JSON: unexpected EOF"),
 				},
 			}},
-			wantResponseBody:       problem.BadRequest(problemtest.NewRequest("/test")).MustMarshalJSONString(),
+			wantResponseBody:       problem.BadRequest(httptest.NewRequest(http.MethodGet, "/test", http.NoBody)).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusBadRequest,
 		},
 		"returns an unprocessable entity request status code with errors if the payload fails validation": {
@@ -166,7 +165,7 @@ func TestNewHandler(t *testing.T) {
 			request:    httptest.NewRequest(http.MethodGet, "/test", strings.NewReader("{}")),
 			wantHeader: http.Header{"Content-Type": {"application/problem+json; charset=utf-8"}},
 			wantResponseBody: problem.ConstraintViolation(
-				problemtest.NewRequest("/test"),
+				httptest.NewRequest(http.MethodGet, "/test", http.NoBody),
 				problem.Property{Detail: "is required", Pointer: "/inner/thing"},
 			).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusUnprocessableEntity,
@@ -193,7 +192,7 @@ func TestNewHandler(t *testing.T) {
 			request:    httptest.NewRequest(http.MethodGet, "/test", strings.NewReader("{}")),
 			wantHeader: http.Header{"Content-Type": {"application/problem+json; charset=utf-8"}},
 			wantResponseBody: problem.ConstraintViolation(
-				problemtest.NewRequest("/test"),
+				httptest.NewRequest(http.MethodGet, "/test", http.NoBody),
 				problem.Property{Detail: "is required", Pointer: "/required"},
 				problem.Property{Detail: "should be a valid email", Pointer: "/email"},
 				problem.Property{Detail: "should be a valid UUID", Pointer: "/uuid"},
@@ -231,7 +230,7 @@ func TestNewHandler(t *testing.T) {
 			request:    httptest.NewRequest(http.MethodPost, "/test", strings.NewReader("{}")),
 			wantHeader: http.Header{"Content-Type": {"application/problem+json; charset=utf-8"}},
 			wantResponseBody: problem.ConstraintViolation(
-				problemtest.NewRequest("/test"),
+				httptest.NewRequest(http.MethodGet, "/test", http.NoBody),
 				problem.Property{Detail: "ce champ est obligatoire", Pointer: "/name"},
 				problem.Property{Detail: "ce champ est obligatoire", Pointer: "/email"},
 			).MustMarshalJSONString(),
@@ -263,7 +262,7 @@ func TestNewHandler(t *testing.T) {
 			request:    httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`{"name":"ab"}`)),
 			wantHeader: http.Header{"Content-Type": {"application/problem+json; charset=utf-8"}},
 			wantResponseBody: problem.ConstraintViolation(
-				problemtest.NewRequest("/test"),
+				httptest.NewRequest(http.MethodGet, "/test", http.NoBody),
 				problem.Property{Detail: "doit contenir au moins 3 caractères", Pointer: "/name"},
 			).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusUnprocessableEntity,
@@ -299,7 +298,7 @@ func TestNewHandler(t *testing.T) {
 					"error": slog.AnyValue("calling action: some error"),
 				},
 			}},
-			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
+			wantResponseBody:       problem.ServerError(httptest.NewRequest(http.MethodGet, "/test", http.NoBody)).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"status code is used from the response on successful request": {
@@ -358,7 +357,7 @@ func TestNewHandler(t *testing.T) {
 					"error": slog.AnyValue("calling action: some error"),
 				},
 			}},
-			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
+			wantResponseBody:       problem.ServerError(httptest.NewRequest(http.MethodGet, "/test", http.NoBody)).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"redirects the request when a redirect response is returned": {
@@ -420,7 +419,7 @@ func TestNewHandler(t *testing.T) {
 					"error": slog.AnyValue("transforming data: some error"),
 				},
 			}},
-			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
+			wantResponseBody:       problem.ServerError(httptest.NewRequest(http.MethodGet, "/test", http.NoBody)).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"params data is transformed before the action is called": {
@@ -461,7 +460,7 @@ func TestNewHandler(t *testing.T) {
 					"error": slog.AnyValue("transforming data: some error"),
 				},
 			}},
-			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
+			wantResponseBody:       problem.ServerError(httptest.NewRequest(http.MethodGet, "/test", http.NoBody)).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"response data is transformed after the action is called": {
@@ -496,7 +495,7 @@ func TestNewHandler(t *testing.T) {
 					"error": slog.AnyValue("transforming data: some error"),
 				},
 			}},
-			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
+			wantResponseBody:       problem.ServerError(httptest.NewRequest(http.MethodGet, "/test", http.NoBody)).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"returns the response when a guard is set as nil": {
@@ -534,7 +533,7 @@ func TestNewHandler(t *testing.T) {
 					"error": slog.AnyValue("calling guard: some error"),
 				},
 			}},
-			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
+			wantResponseBody:       problem.ServerError(httptest.NewRequest(http.MethodGet, "/test", http.NoBody)).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"returns a problem error when the guard blocks the handler by returning a problem error type": {
@@ -545,7 +544,7 @@ func TestNewHandler(t *testing.T) {
 					return httputil.NoContent()
 				}),
 			}, problemGuard{}),
-			wantResponseBody:       problem.BadRequest(problemtest.NewRequest("/test")).MustMarshalJSONString(),
+			wantResponseBody:       problem.BadRequest(httptest.NewRequest(http.MethodGet, "/test", http.NoBody)).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusBadRequest,
 		},
 		"allows the guard to add to the request context which is passed to the handler for consumption": {
@@ -723,7 +722,7 @@ func TestNewHandler(t *testing.T) {
 			}(),
 			request: httptest.NewRequest(http.MethodGet, "/test", nil),
 			wantResponseBody: problem.BadParameters(
-				problemtest.NewRequest("/test"),
+				httptest.NewRequest(http.MethodGet, "/test", http.NoBody),
 				problem.Parameter{Parameter: "name", Detail: "is required", Type: "query"},
 				problem.Parameter{Parameter: "X-Correlation-Id", Detail: "is required", Type: "header"},
 				problem.Parameter{Parameter: "user", Detail: "is required", Type: "path"},
@@ -746,7 +745,7 @@ func TestNewHandler(t *testing.T) {
 					"type": slog.StringValue("map"),
 				},
 			}},
-			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
+			wantResponseBody:       problem.ServerError(httptest.NewRequest(http.MethodGet, "/test", http.NoBody)).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"logs and returns an error when params extraction fails unexpectedly": {
@@ -771,7 +770,7 @@ func TestNewHandler(t *testing.T) {
 					"error": slog.AnyValue(`setting field value: failed to convert parameter "default" to int: strconv.Atoi: parsing "not an int": invalid syntax`),
 				},
 			}},
-			wantResponseBody:       problem.ServerError(problemtest.NewRequest("/test")).MustMarshalJSONString(),
+			wantResponseBody:       problem.ServerError(httptest.NewRequest(http.MethodGet, "/test", http.NoBody)).MustMarshalJSONString(),
 			wantResponseStatusCode: http.StatusInternalServerError,
 		},
 		"handles request types being set to any,any": {
