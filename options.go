@@ -18,9 +18,10 @@ type (
 		basePath      string
 		checkRedirect RedirectPolicy
 		codec         ClientCodec
+		interceptors  []InterceptorFunc
 		jar           http.CookieJar
+		rootTransport http.RoundTripper
 		timeout       time.Duration
-		transport     http.RoundTripper
 	}
 )
 
@@ -32,7 +33,8 @@ func WithClientBasePath(basePath string) ClientOption {
 	}
 }
 
-// WithClientCodec sets the ClientCodec that the Client will use when making requests.
+// WithClientCodec sets the ClientCodec that the Client will use for encoding
+// request bodies and setting Content-Type/Accept headers.
 func WithClientCodec(codec ClientCodec) ClientOption {
 	return func(co *clientOptions) {
 		co.codec = codec
@@ -46,11 +48,20 @@ func WithClientCookieJar(jar http.CookieJar) ClientOption {
 	}
 }
 
+// WithClientTransport sets the base transport for the Client. By default, the
+// Client uses http.DefaultTransport. Interceptors added via
+// WithClientInterceptor will wrap this transport.
+func WithClientTransport(transport http.RoundTripper) ClientOption {
+	return func(co *clientOptions) {
+		co.rootTransport = transport
+	}
+}
+
 // WithClientInterceptor adds an InterceptorFunc to the Client. Each InterceptorFunc
 // will be executed in the order that it was added.
 func WithClientInterceptor(intercept InterceptorFunc) ClientOption {
 	return func(co *clientOptions) {
-		co.transport = intercept(co.transport)
+		co.interceptors = append(co.interceptors, intercept)
 	}
 }
 
@@ -72,7 +83,7 @@ func WithClientRedirectPolicy(policy RedirectPolicy) ClientOption {
 
 // mapClientOptionsToDefaults applies the provided ClientOption to a default
 // clientOptions struct.
-func mapClientOptionsToDefaults(rootTransport http.RoundTripper, opts []ClientOption) clientOptions {
+func mapClientOptionsToDefaults(opts []ClientOption) clientOptions {
 	const (
 		// This value aligns with the server's read timeout, providing a reasonable
 		// balance between waiting for slow server responses and preventing the client
@@ -84,9 +95,10 @@ func mapClientOptionsToDefaults(rootTransport http.RoundTripper, opts []ClientOp
 		basePath:      "",
 		checkRedirect: nil,
 		codec:         NewJSONClientCodec(),
+		interceptors:  nil,
 		jar:           nil,
+		rootTransport: nil,
 		timeout:       defaultTimeout,
-		transport:     rootTransport,
 	}
 
 	for _, opt := range opts {

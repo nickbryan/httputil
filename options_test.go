@@ -48,8 +48,8 @@ func TestClientOptionsDefaults(t *testing.T) {
 		t.Error("expected cookie jar to be nil")
 	}
 
-	if httpClient.Transport != http.DefaultTransport {
-		t.Error("expected transport to be http.DefaultTransport")
+	if httpClient.Transport != nil {
+		t.Errorf("expected transport to be nil (uses http.DefaultTransport), got: %T", httpClient.Transport)
 	}
 }
 
@@ -68,7 +68,6 @@ func TestClientOptions(t *testing.T) {
 		httputil.WithClientCodec(&clientTestCodec{
 			contentType: "test/test",
 			encode:      func(_ any) (io.Reader, error) { return nil, nil },
-			decode:      func(_ io.Reader, _ any) error { return nil },
 		}),
 		httputil.WithClientTimeout(10*time.Second),
 		httputil.WithClientCookieJar(jar),
@@ -81,10 +80,11 @@ func TestClientOptions(t *testing.T) {
 	)
 	httpClient := client.Client()
 
-	_, err = client.Get(t.Context(), "/")
+	resp, err := client.Get(t.Context(), "/")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	defer resp.Body.Close() //nolint:errcheck // Test cleanup.
 
 	if client.BasePath() != "https://example.com" {
 		t.Errorf("expected base path to be https://example.com, got: %s", client.BasePath())
@@ -92,11 +92,6 @@ func TestClientOptions(t *testing.T) {
 
 	if !spy.roundtripCalled {
 		t.Error("expected roundtrip to be called on the transport")
-	}
-
-	err = client.Close()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
 	}
 
 	if httpClient.Timeout != 10*time.Second {
@@ -112,10 +107,46 @@ func TestClientOptions(t *testing.T) {
 	}
 }
 
+func TestWithClientTransport(t *testing.T) {
+	t.Parallel()
+
+	transportCalled := false
+
+	customTransport := httputil.RoundTripperFunc(func(_ *http.Request) (*http.Response, error) {
+		transportCalled = true
+		return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+	})
+
+	interceptorCalled := false
+
+	client := httputil.NewClient(
+		httputil.WithClientTransport(customTransport),
+		httputil.WithClientInterceptor(func(next http.RoundTripper) http.RoundTripper {
+			return httputil.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				interceptorCalled = true
+				return next.RoundTrip(req)
+			})
+		}),
+	)
+
+	resp, err := client.Get(t.Context(), "http://localhost/")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck // Test cleanup.
+
+	if !interceptorCalled {
+		t.Error("expected interceptor to be called")
+	}
+
+	if !transportCalled {
+		t.Error("expected custom transport to be called")
+	}
+}
+
 type clientTestCodec struct {
 	contentType string
 	encode      func(data any) (io.Reader, error)
-	decode      func(r io.Reader, into any) error
 }
 
 func (t *clientTestCodec) ContentType() string {
@@ -124,10 +155,6 @@ func (t *clientTestCodec) ContentType() string {
 
 func (t *clientTestCodec) Encode(data any) (io.Reader, error) {
 	return t.encode(data)
-}
-
-func (t *clientTestCodec) Decode(r io.Reader, into any) error {
-	return t.decode(r, into)
 }
 
 type interceptorSpy struct {

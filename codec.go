@@ -16,16 +16,15 @@ import (
 	"github.com/nickbryan/httputil/problem"
 )
 
-// ClientCodec is an interface for encoding and decoding HTTP request and
-// response bodies for the client. It provides methods for encoding request data
-// and decoding response data or errors.
+// ClientCodec is an interface for encoding HTTP request bodies for the client.
+// It provides methods for encoding request data and setting Content-Type and
+// Accept headers. Response decoding is left to the caller using standard
+// library tools like json.NewDecoder.
 type ClientCodec interface {
 	// ContentType returns the Content-Type header value for the client codec.
 	ContentType() string
 	// Encode encodes the given data into a new io.Reader.
 	Encode(data any) (io.Reader, error)
-	// Decode reads and decodes the response body into the provided target struct
-	Decode(r io.Reader, into any) error
 }
 
 // JSONClientCodec provides methods to encode data as JSON or decode data from JSON in
@@ -54,16 +53,6 @@ func (c JSONClientCodec) Encode(data any) (io.Reader, error) {
 	}
 
 	return bytes.NewReader(b), nil
-}
-
-// Decode reads and decodes the JSON body of an HTTP response into the provided
-// target struct or variable.
-func (c JSONClientCodec) Decode(r io.Reader, into any) error {
-	if err := json.NewDecoder(r).Decode(into); err != nil {
-		return fmt.Errorf("decoding response body as JSON: %w", err)
-	}
-
-	return nil
 }
 
 // ServerCodec is an interface for encoding and decoding HTTP requests and responses.

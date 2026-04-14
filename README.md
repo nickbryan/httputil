@@ -1026,7 +1026,9 @@ func setupServer() *httputil.Server {
 ## Client Usage
 
 `httputil.Client` provides a convenient and idiomatic way to make HTTP requests to external services. It wraps the
-standard `net/http.Client` and offers simplified methods for common HTTP operations, along with robust response handling.
+standard `net/http.Client` and offers middleware via interceptors, base path management, request building, and
+codec-based request body encoding. Response handling uses standard `*http.Response`, making it fully compatible with
+the `bodyclose` linter and idiomatic Go patterns.
 
 ### Creating a Client
 
@@ -1039,35 +1041,35 @@ client := httputil.NewClient(
     httputil.WithClientInterceptor(NewLogInterceptor(logger)), // Add middleware.
     httputil.WithClientTimeout(10 * time.Second),
 )
-defer client.Close()
 ```
 
 ### Making Requests
 
-The `Client` provides methods for common HTTP verbs. All methods return a `*httputil.Result` and an `error`.
+The `Client` provides methods for common HTTP verbs. All methods return a `*http.Response` and an `error`.
 
 ```go
 // GET request
 resp, err := client.Get(
-	context.Background(),
-	"/users/123",
+    context.Background(),
+    "/users/123",
     httputil.WithRequestHeader("Authorization", "Bearer token"),
     httputil.WithRequestParam("version", "v1"),
 )
 if err != nil {
-    fmt.Printf("Error making GET request: %v\n", err)
+    return fmt.Errorf("making GET request: %w", err)
 }
+defer resp.Body.Close()
 
 // POST request with a JSON body
-type MyRequest struct {
+type CreateUserRequest struct {
     Name string `json:"name"`
 }
-reqBody := MyRequest{Name: "John Doe"}
 
-resp, err = client.Post(context.Background(), "/users", reqBody)
+resp, err = client.Post(context.Background(), "/users", CreateUserRequest{Name: "John Doe"})
 if err != nil {
-    fmt.Printf("Error making POST request: %v\n", err)
+    return fmt.Errorf("making POST request: %w", err)
 }
+defer resp.Body.Close()
 
 // PUT, PATCH, DELETE methods are similar
 resp, err = client.Put(context.Background(), "/users/123", reqBody)
@@ -1075,33 +1077,67 @@ resp, err = client.Patch(context.Background(), "/users/123", reqBody)
 resp, err = client.Delete(context.Background(), "/users/123")
 ```
 
-### Handling Responses
+### Production Example
 
-The `*httputil.Result` type wraps the `*http.Response` and provides convenient methods for checking status codes and decoding the response body.
+A complete example showing how to build a typed API client function with proper error handling and
+RFC 7807 problem details:
 
 ```go
-type MyResponse struct {
-    Message string `json:"message"`
+// APIError represents an error response from the API, optionally containing
+// RFC 7807 problem details.
+type APIError struct {
+    StatusCode int
+    Problem    *problem.DetailedError
 }
 
-// Check for success or error
-if resp.IsSuccess() {
-    var data MyResponse
-    if err := resp.Decode(&data); err != nil {
-        fmt.Printf("Error decoding success response: %v\n", err)
+func (e *APIError) Error() string {
+    if e.Problem != nil {
+        return "API error " + e.problem.Error()
     }
+    return fmt.Sprintf("API error %d", e.StatusCode)
+}
 
-    fmt.Printf("Success: %s\n", data.Message)
-} else if resp.IsError() {
-    // Decodes as RFC 7807 Problem Details
-    problemDetails, err := resp.AsProblemDetails()
+type User struct {
+    ID   string `json:"id"`
+    Name string `json:"name"`
+}
+
+func GetUser(ctx context.Context, client *httputil.Client, id string) (*User, error) {
+    resp, err := client.Get(ctx, "/users/"+id)
     if err != nil {
-        fmt.Printf("Error decoding problem details: %v\n", err)
+        return nil, fmt.Errorf("requesting user %s: %w", id, err)
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode >= 400 {
+        var pd problem.DetailedError
+        if err := json.NewDecoder(resp.Body).Decode(&pd); err == nil {
+            return nil, fmt.Errorf("decoding user response: %w", err)
+        }
+
+        return nil, &APIError{StatusCode: resp.StatusCode, Problem: &pd}
     }
 
-    fmt.Printf("Error: %s - %s\n", problemDetails.Title, problemDetails.Detail)
-} else {
-    fmt.Printf("Unhandled status code: %d\n", resp.StatusCode)
+    var user User
+    if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+        return nil, fmt.Errorf("decoding user response: %w", err)
+    }
+
+    return &user, nil
+}
+
+// Caller example:
+func handleGetUser(ctx context.Context, client *httputil.Client, logger *slog.Logger) {
+    user, err := GetUser(ctx, client, "123")
+    if err != nil {
+        var apiErr *APIError
+        if errors.As(err, &apiErr) {
+            logger.ErrorCtx(ctx, "API error fetching user", slog.Any("problem", apiErr.Problem))
+        }
+        return
+    }
+
+    logger.Info("fetched user", slog.String("name", user.Name))
 }
 ```
 
@@ -1134,8 +1170,8 @@ func NewLogInterceptor(logger *slog.Logger) httputil.InterceptorFunc {
         return httputil.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
             start := time.Now()
             logger.DebugContext(
-				req.Context(),
-				s"Client request started",
+                req.Context(),
+                "Client request started",
                 slog.String("method", req.Method),
                 slog.String("url", req.URL.String()),
             )
@@ -1143,8 +1179,8 @@ func NewLogInterceptor(logger *slog.Logger) httputil.InterceptorFunc {
             resp, err := next.RoundTrip(req)
 
             logger.InfoContext(
-				req.Context(),
-				"Client request completed",
+                req.Context(),
+                "Client request completed",
                 slog.String("method", req.Method),
                 slog.String("url", req.URL.String()),
                 slog.Int("status", resp.StatusCode),
@@ -1162,21 +1198,22 @@ func NewLogInterceptor(logger *slog.Logger) httputil.InterceptorFunc {
 
 `httputil.NewClient` accepts `ClientOption`s to customize the underlying `http.Client`:
 
-| Option                     | Default                 | Description                                                     |
-| -------------------------- | ----------------------- | --------------------------------------------------------------- |
-| `WithClientBasePath`       | `""`                    | Sets a base URL path for all requests                           |
-| `WithClientCodec`          | JSON                    | Sets the codec for request/response serialization               |
-| `WithClientCookieJar`      | nil                     | Sets the `http.CookieJar` for the client                        |
-| `WithClientInterceptor`    | `http.DefaultTransport` | Wraps the `http.DefaultTransport` to provide client middleware. |
-| `WithClientTimeout`        | 60s                     | Sets the total timeout for requests                             |
-| `WithClientRedirectPolicy` | nil                     | Sets the redirect policy for the client                         |
+| Option                     | Default                 | Description                                                      |
+|----------------------------|-------------------------|------------------------------------------------------------------|
+| `WithClientBasePath`       | `""`                    | Sets a base URL path for all requests                            |
+| `WithClientCodec`          | JSON                    | Sets the codec for request body encoding and Content-Type/Accept |
+| `WithClientCookieJar`      | nil                     | Sets the `http.CookieJar` for the client                         |
+| `WithClientTransport`      | `http.DefaultTransport` | Sets the base transport for the client                           |
+| `WithClientInterceptor`    | none                    | Wraps the base transport to provide client middleware            |
+| `WithClientTimeout`        | 60s                     | Sets the total timeout for requests                              |
+| `WithClientRedirectPolicy` | nil                     | Sets the redirect policy for the client                          |
 
 ### Request Options
 
 Request-specific options can be passed to individual HTTP method calls:
 
 | Option               | Description                                  |
-| -------------------- | -------------------------------------------- |
+|----------------------|----------------------------------------------|
 | `WithRequestHeader`  | Adds a single HTTP header to the request     |
 | `WithRequestHeaders` | Adds multiple HTTP headers from a map        |
 | `WithRequestParam`   | Adds a single query parameter to the request |
