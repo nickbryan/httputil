@@ -17,10 +17,11 @@ type (
 	clientOptions struct {
 		basePath      string
 		checkRedirect RedirectPolicy
-		codec         ClientCodec
+		encoder       ClientEncoder
+		interceptors  []InterceptorFunc
 		jar           http.CookieJar
+		rootTransport http.RoundTripper
 		timeout       time.Duration
-		transport     http.RoundTripper
 	}
 )
 
@@ -32,10 +33,11 @@ func WithClientBasePath(basePath string) ClientOption {
 	}
 }
 
-// WithClientCodec sets the ClientCodec that the Client will use when making requests.
-func WithClientCodec(codec ClientCodec) ClientOption {
+// WithClientEncoder sets the ClientEncoder that the Client will use for
+// encoding request bodies and setting the Content-Type header.
+func WithClientEncoder(encoder ClientEncoder) ClientOption {
 	return func(co *clientOptions) {
-		co.codec = codec
+		co.encoder = encoder
 	}
 }
 
@@ -46,11 +48,37 @@ func WithClientCookieJar(jar http.CookieJar) ClientOption {
 	}
 }
 
-// WithClientInterceptor adds an InterceptorFunc to the Client. Each InterceptorFunc
-// will be executed in the order that it was added.
-func WithClientInterceptor(intercept InterceptorFunc) ClientOption {
+// WithClientTransport sets the base transport for the Client. By default, the
+// Client uses http.DefaultTransport. Interceptors added via
+// WithClientInterceptor will wrap this transport.
+func WithClientTransport(transport http.RoundTripper) ClientOption {
 	return func(co *clientOptions) {
-		co.transport = intercept(co.transport)
+		co.rootTransport = transport
+	}
+}
+
+// WithClientInterceptor adds InterceptorFuncs to the Client. Nil interceptors
+// are skipped.
+//
+// Ordering:
+//   - Within a single call, interceptors run in the order they are given:
+//     WithClientInterceptor(a, b, c) runs a first on each request, then b,
+//     then c, then the underlying transport.
+//   - Across multiple WithClientInterceptor options, earlier-added
+//     interceptors run first: WithClientInterceptor(a), WithClientInterceptor(b)
+//     runs a first, then b, then the underlying transport.
+//
+// The across-call ordering is FIFO because client interceptors form a single
+// flat chain on one Client. This differs from [EndpointGroup.WithMiddleware],
+// whose across-call ordering is LIFO so that outer EndpointGroup compositions
+// naturally wrap inner ones.
+func WithClientInterceptor(interceptors ...InterceptorFunc) ClientOption {
+	return func(co *clientOptions) {
+		for _, intercept := range interceptors {
+			if intercept != nil {
+				co.interceptors = append(co.interceptors, intercept)
+			}
+		}
 	}
 }
 
@@ -72,7 +100,7 @@ func WithClientRedirectPolicy(policy RedirectPolicy) ClientOption {
 
 // mapClientOptionsToDefaults applies the provided ClientOption to a default
 // clientOptions struct.
-func mapClientOptionsToDefaults(rootTransport http.RoundTripper, opts []ClientOption) clientOptions {
+func mapClientOptionsToDefaults(opts []ClientOption) clientOptions {
 	const (
 		// This value aligns with the server's read timeout, providing a reasonable
 		// balance between waiting for slow server responses and preventing the client
@@ -83,14 +111,22 @@ func mapClientOptionsToDefaults(rootTransport http.RoundTripper, opts []ClientOp
 	defaultOpts := clientOptions{
 		basePath:      "",
 		checkRedirect: nil,
-		codec:         NewJSONClientCodec(),
+		encoder:       NewJSONClientEncoder(),
+		interceptors:  nil,
 		jar:           nil,
+		rootTransport: nil,
 		timeout:       defaultTimeout,
-		transport:     rootTransport,
 	}
 
 	for _, opt := range opts {
 		opt(&defaultOpts)
+	}
+
+	// Coerce a nil root transport to http.DefaultTransport so that interceptors
+	// always receive a non-nil next RoundTripper to call. This handles both the
+	// zero-value default and an explicit WithClientTransport(nil).
+	if defaultOpts.rootTransport == nil {
+		defaultOpts.rootTransport = http.DefaultTransport
 	}
 
 	return defaultOpts

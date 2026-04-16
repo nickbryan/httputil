@@ -22,93 +22,16 @@ import (
 	"github.com/nickbryan/httputil/problem"
 )
 
-func TestJSONClientCodec_ContentType(t *testing.T) {
+func TestJSONClientEncoder_ContentType(t *testing.T) {
 	t.Parallel()
 
-	codec := httputil.NewJSONClientCodec()
-	if contentType := codec.ContentType(); contentType != "application/json; charset=utf-8" {
+	encoder := httputil.NewJSONClientEncoder()
+	if contentType := encoder.ContentType(); contentType != "application/json; charset=utf-8" {
 		t.Errorf("ContentType() = %q, want %q", contentType, "application/json; charset=utf-8")
 	}
 }
 
-func TestJSONClientCodec_Decode(t *testing.T) {
-	t.Parallel()
-
-	type testStruct struct {
-		Foo string `json:"foo"`
-	}
-
-	testCases := map[string]struct {
-		reader    io.Reader
-		into      any
-		wantErr   bool
-		wantErrAs error
-		wantPanic bool
-		wantVal   any
-	}{
-		"panics when reader is nil": {
-			reader:    nil,
-			into:      &testStruct{},
-			wantPanic: true,
-		},
-		"returns an error when into is nil and reader is not empty": {
-			reader:  strings.NewReader(`{"foo":"bar"}`),
-			into:    nil,
-			wantErr: true,
-		},
-		"returns an error for malformed JSON": {
-			reader:  strings.NewReader("foo"),
-			into:    &testStruct{},
-			wantErr: true,
-		},
-		"decodes valid JSON": {
-			reader:  strings.NewReader(`{"foo":"bar"}`),
-			into:    &testStruct{},
-			wantErr: false,
-			wantVal: &testStruct{Foo: "bar"},
-		},
-		"returns io.EOF for empty reader": {
-			reader:    strings.NewReader(""),
-			into:      &testStruct{},
-			wantErr:   true,
-			wantErrAs: io.EOF,
-		},
-	}
-
-	for name, tc := range testCases {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			codec := httputil.NewJSONClientCodec()
-
-			if tc.wantPanic {
-				defer func() {
-					if r := recover(); r == nil {
-						t.Error("expected a panic")
-					}
-				}()
-			}
-
-			err := codec.Decode(tc.reader, tc.into)
-
-			if (err != nil) != tc.wantErr {
-				t.Fatalf("Decode() error = %v, wantErr %v", err, tc.wantErr)
-			}
-
-			if tc.wantErrAs != nil && !errors.Is(err, tc.wantErrAs) {
-				t.Fatalf("Decode() error = %v, wantErrAs %v", err, tc.wantErrAs)
-			}
-
-			if !tc.wantErr {
-				if diff := cmp.Diff(tc.wantVal, tc.into); diff != "" {
-					t.Errorf("Decode() into mismatch (-want +got):\n%s", diff)
-				}
-			}
-		})
-	}
-}
-
-func TestJSONClientCodec_Encode(t *testing.T) {
+func TestJSONClientEncoder_Encode(t *testing.T) {
 	t.Parallel()
 
 	testCases := map[string]struct {
@@ -134,8 +57,8 @@ func TestJSONClientCodec_Encode(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			codec := httputil.NewJSONClientCodec()
-			reader, err := codec.Encode(tc.data)
+			encoder := httputil.NewJSONClientEncoder()
+			reader, err := encoder.Encode(tc.data)
 
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("Encode() error = %v, wantErr %v", err, tc.wantErr)

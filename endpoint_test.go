@@ -276,6 +276,107 @@ func TestEndpointGroup_WithMiddleware(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("variadic middlewares run in the order they are given", func(t *testing.T) {
+		t.Parallel()
+
+		var calls []string
+
+		makeMiddleware := func(name string) httputil.MiddlewareFunc {
+			return func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					calls = append(calls, name+"-before")
+
+					next.ServeHTTP(w, r)
+
+					calls = append(calls, name+"-after")
+				})
+			}
+		}
+
+		endpoints := httputil.EndpointGroup{{
+			Method:  http.MethodGet,
+			Path:    "/users",
+			Handler: http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}),
+		}}.WithMiddleware(
+			makeMiddleware("first"),
+			makeMiddleware("second"),
+			makeMiddleware("third"),
+		)
+
+		if len(endpoints) != 1 {
+			t.Fatalf("expected len(endpoints) = 1, got: %d", len(endpoints))
+		}
+
+		endpoints[0].Handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/users", nil))
+
+		want := []string{
+			"first-before", "second-before", "third-before",
+			"third-after", "second-after", "first-after",
+		}
+		if diff := cmp.Diff(want, calls); diff != "" {
+			t.Errorf("middleware order mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("chained calls wrap so the latest call is outermost", func(t *testing.T) {
+		t.Parallel()
+
+		var calls []string
+
+		makeMiddleware := func(name string) httputil.MiddlewareFunc {
+			return func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					calls = append(calls, name+"-before")
+
+					next.ServeHTTP(w, r)
+
+					calls = append(calls, name+"-after")
+				})
+			}
+		}
+
+		endpoints := httputil.EndpointGroup{{
+			Method:  http.MethodGet,
+			Path:    "/users",
+			Handler: http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}),
+		}}.
+			WithMiddleware(makeMiddleware("inner")).
+			WithMiddleware(makeMiddleware("outer"))
+
+		endpoints[0].Handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/users", nil))
+
+		want := []string{"outer-before", "inner-before", "inner-after", "outer-after"}
+		if diff := cmp.Diff(want, calls); diff != "" {
+			t.Errorf("middleware order mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("nil middlewares within a variadic call are skipped", func(t *testing.T) {
+		t.Parallel()
+
+		called := false
+
+		mw := httputil.MiddlewareFunc(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				called = true
+
+				next.ServeHTTP(w, r)
+			})
+		})
+
+		endpoints := httputil.EndpointGroup{{
+			Method:  http.MethodGet,
+			Path:    "/users",
+			Handler: http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}),
+		}}.WithMiddleware(nil, mw, nil)
+
+		endpoints[0].Handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/users", nil))
+
+		if !called {
+			t.Error("expected non-nil middleware to be called")
+		}
+	})
 }
 
 func TestEndpointGroup_WithPrefix(t *testing.T) {

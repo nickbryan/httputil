@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -49,7 +50,7 @@ func TestClientOptionsDefaults(t *testing.T) {
 	}
 
 	if httpClient.Transport != http.DefaultTransport {
-		t.Error("expected transport to be http.DefaultTransport")
+		t.Errorf("expected transport to be http.DefaultTransport, got: %T", httpClient.Transport)
 	}
 }
 
@@ -65,10 +66,9 @@ func TestClientOptions(t *testing.T) {
 
 	client := httputil.NewClient(
 		httputil.WithClientBasePath("https://example.com"),
-		httputil.WithClientCodec(&clientTestCodec{
+		httputil.WithClientEncoder(&clientTestEncoder{
 			contentType: "test/test",
 			encode:      func(_ any) (io.Reader, error) { return nil, nil },
-			decode:      func(_ io.Reader, _ any) error { return nil },
 		}),
 		httputil.WithClientTimeout(10*time.Second),
 		httputil.WithClientCookieJar(jar),
@@ -81,10 +81,16 @@ func TestClientOptions(t *testing.T) {
 	)
 	httpClient := client.Client()
 
-	_, err = client.Get(t.Context(), "/")
+	resp, err := client.Get(t.Context(), "/")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
+	t.Cleanup(func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("closing response body: %s", err)
+		}
+	})
 
 	if client.BasePath() != "https://example.com" {
 		t.Errorf("expected base path to be https://example.com, got: %s", client.BasePath())
@@ -92,11 +98,6 @@ func TestClientOptions(t *testing.T) {
 
 	if !spy.roundtripCalled {
 		t.Error("expected roundtrip to be called on the transport")
-	}
-
-	err = client.Close()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
 	}
 
 	if httpClient.Timeout != 10*time.Second {
@@ -112,22 +113,237 @@ func TestClientOptions(t *testing.T) {
 	}
 }
 
-type clientTestCodec struct {
-	contentType string
-	encode      func(data any) (io.Reader, error)
-	decode      func(r io.Reader, into any) error
+func TestWithClientTransport(t *testing.T) {
+	t.Parallel()
+
+	transportCalled := false
+
+	customTransport := httputil.RoundTripperFunc(func(_ *http.Request) (*http.Response, error) {
+		transportCalled = true
+		return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+	})
+
+	interceptorCalled := false
+
+	client := httputil.NewClient(
+		httputil.WithClientTransport(customTransport),
+		httputil.WithClientInterceptor(func(next http.RoundTripper) http.RoundTripper {
+			return httputil.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				interceptorCalled = true
+				return next.RoundTrip(req)
+			})
+		}),
+	)
+
+	resp, err := client.Get(t.Context(), "http://localhost/")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	t.Cleanup(func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("closing response body: %s", err)
+		}
+	})
+
+	if !interceptorCalled {
+		t.Error("expected interceptor to be called")
+	}
+
+	if !transportCalled {
+		t.Error("expected custom transport to be called")
+	}
 }
 
-func (t *clientTestCodec) ContentType() string {
+func TestWithClientInterceptor(t *testing.T) {
+	t.Parallel()
+
+	t.Run("chains with default transport when none is configured", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		t.Cleanup(server.Close)
+
+		interceptorCalled := false
+
+		client := httputil.NewClient(
+			httputil.WithClientBasePath(server.URL),
+			httputil.WithClientInterceptor(func(next http.RoundTripper) http.RoundTripper {
+				return httputil.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+					interceptorCalled = true
+					return next.RoundTrip(req)
+				})
+			}),
+		)
+
+		resp, err := client.Get(t.Context(), "/")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		t.Cleanup(func() {
+			if err := resp.Body.Close(); err != nil {
+				t.Errorf("closing response body: %s", err)
+			}
+		})
+
+		if !interceptorCalled {
+			t.Error("expected interceptor to be called")
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected status code %d, got %d", http.StatusOK, resp.StatusCode)
+		}
+	})
+
+	t.Run("interceptors run in the order they are added across calls", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		t.Cleanup(server.Close)
+
+		var calls []string
+
+		makeInterceptor := func(name string) httputil.InterceptorFunc {
+			return func(next http.RoundTripper) http.RoundTripper {
+				return httputil.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+					calls = append(calls, name+"-before")
+					resp, err := next.RoundTrip(req)
+
+					calls = append(calls, name+"-after")
+
+					return resp, err
+				})
+			}
+		}
+
+		client := httputil.NewClient(
+			httputil.WithClientBasePath(server.URL),
+			httputil.WithClientInterceptor(makeInterceptor("first")),
+			httputil.WithClientInterceptor(makeInterceptor("second")),
+		)
+
+		resp, err := client.Get(t.Context(), "/")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		t.Cleanup(func() {
+			if err := resp.Body.Close(); err != nil {
+				t.Errorf("closing response body: %s", err)
+			}
+		})
+
+		want := []string{"first-before", "second-before", "second-after", "first-after"}
+		if !slices.Equal(calls, want) {
+			t.Errorf("interceptor order mismatch\nwant: %v\n got: %v", want, calls)
+		}
+	})
+
+	t.Run("variadic interceptors run in the order they are given", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		t.Cleanup(server.Close)
+
+		var calls []string
+
+		makeInterceptor := func(name string) httputil.InterceptorFunc {
+			return func(next http.RoundTripper) http.RoundTripper {
+				return httputil.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+					calls = append(calls, name+"-before")
+					resp, err := next.RoundTrip(req)
+
+					calls = append(calls, name+"-after")
+
+					return resp, err
+				})
+			}
+		}
+
+		client := httputil.NewClient(
+			httputil.WithClientBasePath(server.URL),
+			httputil.WithClientInterceptor(
+				makeInterceptor("first"),
+				makeInterceptor("second"),
+				makeInterceptor("third"),
+			),
+		)
+
+		resp, err := client.Get(t.Context(), "/")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		t.Cleanup(func() {
+			if err := resp.Body.Close(); err != nil {
+				t.Errorf("closing response body: %s", err)
+			}
+		})
+
+		want := []string{
+			"first-before", "second-before", "third-before",
+			"third-after", "second-after", "first-after",
+		}
+		if !slices.Equal(calls, want) {
+			t.Errorf("interceptor order mismatch\nwant: %v\n got: %v", want, calls)
+		}
+	})
+
+	t.Run("nil interceptors are skipped", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		t.Cleanup(server.Close)
+
+		called := false
+
+		client := httputil.NewClient(
+			httputil.WithClientBasePath(server.URL),
+			httputil.WithClientInterceptor(nil, func(next http.RoundTripper) http.RoundTripper {
+				return httputil.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+					called = true
+					return next.RoundTrip(req)
+				})
+			}, nil),
+		)
+
+		resp, err := client.Get(t.Context(), "/")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		t.Cleanup(func() {
+			if err := resp.Body.Close(); err != nil {
+				t.Errorf("closing response body: %s", err)
+			}
+		})
+
+		if !called {
+			t.Error("expected non-nil interceptor to be called")
+		}
+	})
+}
+
+type clientTestEncoder struct {
+	contentType string
+	encode      func(data any) (io.Reader, error)
+}
+
+func (t *clientTestEncoder) ContentType() string {
 	return t.contentType
 }
 
-func (t *clientTestCodec) Encode(data any) (io.Reader, error) {
+func (t *clientTestEncoder) Encode(data any) (io.Reader, error) {
 	return t.encode(data)
-}
-
-func (t *clientTestCodec) Decode(r io.Reader, into any) error {
-	return t.decode(r, into)
 }
 
 type interceptorSpy struct {

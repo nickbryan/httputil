@@ -2,6 +2,7 @@ package httputil
 
 import (
 	"net/http"
+	"slices"
 )
 
 type (
@@ -80,16 +81,32 @@ func (eg EndpointGroup) WithGuard(g Guard) EndpointGroup {
 	})
 }
 
-// WithMiddleware applies the given middleware to all provided endpoints. It
-// returns a new slice of EndpointGroup with the middleware applied to their
-// handlers. The original endpoints are not modified.
-func (eg EndpointGroup) WithMiddleware(middleware MiddlewareFunc) EndpointGroup {
-	if middleware == nil {
-		return eg
-	}
-
+// WithMiddleware applies the given middlewares to all provided endpoints. It
+// returns a new EndpointGroup with the middlewares applied to their handlers.
+// The original endpoints are not modified. Nil middlewares are skipped.
+//
+// Ordering:
+//   - Within a single call, middlewares run in the order they are given:
+//     eg.WithMiddleware(a, b, c) runs a first on each request, then b, then c,
+//     then the handler.
+//   - Across calls, each call wraps the existing handler, so the most recent
+//     call is outermost: eg.WithMiddleware(a).WithMiddleware(b) runs b first,
+//     then a, then the handler.
+//
+// The across-call ordering supports hierarchical composition: when an outer
+// EndpointGroup is built from inner ones (for example, by spreading inner
+// endpoints into a new group and calling WithMiddleware on the result), the
+// outer call's middleware wraps everything from the inner calls. This differs
+// from [WithClientInterceptor], whose across-call ordering is FIFO because
+// client interceptors form a single flat chain rather than a nested
+// composition.
+func (eg EndpointGroup) WithMiddleware(middlewares ...MiddlewareFunc) EndpointGroup {
 	return cloneAndUpdate(eg, func(e *Endpoint) {
-		e.Handler = middleware(e.Handler)
+		for _, m := range slices.Backward(middlewares) {
+			if m != nil {
+				e.Handler = m(e.Handler)
+			}
+		}
 	})
 }
 

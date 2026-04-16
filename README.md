@@ -41,7 +41,7 @@ handling, error management, and more.
 - [Testing](#testing)
 - [Examples](#examples)
   - [Basic JSON Handler](#basic-json-handler)
-  - [JSON Handler with Request/Response](#json-handler-requestresponse)
+  - [JSON Handler with Request/Response](#json-handler-with-requestresponse)
   - [JSON Handler with Path Parameters](#json-handler-with-path-parameters)
   - [Basic net/http Handler](#basic-nethttp-handler)
   - [HTML Handler with Form Data](#html-handler-with-form-data)
@@ -474,7 +474,31 @@ endpoints := httputil.EndpointGroup{
 
 // Apply middleware to all endpoints in the group
 server.Register(endpoints.WithMiddleware(loggingMiddleware(logger))...)
+
+// Or apply several middlewares in one call. They run in the order given:
+// loggingMiddleware runs first, then authMiddleware, then the handler.
+server.Register(endpoints.WithMiddleware(
+    loggingMiddleware(logger),
+    authMiddleware(authenticator),
+)...)
 ```
+
+Within a single `WithMiddleware` call, middlewares run in the order given (first arg runs first). Across chained
+calls, the most recent call wraps the previous one, so it runs first — this lets you compose nested groups so an outer
+group's middleware wraps everything from inner groups:
+
+```go
+admin := adminEndpoints.WithMiddleware(authMiddleware(authenticator)) // auth on admin only
+all := append(httputil.EndpointGroup{}, admin...)
+all = append(all, publicEndpoints...)
+
+// loggingMiddleware wraps everything; authMiddleware still only runs on admin endpoints.
+// On admin requests: log -> auth -> handler. On public requests: log -> handler.
+server.Register(all.WithMiddleware(loggingMiddleware(logger))...)
+```
+
+Note that this LIFO across-call ordering is intentionally different from `WithClientInterceptor`, which uses FIFO across
+calls because client interceptors form a flat chain rather than a nested composition.
 
 ## Guards
 
@@ -656,7 +680,7 @@ func main() {
 
     server.Serve(context.Background())
 
-    // curl -iS -X POST -H "Content-Type: application/json" -d '{"name": "Nick"}' localhost:8080/greetings                                                                               7 ↵
+    // curl -iS -X POST -H "Content-Type: application/json" -d '{"name": "Nick"}' localhost:8080/greetings
     // HTTP/1.1 201 Created
     // Content-Type: application/json
     // Date: Sat, 29 Mar 2025 17:12:40 GMT
@@ -1026,7 +1050,9 @@ func setupServer() *httputil.Server {
 ## Client Usage
 
 `httputil.Client` provides a convenient and idiomatic way to make HTTP requests to external services. It wraps the
-standard `net/http.Client` and offers simplified methods for common HTTP operations, along with robust response handling.
+standard `net/http.Client` and offers middleware via interceptors, base path management, request building, and 
+request body encoding. Response handling uses standard `*http.Response`, making it fully compatible with
+the `bodyclose` linter and idiomatic Go patterns.
 
 ### Creating a Client
 
@@ -1039,35 +1065,37 @@ client := httputil.NewClient(
     httputil.WithClientInterceptor(NewLogInterceptor(logger)), // Add middleware.
     httputil.WithClientTimeout(10 * time.Second),
 )
-defer client.Close()
 ```
 
 ### Making Requests
 
-The `Client` provides methods for common HTTP verbs. All methods return a `*httputil.Result` and an `error`.
+The `Client` provides methods for common HTTP verbs. All methods return a `*http.Response` and an `error`.
 
 ```go
 // GET request
 resp, err := client.Get(
-	context.Background(),
-	"/users/123",
+    context.Background(),
+    "/users/123",
     httputil.WithRequestHeader("Authorization", "Bearer token"),
     httputil.WithRequestParam("version", "v1"),
 )
 if err != nil {
-    fmt.Printf("Error making GET request: %v\n", err)
+    return fmt.Errorf("making GET request: %w", err)
 }
+defer resp.Body.Close()
 
 // POST request with a JSON body
-type MyRequest struct {
+type CreateUserRequest struct {
     Name string `json:"name"`
 }
-reqBody := MyRequest{Name: "John Doe"}
+
+reqBody := CreateUserRequest{Name: "John Doe"}
 
 resp, err = client.Post(context.Background(), "/users", reqBody)
 if err != nil {
-    fmt.Printf("Error making POST request: %v\n", err)
+    return fmt.Errorf("making POST request: %w", err)
 }
+defer resp.Body.Close()
 
 // PUT, PATCH, DELETE methods are similar
 resp, err = client.Put(context.Background(), "/users/123", reqBody)
@@ -1075,33 +1103,93 @@ resp, err = client.Patch(context.Background(), "/users/123", reqBody)
 resp, err = client.Delete(context.Background(), "/users/123")
 ```
 
-### Handling Responses
+The configured encoder (default JSON) is applied to request bodies only — it sets
+`Content-Type` and encodes the body passed to `Post`/`Put`/`Patch`. Set `Accept`
+yourself with `WithRequestHeader` when the server needs it. Response decoding is
+left to the caller because the response often depends on the status code (e.g.
+your type on 2xx, an RFC 7807 problem document on 4xx/5xx), which is knowledge a
+generic codec cannot capture cleanly.
 
-The `*httputil.Result` type wraps the `*http.Response` and provides convenient methods for checking status codes and decoding the response body.
+### Production Example
+
+A complete example showing how to build a typed API client function with proper error handling and
+RFC 7807 problem details:
 
 ```go
-type MyResponse struct {
-    Message string `json:"message"`
+package apiclient
+
+import (
+    "context"
+    "encoding/json"
+    "errors"
+    "fmt"
+    "log/slog"
+
+    "github.com/nickbryan/httputil"
+    "github.com/nickbryan/httputil/problem"
+)
+
+// APIError represents an error response from the API containing RFC 7807 problem details to be used in the handler.
+type APIError struct {
+    Problem *problem.DetailedError
 }
 
-// Check for success or error
-if resp.IsSuccess() {
-    var data MyResponse
-    if err := resp.Decode(&data); err != nil {
-        fmt.Printf("Error decoding success response: %v\n", err)
+func (e *APIError) Error() string {
+    if e.Problem == nil {
+        return "API error"
     }
 
-    fmt.Printf("Success: %s\n", data.Message)
-} else if resp.IsError() {
-    // Decodes as RFC 7807 Problem Details
-    problemDetails, err := resp.AsProblemDetails()
+    return "API error: " + e.Problem.Error()
+}
+
+type User struct {
+    ID   string `json:"id"`
+    Name string `json:"name"`
+}
+
+func GetUser(ctx context.Context, client *httputil.Client, id string) (user *User, err error) {
+    resp, err := client.Get(ctx, "/users/"+id)
     if err != nil {
-        fmt.Printf("Error decoding problem details: %v\n", err)
+        return nil, fmt.Errorf("requesting user %s: %w", id, err)
+    }
+    defer func() {
+        if e := resp.Body.Close(); e != nil {
+            err = errors.Join(err, fmt.Errorf("closing response body: %w", e))
+        }
+    }()
+
+    if resp.StatusCode >= 400 {
+        var pd problem.DetailedError
+        if err := json.NewDecoder(resp.Body).Decode(&pd); err != nil {
+            return nil, fmt.Errorf("decoding problem response: %w", err)
+        }
+
+        return nil, &APIError{Problem: &pd}
     }
 
-    fmt.Printf("Error: %s - %s\n", problemDetails.Title, problemDetails.Detail)
-} else {
-    fmt.Printf("Unhandled status code: %d\n", resp.StatusCode)
+    user = &User{}
+    if err := json.NewDecoder(resp.Body).Decode(user); err != nil {
+        return nil, fmt.Errorf("decoding user response: %w", err)
+    }
+
+    return user, nil
+}
+
+// Caller example:
+func handleGetUser(ctx context.Context, client *httputil.Client, logger *slog.Logger) {
+    user, err := GetUser(ctx, client, "123")
+    if err != nil {
+        var apiErr *APIError
+        if errors.As(err, &apiErr) {
+            logger.ErrorContext(ctx, "API error fetching user", slog.Any("problem", apiErr.Problem))
+            return
+        }
+
+        logger.ErrorContext(ctx, "Unexpected error fetching user", slog.Any("error", err))
+        return
+    }
+
+    logger.Info("fetched user", slog.String("name", user.Name))
 }
 ```
 
@@ -1117,7 +1205,13 @@ type InterceptorFunc func(next http.RoundTripper) http.RoundTripper
 
 Each interceptor receives the "next" RoundTripper and returns a new RoundTripper that calls next.RoundTrip(req) when
 appropriate. Interceptors are applied by wrapping the base transport so they form a chain: the first interceptor you
-provide becomes the outermost wrapper.
+provide becomes the outermost wrapper. `WithClientInterceptor` is variadic and may be called multiple times; in either
+case the order is the same — earlier interceptors run first on each request, then later ones, then the underlying
+transport.
+
+This FIFO across-call ordering is intentionally different from `EndpointGroup.WithMiddleware`, which uses LIFO across
+calls so that outer endpoint groups wrap inner ones. Client interceptors don't have a nested-group concept — they're a
+single flat chain on one Client — so listing them in invocation order reads more naturally.
 
 Basic rules and recommendations:
 
@@ -1134,23 +1228,26 @@ func NewLogInterceptor(logger *slog.Logger) httputil.InterceptorFunc {
         return httputil.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
             start := time.Now()
             logger.DebugContext(
-				req.Context(),
-				s"Client request started",
+                req.Context(),
+                "Client request started",
                 slog.String("method", req.Method),
                 slog.String("url", req.URL.String()),
             )
 
             resp, err := next.RoundTrip(req)
 
-            logger.InfoContext(
-				req.Context(),
-				"Client request completed",
+            attrs := []slog.Attr{
                 slog.String("method", req.Method),
                 slog.String("url", req.URL.String()),
-                slog.Int("status", resp.StatusCode),
                 slog.Duration("duration", time.Since(start)),
-                slog.Any("error", err),
-            )
+            }
+            if resp != nil {
+                attrs = append(attrs, slog.Int("status", resp.StatusCode))
+            }
+            if err != nil {
+                attrs = append(attrs, slog.Any("error", err))
+            }
+            logger.InfoContext(req.Context(), "Client request completed", attrs...)
 
             return resp, err
         })
@@ -1162,21 +1259,22 @@ func NewLogInterceptor(logger *slog.Logger) httputil.InterceptorFunc {
 
 `httputil.NewClient` accepts `ClientOption`s to customize the underlying `http.Client`:
 
-| Option                     | Default                 | Description                                                     |
-| -------------------------- | ----------------------- | --------------------------------------------------------------- |
-| `WithClientBasePath`       | `""`                    | Sets a base URL path for all requests                           |
-| `WithClientCodec`          | JSON                    | Sets the codec for request/response serialization               |
-| `WithClientCookieJar`      | nil                     | Sets the `http.CookieJar` for the client                        |
-| `WithClientInterceptor`    | `http.DefaultTransport` | Wraps the `http.DefaultTransport` to provide client middleware. |
-| `WithClientTimeout`        | 60s                     | Sets the total timeout for requests                             |
-| `WithClientRedirectPolicy` | nil                     | Sets the redirect policy for the client                         |
+| Option                     | Default                 | Description                                                        |
+|----------------------------|-------------------------|--------------------------------------------------------------------|
+| `WithClientBasePath`       | `""`                    | Sets a base URL path for all requests                              |
+| `WithClientEncoder`        | JSON                    | Sets the encoder for request body encoding and Content-Type        |
+| `WithClientCookieJar`      | nil                     | Sets the `http.CookieJar` for the client                           |
+| `WithClientTransport`      | `http.DefaultTransport` | Sets the base transport for the client                             |
+| `WithClientInterceptor`    | none                    | Wraps the base transport to provide client middleware              |
+| `WithClientTimeout`        | 60s                     | Sets the total timeout for requests                                |
+| `WithClientRedirectPolicy` | nil                     | Sets the redirect policy for the client                            |
 
 ### Request Options
 
 Request-specific options can be passed to individual HTTP method calls:
 
 | Option               | Description                                  |
-| -------------------- | -------------------------------------------- |
+|----------------------|----------------------------------------------|
 | `WithRequestHeader`  | Adds a single HTTP header to the request     |
 | `WithRequestHeaders` | Adds multiple HTTP headers from a map        |
 | `WithRequestParam`   | Adds a single query parameter to the request |

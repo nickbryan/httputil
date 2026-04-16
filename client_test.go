@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/nickbryan/httputil"
-	"github.com/nickbryan/httputil/problem"
 )
 
 var (
@@ -108,21 +107,19 @@ func TestClient(t *testing.T) {
 
 				client := newSuccessServerClient(t)
 
-				res, err := callClientMethod(t, client, testCase.method, httputil.WithRequestParam("code", strconv.Itoa(testCase.code)))
+				resp, err := callClientMethod(t, client, testCase.method, httputil.WithRequestParam("code", strconv.Itoa(testCase.code)))
 				if err != nil {
 					t.Fatalf("unexpected error from client call: %s", err.Error())
 				}
 
-				if res.StatusCode != testCase.code {
-					t.Errorf("unexpected status code, want: %d, got: %d", testCase.code, res.StatusCode)
-				}
+				t.Cleanup(func() {
+					if err := resp.Body.Close(); err != nil {
+						t.Errorf("closing response body: %s", err)
+					}
+				})
 
-				if !res.IsSuccess() {
-					t.Error("unexpected IsSuccess() result, want: true, got: false")
-				}
-
-				if res.IsError() {
-					t.Error("unexpected IsError() result, want: false, got: true")
+				if resp.StatusCode != testCase.code {
+					t.Errorf("unexpected status code, want: %d, got: %d", testCase.code, resp.StatusCode)
 				}
 
 				if testCase.code == http.StatusNoContent {
@@ -133,7 +130,7 @@ func TestClient(t *testing.T) {
 					Status string `json:"status"`
 				}
 
-				if err = res.Decode(&got); err != nil {
+				if err = json.NewDecoder(resp.Body).Decode(&got); err != nil {
 					t.Errorf("unexpected error decoding response for status %d: %s", testCase.code, err.Error())
 				}
 
@@ -166,34 +163,19 @@ func TestClient(t *testing.T) {
 
 				client := newErrServerClient(t)
 
-				res, err := callClientMethod(t, client, testCase.method, httputil.WithRequestParam("code", strconv.Itoa(testCase.code)))
+				resp, err := callClientMethod(t, client, testCase.method, httputil.WithRequestParam("code", strconv.Itoa(testCase.code)))
 				if err != nil {
 					t.Fatalf("unexpected error from client call: %s", err.Error())
 				}
 
-				if res.StatusCode != testCase.code {
-					t.Errorf("unexpected status code, want: %d, got: %d", testCase.code, res.StatusCode)
-				}
+				t.Cleanup(func() {
+					if err := resp.Body.Close(); err != nil {
+						t.Errorf("closing response body: %s", err)
+					}
+				})
 
-				if res.IsSuccess() {
-					t.Error("unexpected IsSuccess() result, want: false, got: true")
-				}
-
-				if !res.IsError() {
-					t.Error("unexpected IsError() result, want: true, got: false")
-				}
-
-				if testCase.code == http.StatusNoContent {
-					return
-				}
-
-				got, err := res.AsProblemDetails()
-				if err != nil {
-					t.Errorf("unexpected error getting problem details for status %d: %s", testCase.code, err.Error())
-				}
-
-				if got.Status != testCase.code {
-					t.Errorf("unexpected status in problem details, want: %d, got: %d", testCase.code, got.Status)
+				if resp.StatusCode != testCase.code {
+					t.Errorf("unexpected status code, want: %d, got: %d", testCase.code, resp.StatusCode)
 				}
 			})
 		}
@@ -210,7 +192,7 @@ func TestClient(t *testing.T) {
 			t.Run(method, func(t *testing.T) {
 				t.Parallel()
 
-				_, err := callClientMethod(t, client, method)
+				_, err := callClientMethod(t, client, method) //nolint:bodyclose // Error path, no body.
 				if err == nil {
 					t.Fatal("expected error, got nil")
 				}
@@ -237,13 +219,19 @@ func TestClient(t *testing.T) {
 					return
 				}
 
-				res, err := callClientMethodWithBody(t, client, method, bytes.NewBufferString("hello world"))
+				resp, err := callClientMethodWithBody(t, client, method, bytes.NewBufferString("hello world"))
 				if err != nil {
 					t.Fatalf("unexpected error from client call: %s", err.Error())
 				}
 
-				if res.StatusCode != http.StatusOK {
-					t.Errorf("unexpected status code, want: %d, got: %d", http.StatusOK, res.StatusCode)
+				t.Cleanup(func() {
+					if err := resp.Body.Close(); err != nil {
+						t.Errorf("closing response body: %s", err)
+					}
+				})
+
+				if resp.StatusCode != http.StatusOK {
+					t.Errorf("unexpected status code, want: %d, got: %d", http.StatusOK, resp.StatusCode)
 				}
 
 				type response struct {
@@ -252,7 +240,7 @@ func TestClient(t *testing.T) {
 
 				var got response
 
-				err = res.Decode(&got)
+				err = json.NewDecoder(resp.Body).Decode(&got)
 				if err != nil {
 					t.Fatalf("failed to decode response: %s", err.Error())
 				}
@@ -262,6 +250,91 @@ func TestClient(t *testing.T) {
 				}
 			})
 		}
+	})
+
+	t.Run("defaults Content-Type header to codec content type when body is present and not set by caller", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if got := r.Header.Get("Content-Type"); got != "application/json; charset=utf-8" {
+				t.Errorf("expected Content-Type to be application/json; charset=utf-8, got: %s", got)
+			}
+
+			w.WriteHeader(http.StatusOK)
+		}))
+		t.Cleanup(server.Close)
+
+		client := httputil.NewClient(httputil.WithClientBasePath(server.URL))
+
+		type request struct {
+			Message string `json:"message"`
+		}
+
+		resp, err := client.Post(t.Context(), "/", request{Message: "hello"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		t.Cleanup(func() {
+			if err := resp.Body.Close(); err != nil {
+				t.Errorf("closing response body: %s", err)
+			}
+		})
+	})
+
+	t.Run("does not set Content-Type when there is no body", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if got := r.Header.Get("Content-Type"); got != "" {
+				t.Errorf("expected Content-Type to be empty, got: %s", got)
+			}
+
+			w.WriteHeader(http.StatusOK)
+		}))
+		t.Cleanup(server.Close)
+
+		client := httputil.NewClient(httputil.WithClientBasePath(server.URL))
+
+		resp, err := client.Get(t.Context(), "/")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		t.Cleanup(func() {
+			if err := resp.Body.Close(); err != nil {
+				t.Errorf("closing response body: %s", err)
+			}
+		})
+	})
+
+	t.Run("allows caller to override Content-Type header", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if got := r.Header.Get("Content-Type"); got != "text/plain" {
+				t.Errorf("expected Content-Type to be text/plain, got: %s", got)
+			}
+
+			w.WriteHeader(http.StatusOK)
+		}))
+		t.Cleanup(server.Close)
+
+		client := httputil.NewClient(httputil.WithClientBasePath(server.URL))
+
+		resp, err := client.Post(
+			t.Context(), "/", bytes.NewBufferString("hello"),
+			httputil.WithRequestHeader("Content-Type", "text/plain"),
+		)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		t.Cleanup(func() {
+			if err := resp.Body.Close(); err != nil {
+				t.Errorf("closing response body: %s", err)
+			}
+		})
 	})
 
 	t.Run("sends a request with an encoded body to the server", func(t *testing.T) {
@@ -282,13 +355,19 @@ func TestClient(t *testing.T) {
 					Message string `json:"message"`
 				}
 
-				res, err := callClientMethodWithBody(t, client, method, request{Message: "hello world"})
+				resp, err := callClientMethodWithBody(t, client, method, request{Message: "hello world"})
 				if err != nil {
 					t.Fatalf("unexpected error from client call: %s", err.Error())
 				}
 
-				if res.StatusCode != http.StatusOK {
-					t.Errorf("unexpected status code, want: %d, got: %d", http.StatusOK, res.StatusCode)
+				t.Cleanup(func() {
+					if err := resp.Body.Close(); err != nil {
+						t.Errorf("closing response body: %s", err)
+					}
+				})
+
+				if resp.StatusCode != http.StatusOK {
+					t.Errorf("unexpected status code, want: %d, got: %d", http.StatusOK, resp.StatusCode)
 				}
 
 				type response struct {
@@ -297,7 +376,7 @@ func TestClient(t *testing.T) {
 
 				var got response
 
-				err = res.Decode(&got)
+				err = json.NewDecoder(resp.Body).Decode(&got)
 				if err != nil {
 					t.Fatalf("failed to decode response: %s", err.Error())
 				}
@@ -312,13 +391,10 @@ func TestClient(t *testing.T) {
 	t.Run("returns an error when encoding fails", func(t *testing.T) {
 		t.Parallel()
 
-		client := newSuccessServerClient(t, httputil.WithClientCodec(fakeCodec{
+		client := newSuccessServerClient(t, httputil.WithClientEncoder(fakeEncoder{
 			contentType: "application/json",
 			encode: func(any) (io.Reader, error) {
 				return nil, errors.New("failed to encode")
-			},
-			decode: func(io.Reader, any) error {
-				return nil
 			},
 		}))
 
@@ -335,8 +411,8 @@ func TestClient(t *testing.T) {
 					Message string `json:"message"`
 				}
 
-				res, err := callClientMethodWithBody(t, client, method, request{Message: "hello world"})
-				if res != nil {
+				resp, err := callClientMethodWithBody(t, client, method, request{Message: "hello world"}) //nolint:bodyclose // Error path, no body.
+				if resp != nil {
 					t.Error("expected nil response, got non-nil")
 				}
 
@@ -364,7 +440,7 @@ func TestClient(t *testing.T) {
 			t.Run(method, func(t *testing.T) {
 				t.Parallel()
 
-				_, err := callClientMethod(t, client, method)
+				_, err := callClientMethod(t, client, method) //nolint:bodyclose // Error path, no body.
 				if err == nil {
 					t.Fatal("expected error, got nil")
 				}
@@ -374,68 +450,6 @@ func TestClient(t *testing.T) {
 					t.Fatalf("expected error message to contain %q, got: %q", message, err.Error())
 				}
 			})
-		}
-	})
-
-	t.Run("returns an error when decoding fails", func(t *testing.T) {
-		t.Parallel()
-
-		client := newSuccessServerClient(t, httputil.WithClientCodec(fakeCodec{
-			contentType: "application/json",
-			encode: func(any) (io.Reader, error) {
-				return nil, nil
-			},
-			decode: func(io.Reader, any) error {
-				return errors.New("failed to decode")
-			},
-		}))
-
-		res, err := callClientMethod(t, client, http.MethodGet, httputil.WithRequestParam("code", strconv.Itoa(http.StatusOK)))
-		if err != nil {
-			t.Fatalf("unexpected error from client call: %s", err.Error())
-		}
-
-		var got struct {
-			Status string `json:"status"`
-		}
-
-		err = res.Decode(&got)
-		if err == nil {
-			t.Fatal("expected error, got nil")
-		}
-
-		message := "failed to decode"
-		if !strings.Contains(err.Error(), message) {
-			t.Fatalf("expected error message to contain %q, got: %q", message, err.Error())
-		}
-	})
-
-	t.Run("returns an error when decoding problem details fails", func(t *testing.T) {
-		t.Parallel()
-
-		client := newErrServerClient(t, httputil.WithClientCodec(fakeCodec{
-			contentType: "application/problem+json",
-			encode: func(any) (io.Reader, error) {
-				return nil, nil
-			},
-			decode: func(io.Reader, any) error {
-				return errors.New("failed to decode")
-			},
-		}))
-
-		res, err := callClientMethod(t, client, http.MethodGet, httputil.WithRequestParam("code", strconv.Itoa(http.StatusBadRequest)))
-		if err != nil {
-			t.Fatalf("unexpected error from client call: %s", err.Error())
-		}
-
-		_, err = res.AsProblemDetails()
-		if err == nil {
-			t.Fatal("expected error, got nil")
-		}
-
-		message := "failed to decode"
-		if !strings.Contains(err.Error(), message) {
-			t.Fatalf("expected error message to contain %q, got: %q", message, err.Error())
 		}
 	})
 
@@ -456,10 +470,16 @@ func TestClient(t *testing.T) {
 
 		client := httputil.NewClient(httputil.WithClientBasePath(server.URL))
 
-		_, err := client.Get(t.Context(), "/", httputil.WithRequestHeader(headerKey, headerValue))
+		resp, err := client.Get(t.Context(), "/", httputil.WithRequestHeader(headerKey, headerValue))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
+
+		t.Cleanup(func() {
+			if err := resp.Body.Close(); err != nil {
+				t.Errorf("closing response body: %s", err)
+			}
+		})
 	})
 
 	t.Run("WithRequestHeaders", func(t *testing.T) {
@@ -483,10 +503,16 @@ func TestClient(t *testing.T) {
 
 		client := httputil.NewClient(httputil.WithClientBasePath(server.URL))
 
-		_, err := client.Get(t.Context(), "/", httputil.WithRequestHeaders(headers))
+		resp, err := client.Get(t.Context(), "/", httputil.WithRequestHeaders(headers))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
+
+		t.Cleanup(func() {
+			if err := resp.Body.Close(); err != nil {
+				t.Errorf("closing response body: %s", err)
+			}
+		})
 	})
 
 	t.Run("WithRequestParam", func(t *testing.T) {
@@ -506,10 +532,16 @@ func TestClient(t *testing.T) {
 
 		client := httputil.NewClient(httputil.WithClientBasePath(server.URL))
 
-		_, err := client.Get(t.Context(), "/", httputil.WithRequestParam(paramKey, paramValue))
+		resp, err := client.Get(t.Context(), "/", httputil.WithRequestParam(paramKey, paramValue))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
+
+		t.Cleanup(func() {
+			if err := resp.Body.Close(); err != nil {
+				t.Errorf("closing response body: %s", err)
+			}
+		})
 	})
 
 	t.Run("WithRequestParams", func(t *testing.T) {
@@ -533,32 +565,33 @@ func TestClient(t *testing.T) {
 
 		client := httputil.NewClient(httputil.WithClientBasePath(server.URL))
 
-		_, err := client.Get(t.Context(), "/", httputil.WithRequestParams(params))
+		resp, err := client.Get(t.Context(), "/", httputil.WithRequestParams(params))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
+
+		t.Cleanup(func() {
+			if err := resp.Body.Close(); err != nil {
+				t.Errorf("closing response body: %s", err)
+			}
+		})
 	})
 }
 
-type fakeCodec struct {
+type fakeEncoder struct {
 	contentType string
 	encode      func(any) (io.Reader, error)
-	decode      func(io.Reader, any) error
 }
 
-func (f fakeCodec) ContentType() string {
+func (f fakeEncoder) ContentType() string {
 	return f.contentType
 }
 
-func (f fakeCodec) Encode(data any) (io.Reader, error) {
+func (f fakeEncoder) Encode(data any) (io.Reader, error) {
 	return f.encode(data)
 }
 
-func (f fakeCodec) Decode(r io.Reader, into any) error {
-	return f.decode(r, into)
-}
-
-func callClientMethod(t *testing.T, client *httputil.Client, method string, opts ...httputil.RequestOption) (*httputil.Result, error) {
+func callClientMethod(t *testing.T, client *httputil.Client, method string, opts ...httputil.RequestOption) (*http.Response, error) {
 	t.Helper()
 
 	switch method {
@@ -578,7 +611,7 @@ func callClientMethod(t *testing.T, client *httputil.Client, method string, opts
 	}
 }
 
-func callClientMethodWithBody(t *testing.T, client *httputil.Client, method string, body any, opts ...httputil.RequestOption) (*httputil.Result, error) {
+func callClientMethodWithBody(t *testing.T, client *httputil.Client, method string, body any, opts ...httputil.RequestOption) (*http.Response, error) {
 	t.Helper()
 
 	switch method {
@@ -627,17 +660,7 @@ func newErrServerClient(t *testing.T, opts ...httputil.ClientOption) *httputil.C
 			t.Fatalf("unexpected error parsing response code: %s", err.Error())
 		}
 
-		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(responseCode)
-
-		if responseCode != http.StatusNoContent {
-			p := problem.DetailedError{Status: responseCode}
-
-			_, err = w.Write(p.MustMarshalJSON())
-			if err != nil {
-				t.Fatalf("unexpected error writing response: %s", err.Error())
-			}
-		}
 	}))
 
 	t.Cleanup(server.Close)
