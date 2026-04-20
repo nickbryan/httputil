@@ -11,6 +11,59 @@ import (
 	"github.com/nickbryan/httputil/problem"
 )
 
+func TestResponse(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		contentType string
+		want        bool
+	}{
+		"returns true for application/problem+json": {
+			contentType: "application/problem+json",
+			want:        true,
+		},
+		"returns true for application/problem+xml": {
+			contentType: "application/problem+xml",
+			want:        true,
+		},
+		"returns true when charset parameter is present": {
+			contentType: "application/problem+json; charset=utf-8",
+			want:        true,
+		},
+		"returns false for application/json": {
+			contentType: "application/json",
+			want:        false,
+		},
+		"returns false for text/plain": {
+			contentType: "text/plain",
+			want:        false,
+		},
+		"returns false for empty content type": {
+			contentType: "",
+			want:        false,
+		},
+		"returns false for malformed content type": {
+			contentType: "not a valid content type;;;",
+			want:        false,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			resp := &http.Response{Header: http.Header{}}
+			if tt.contentType != "" {
+				resp.Header.Set("Content-Type", tt.contentType)
+			}
+
+			if got := problem.Response(resp); got != tt.want {
+				t.Errorf("Response() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDetailedErrorMarshalJSON(t *testing.T) {
 	t.Parallel()
 

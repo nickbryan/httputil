@@ -1113,7 +1113,8 @@ generic codec cannot capture cleanly.
 ### Production Example
 
 A complete example showing how to build a typed API client function with proper error handling and
-RFC 7807 problem details:
+RFC 7807 problem details. Use `problem.Response` to detect problem responses by content type rather
+than enumerating status codes:
 
 ```go
 package apiclient
@@ -1129,6 +1130,10 @@ import (
     "github.com/nickbryan/httputil"
     "github.com/nickbryan/httputil/problem"
 )
+
+// Problem type URIs defined by the API. These match the type field in the
+// server's RFC 9457 problem responses and are used to identify specific errors.
+const TypeUserNotFound = "https://api.example.com/problems/user-not-found"
 
 // APIError represents an error response from the API containing RFC 7807 problem details to be used in the handler.
 type APIError struct {
@@ -1164,24 +1169,30 @@ func GetUser(ctx context.Context, client *httputil.Client, id string) (user *Use
         }
     }()
 
-    switch resp.StatusCode {
-    case http.StatusOK:
-        user = &User{}
-        if err = json.NewDecoder(resp.Body).Decode(user); err != nil {
-            return nil, fmt.Errorf("decoding user response: %w", err)
-        }
-
-        return user, nil
-    case http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError:
+    if problem.Response(resp) {
         var pd problem.DetailedError
         if err = json.NewDecoder(resp.Body).Decode(&pd); err != nil {
             return nil, fmt.Errorf("decoding problem response: %w", err)
         }
 
+        // Match on the problem type URI to handle specific errors.
+        if pd.Type == TypeUserNotFound {
+            return nil, fmt.Errorf("user %s not found", id)
+        }
+
         return nil, &APIError{Problem: pd}
-    default:
+    }
+
+    if resp.StatusCode != http.StatusOK {
         return nil, &UnexpectedAPIResponseError{StatusCode: resp.StatusCode}
     }
+
+    user = &User{}
+    if err = json.NewDecoder(resp.Body).Decode(user); err != nil {
+        return nil, fmt.Errorf("decoding user response: %w", err)
+    }
+
+    return user, nil
 }
 
 // Caller example:

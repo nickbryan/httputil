@@ -9,6 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"mime"
+	"net/http"
+	"strings"
 )
 
 // DetailedError encapsulates the fields required to respond with an error in
@@ -103,6 +106,19 @@ func (d *DetailedError) MustMarshalJSON() []byte {
 // if an error occurs during marshaling.
 func (d *DetailedError) MustMarshalJSONString() string {
 	return string(d.MustMarshalJSON())
+}
+
+// Response reports whether the HTTP response carries a problem details content
+// type (e.g. application/problem+json, application/problem+xml). It returns
+// false if the Content-Type header is missing or malformed, and ignores media
+// type parameters such as charset.
+func Response(resp *http.Response) bool {
+	// ParseMediaType returns the media type, params, and an error. The error
+	// is ignored because a missing or malformed Content-Type is not a problem
+	// response — mt will be empty and HasPrefix will return false. The params
+	// are ignored because we only care about the base media type.
+	mt, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	return strings.HasPrefix(mt, "application/problem")
 }
 
 // UnmarshalJSON implements the `json.Unmarshaler` interface for DetailedError,
