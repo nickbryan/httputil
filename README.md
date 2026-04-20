@@ -1124,6 +1124,7 @@ import (
     "errors"
     "fmt"
     "log/slog"
+    "net/http"
 
     "github.com/nickbryan/httputil"
     "github.com/nickbryan/httputil/problem"
@@ -1142,6 +1143,15 @@ func (e *APIError) Error() string {
     return "API error: " + e.Problem.Error()
 }
 
+// UnexpectedAPIResponseError is returned when the API responds with an unhandled status code.
+type UnexpectedAPIResponseError struct {
+    StatusCode int
+}
+
+func (e *UnexpectedAPIResponseError) Error() string {
+    return fmt.Sprintf("unexpected API response status: %d", e.StatusCode)
+}
+
 type User struct {
     ID   string `json:"id"`
     Name string `json:"name"`
@@ -1158,21 +1168,24 @@ func GetUser(ctx context.Context, client *httputil.Client, id string) (user *Use
         }
     }()
 
-    if resp.StatusCode >= 400 {
+    switch resp.StatusCode {
+    case http.StatusOK:
+        user = &User{}
+        if err = json.NewDecoder(resp.Body).Decode(user); err != nil {
+            return nil, fmt.Errorf("decoding user response: %w", err)
+        }
+
+        return user, nil
+    case http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError:
         var pd problem.DetailedError
-        if err := json.NewDecoder(resp.Body).Decode(&pd); err != nil {
+        if err = json.NewDecoder(resp.Body).Decode(&pd); err != nil {
             return nil, fmt.Errorf("decoding problem response: %w", err)
         }
 
         return nil, &APIError{Problem: &pd}
+    default:
+        return nil, &UnexpectedAPIResponseError{StatusCode: resp.StatusCode}
     }
-
-    user = &User{}
-    if err := json.NewDecoder(resp.Body).Decode(user); err != nil {
-        return nil, fmt.Errorf("decoding user response: %w", err)
-    }
-
-    return user, nil
 }
 
 // Caller example:
@@ -1189,7 +1202,7 @@ func handleGetUser(ctx context.Context, client *httputil.Client, logger *slog.Lo
         return
     }
 
-    logger.Info("fetched user", slog.String("name", user.Name))
+    logger.InfoContext(ctx, "fetched user", slog.String("name", user.Name))
 }
 ```
 
