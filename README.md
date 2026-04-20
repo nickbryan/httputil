@@ -1132,14 +1132,10 @@ import (
 
 // APIError represents an error response from the API containing RFC 7807 problem details to be used in the handler.
 type APIError struct {
-    Problem *problem.DetailedError
+    Problem problem.DetailedError
 }
 
 func (e *APIError) Error() string {
-    if e.Problem == nil {
-        return "API error"
-    }
-
     return "API error: " + e.Problem.Error()
 }
 
@@ -1182,7 +1178,7 @@ func GetUser(ctx context.Context, client *httputil.Client, id string) (user *Use
             return nil, fmt.Errorf("decoding problem response: %w", err)
         }
 
-        return nil, &APIError{Problem: &pd}
+        return nil, &APIError{Problem: pd}
     default:
         return nil, &UnexpectedAPIResponseError{StatusCode: resp.StatusCode}
     }
@@ -1192,8 +1188,7 @@ func GetUser(ctx context.Context, client *httputil.Client, id string) (user *Use
 func handleGetUser(ctx context.Context, client *httputil.Client, logger *slog.Logger) {
     user, err := GetUser(ctx, client, "123")
     if err != nil {
-        var apiErr *APIError
-        if errors.As(err, &apiErr) {
+        if apiErr, ok := errors.AsType[*APIError](err); ok {
             logger.ErrorContext(ctx, "API error fetching user", slog.Any("problem", apiErr.Problem))
             return
         }
