@@ -132,8 +132,8 @@ func TestTemplateSet_UnknownTemplateName(t *testing.T) {
 
 	err = ts.ExecuteTemplate(&bytes.Buffer{}, "nonexistent", nil)
 
-	var undefinedErr *httputil.TemplateUndefinedError
-	if !errors.As(err, &undefinedErr) {
+	undefinedErr, ok := errors.AsType[*httputil.TemplateUndefinedError](err)
+	if !ok {
 		t.Fatalf("ExecuteTemplate() error = %v, want TemplateUndefinedError", err)
 	}
 
@@ -152,8 +152,8 @@ func TestTemplateSet_NameConflict(t *testing.T) {
 		"shared": `<p>conflict</p>`,
 	})
 
-	var conflictErr *httputil.TemplateConflictError
-	if !errors.As(err, &conflictErr) {
+	conflictErr, ok := errors.AsType[*httputil.TemplateConflictError](err)
+	if !ok {
 		t.Fatalf("NewTemplateSet() error = %v, want TemplateConflictError", err)
 	}
 

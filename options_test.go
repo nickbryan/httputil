@@ -2,8 +2,8 @@ package httputil_test
 
 import (
 	"errors"
-	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -17,21 +17,15 @@ import (
 	"github.com/nickbryan/httputil"
 )
 
-/*
-These tests look like they know too much about the underlying implementation, but that is by design.
-We encapsulate the http.Client as a httputil.Client so that we can test our wrapper. We provide
-http.Client as the default implementation, allowing us to confidently check that the values
-get set as expected rather than having to test the behavioral impact they have on the client itself,
-which is already tested within the wrapped http.Client. We just need to know our values are being
-set correctly.
-*/
 func TestClientOptionsDefaults(t *testing.T) {
 	t.Parallel()
 
 	const defaultTimeout = time.Minute
 
-	client := httputil.NewClient()
-	httpClient := client.Client()
+	logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+
+	client := httputil.NewClient(logger)
+	httpClient := httputil.ClientHTTPClient(client)
 
 	if client.BasePath() != "" {
 		t.Errorf("expected base path to be empty, got: %s", client.BasePath())
@@ -49,8 +43,111 @@ func TestClientOptionsDefaults(t *testing.T) {
 		t.Error("expected cookie jar to be nil")
 	}
 
-	if httpClient.Transport != http.DefaultTransport {
-		t.Errorf("expected transport to be http.DefaultTransport, got: %T", httpClient.Transport)
+	if httpClient.Transport == nil {
+		t.Errorf("expected transport to be set")
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	t.Cleanup(server.Close)
+
+	defaultClient := httputil.NewClient(logger, httputil.WithClientBasePath(server.URL))
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, defaultClient.BasePath()+"/", http.NoBody)
+	if err != nil {
+		t.Fatalf("creating request: %v", err)
+	}
+
+	resp, err := defaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("executing default client request: %v", err)
+	}
+
+	t.Cleanup(func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("closing response body: %s", err)
+		}
+	})
+
+	if resp.StatusCode != http.StatusTeapot {
+		t.Errorf("expected status %d, got %d", http.StatusTeapot, resp.StatusCode)
+	}
+}
+
+func TestWithClientTransport(t *testing.T) {
+	t.Parallel()
+
+	logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+
+	transportCalled := false
+
+	customTransport := httputil.RoundTripperFunc(func(_ *http.Request) (*http.Response, error) {
+		transportCalled = true
+		return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+	})
+
+	interceptorCalled := false
+
+	client := httputil.NewClient(
+		logger,
+		httputil.WithClientTransport(customTransport),
+		httputil.WithClientInterceptor(func(next http.RoundTripper) http.RoundTripper {
+			return httputil.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				interceptorCalled = true
+				return next.RoundTrip(req)
+			})
+		}),
+	)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://localhost/", http.NoBody)
+	if err != nil {
+		t.Fatalf("creating request: %v", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("executing request with custom transport: %v", err)
+	}
+
+	t.Cleanup(func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("closing response body: %s", err)
+		}
+	})
+
+	if !interceptorCalled {
+		t.Error("expected interceptor to be called")
+	}
+
+	if !transportCalled {
+		t.Error("expected custom transport to be called")
+	}
+}
+
+func TestWithClientTransport_nil_falls_back_to_default(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+
+	client := httputil.NewClient(
+		logger,
+		httputil.WithClientBasePath(server.URL),
+		httputil.WithClientTransport(nil),
+	)
+
+	result, err := httputil.Get[struct{}](t.Context(), client, "/")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.StatusCode != http.StatusOK {
+		t.Errorf("StatusCode = %d, want %d", result.StatusCode, http.StatusOK)
 	}
 }
 
@@ -62,14 +159,14 @@ func TestClientOptions(t *testing.T) {
 		t.Fatalf("unexpected error creating cookie jar: %v", err)
 	}
 
+	logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+
 	spy := &interceptorSpy{}
 
 	client := httputil.NewClient(
+		logger,
 		httputil.WithClientBasePath("https://example.com"),
-		httputil.WithClientEncoder(&clientTestEncoder{
-			contentType: "test/test",
-			encode:      func(_ any) (io.Reader, error) { return nil, nil },
-		}),
+		httputil.WithClientCodec(&fakeClientCodec{contentType: "test/test"}),
 		httputil.WithClientTimeout(10*time.Second),
 		httputil.WithClientCookieJar(jar),
 		httputil.WithClientRedirectPolicy(func(_ *http.Request, _ []*http.Request) error {
@@ -79,11 +176,16 @@ func TestClientOptions(t *testing.T) {
 			return spy // Call isn't forwarded on to the next interceptor in the spy.
 		}),
 	)
-	httpClient := client.Client()
+	httpClient := httputil.ClientHTTPClient(client)
 
-	resp, err := client.Get(t.Context(), "/")
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://example.com/", http.NoBody)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("creating request: %v", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("executing request with client options: %v", err)
 	}
 
 	t.Cleanup(func() {
@@ -113,48 +215,6 @@ func TestClientOptions(t *testing.T) {
 	}
 }
 
-func TestWithClientTransport(t *testing.T) {
-	t.Parallel()
-
-	transportCalled := false
-
-	customTransport := httputil.RoundTripperFunc(func(_ *http.Request) (*http.Response, error) {
-		transportCalled = true
-		return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
-	})
-
-	interceptorCalled := false
-
-	client := httputil.NewClient(
-		httputil.WithClientTransport(customTransport),
-		httputil.WithClientInterceptor(func(next http.RoundTripper) http.RoundTripper {
-			return httputil.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
-				interceptorCalled = true
-				return next.RoundTrip(req)
-			})
-		}),
-	)
-
-	resp, err := client.Get(t.Context(), "http://localhost/")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	t.Cleanup(func() {
-		if err := resp.Body.Close(); err != nil {
-			t.Errorf("closing response body: %s", err)
-		}
-	})
-
-	if !interceptorCalled {
-		t.Error("expected interceptor to be called")
-	}
-
-	if !transportCalled {
-		t.Error("expected custom transport to be called")
-	}
-}
-
 func TestWithClientInterceptor(t *testing.T) {
 	t.Parallel()
 
@@ -166,9 +226,12 @@ func TestWithClientInterceptor(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+
 		interceptorCalled := false
 
 		client := httputil.NewClient(
+			logger,
 			httputil.WithClientBasePath(server.URL),
 			httputil.WithClientInterceptor(func(next http.RoundTripper) http.RoundTripper {
 				return httputil.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
@@ -178,23 +241,17 @@ func TestWithClientInterceptor(t *testing.T) {
 			}),
 		)
 
-		resp, err := client.Get(t.Context(), "/")
+		result, err := httputil.Get[struct{}](t.Context(), client, "/")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-
-		t.Cleanup(func() {
-			if err := resp.Body.Close(); err != nil {
-				t.Errorf("closing response body: %s", err)
-			}
-		})
 
 		if !interceptorCalled {
 			t.Error("expected interceptor to be called")
 		}
 
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("expected status code %d, got %d", http.StatusOK, resp.StatusCode)
+		if result.StatusCode != http.StatusOK {
+			t.Errorf("expected status code %d, got %d", http.StatusOK, result.StatusCode)
 		}
 	})
 
@@ -205,6 +262,8 @@ func TestWithClientInterceptor(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		}))
 		t.Cleanup(server.Close)
+
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
 
 		var calls []string
 
@@ -222,21 +281,16 @@ func TestWithClientInterceptor(t *testing.T) {
 		}
 
 		client := httputil.NewClient(
+			logger,
 			httputil.WithClientBasePath(server.URL),
 			httputil.WithClientInterceptor(makeInterceptor("first")),
 			httputil.WithClientInterceptor(makeInterceptor("second")),
 		)
 
-		resp, err := client.Get(t.Context(), "/")
+		_, err := httputil.Get[struct{}](t.Context(), client, "/")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-
-		t.Cleanup(func() {
-			if err := resp.Body.Close(); err != nil {
-				t.Errorf("closing response body: %s", err)
-			}
-		})
 
 		want := []string{"first-before", "second-before", "second-after", "first-after"}
 		if !slices.Equal(calls, want) {
@@ -252,6 +306,8 @@ func TestWithClientInterceptor(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+
 		var calls []string
 
 		makeInterceptor := func(name string) httputil.InterceptorFunc {
@@ -268,6 +324,7 @@ func TestWithClientInterceptor(t *testing.T) {
 		}
 
 		client := httputil.NewClient(
+			logger,
 			httputil.WithClientBasePath(server.URL),
 			httputil.WithClientInterceptor(
 				makeInterceptor("first"),
@@ -276,16 +333,10 @@ func TestWithClientInterceptor(t *testing.T) {
 			),
 		)
 
-		resp, err := client.Get(t.Context(), "/")
+		_, err := httputil.Get[struct{}](t.Context(), client, "/")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-
-		t.Cleanup(func() {
-			if err := resp.Body.Close(); err != nil {
-				t.Errorf("closing response body: %s", err)
-			}
-		})
 
 		want := []string{
 			"first-before", "second-before", "third-before",
@@ -304,28 +355,26 @@ func TestWithClientInterceptor(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
 		called := false
 
+		interceptor := func(next http.RoundTripper) http.RoundTripper {
+			return httputil.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				called = true
+				return next.RoundTrip(req)
+			})
+		}
+
 		client := httputil.NewClient(
+			logger,
 			httputil.WithClientBasePath(server.URL),
-			httputil.WithClientInterceptor(nil, func(next http.RoundTripper) http.RoundTripper {
-				return httputil.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
-					called = true
-					return next.RoundTrip(req)
-				})
-			}, nil),
+			httputil.WithClientInterceptor(nil, interceptor, nil),
 		)
 
-		resp, err := client.Get(t.Context(), "/")
+		_, err := httputil.Get[struct{}](t.Context(), client, "/")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-
-		t.Cleanup(func() {
-			if err := resp.Body.Close(); err != nil {
-				t.Errorf("closing response body: %s", err)
-			}
-		})
 
 		if !called {
 			t.Error("expected non-nil interceptor to be called")
@@ -333,17 +382,125 @@ func TestWithClientInterceptor(t *testing.T) {
 	})
 }
 
-type clientTestEncoder struct {
-	contentType string
-	encode      func(data any) (io.Reader, error)
+func TestWithClientTimeout(t *testing.T) {
+	t.Parallel()
+
+	logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	client := httputil.NewClient(
+		logger,
+		httputil.WithClientBasePath(server.URL),
+		httputil.WithClientTimeout(1*time.Millisecond),
+	)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, client.BasePath()+"/", http.NoBody)
+	if err != nil {
+		t.Fatalf("creating request: %v", err)
+	}
+
+	_, err = client.Do(req) //nolint:bodyclose // Error path, no body.
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+
+	netErr, ok := errors.AsType[net.Error](err)
+	if !ok || !netErr.Timeout() {
+		t.Errorf("expected timeout error, got: %v", err)
+	}
 }
 
-func (t *clientTestEncoder) ContentType() string {
-	return t.contentType
+func TestWithClientRedirectPolicy(t *testing.T) {
+	t.Parallel()
+
+	logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/redirected", http.StatusFound)
+	}))
+	t.Cleanup(server.Close)
+
+	client := httputil.NewClient(
+		logger,
+		httputil.WithClientBasePath(server.URL),
+		httputil.WithClientRedirectPolicy(func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		}),
+	)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, client.BasePath()+"/", http.NoBody)
+	if err != nil {
+		t.Fatalf("creating request: %v", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("executing request with redirect policy: %v", err)
+	}
+
+	t.Cleanup(func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("closing response body: %s", err)
+		}
+	})
+
+	if resp.StatusCode != http.StatusFound {
+		t.Errorf("expected status code %d (redirect not followed), got %d", http.StatusFound, resp.StatusCode)
+	}
 }
 
-func (t *clientTestEncoder) Encode(data any) (io.Reader, error) {
-	return t.encode(data)
+func TestWithClientCookieJar(t *testing.T) {
+	t.Parallel()
+
+	logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+
+	cookieReceived := false
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/set" {
+			http.SetCookie(w, &http.Cookie{Name: "session", Value: "abc123"})
+			w.WriteHeader(http.StatusOK)
+
+			return
+		}
+
+		if cookie, err := r.Cookie("session"); err == nil && cookie.Value == "abc123" {
+			cookieReceived = true
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("unexpected error creating cookie jar: %v", err)
+	}
+
+	client := httputil.NewClient(
+		logger,
+		httputil.WithClientBasePath(server.URL),
+		httputil.WithClientCookieJar(jar),
+	)
+
+	_, err = httputil.Get[struct{}](t.Context(), client, "/set")
+	if err != nil {
+		t.Fatalf("unexpected error on /set: %v", err)
+	}
+
+	_, err = httputil.Get[struct{}](t.Context(), client, "/check")
+	if err != nil {
+		t.Fatalf("unexpected error on /check: %v", err)
+	}
+
+	if !cookieReceived {
+		t.Error("expected cookie to be sent on second request")
+	}
 }
 
 type interceptorSpy struct {

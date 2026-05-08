@@ -9,10 +9,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
-	"mime"
-	"net/http"
-	"strings"
+	"slices"
 )
+
+// knownDetailedErrorFields lists the JSON keys that map to fixed fields on
+// DetailedError. UnmarshalJSON uses this to strip them from ExtensionMembers.
+var knownDetailedErrorFields = []string{"type", "title", "detail", "status", "code", "instance"} //nolint:gochecknoglobals // Package-level constant set.
 
 // DetailedError encapsulates the fields required to respond with an error in
 // accordance with RFC 9457 (Problem Details for HTTP APIs).
@@ -108,19 +110,6 @@ func (d *DetailedError) MustMarshalJSONString() string {
 	return string(d.MustMarshalJSON())
 }
 
-// Response reports whether the HTTP response carries a problem details content
-// type (e.g. application/problem+json, application/problem+xml). It returns
-// false if the Content-Type header is missing or malformed, and ignores media
-// type parameters such as charset.
-func Response(resp *http.Response) bool {
-	// ParseMediaType returns the media type, params, and an error. The error
-	// is ignored because a missing or malformed Content-Type is not a problem
-	// response — mt will be empty and HasPrefix will return false. The params
-	// are ignored because we only care about the base media type.
-	mt, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-	return strings.HasPrefix(mt, "application/problem")
-}
-
 // UnmarshalJSON implements the `json.Unmarshaler` interface for DetailedError,
 // handling known and unknown fields gracefully.
 func (d *DetailedError) UnmarshalJSON(data []byte) error {
@@ -153,7 +142,7 @@ func (d *DetailedError) UnmarshalJSON(data []byte) error {
 	}
 
 	maps.DeleteFunc(d.ExtensionMembers, func(k string, _ any) bool {
-		return k == "type" || k == "title" || k == "detail" || k == "status" || k == "code" || k == "instance"
+		return slices.Contains(knownDetailedErrorFields, k)
 	})
 
 	return nil

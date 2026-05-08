@@ -22,16 +22,16 @@ import (
 	"github.com/nickbryan/httputil/problem"
 )
 
-func TestJSONClientEncoder_ContentType(t *testing.T) {
+func TestJSONClientCodec_ContentType(t *testing.T) {
 	t.Parallel()
 
-	encoder := httputil.NewJSONClientEncoder()
-	if contentType := encoder.ContentType(); contentType != "application/json; charset=utf-8" {
+	codec := httputil.NewJSONClientCodec()
+	if contentType := codec.ContentType(); contentType != "application/json; charset=utf-8" {
 		t.Errorf("ContentType() = %q, want %q", contentType, "application/json; charset=utf-8")
 	}
 }
 
-func TestJSONClientEncoder_Encode(t *testing.T) {
+func TestJSONClientCodec_Encode(t *testing.T) {
 	t.Parallel()
 
 	testCases := map[string]struct {
@@ -57,9 +57,9 @@ func TestJSONClientEncoder_Encode(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			encoder := httputil.NewJSONClientEncoder()
-			reader, err := encoder.Encode(tc.data)
+			codec := httputil.NewJSONClientCodec()
 
+			reader, err := codec.Encode(tc.data)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("Encode() error = %v, wantErr %v", err, tc.wantErr)
 			}
@@ -75,6 +75,56 @@ func TestJSONClientEncoder_Encode(t *testing.T) {
 
 			if diff := testutil.DiffJSON(tc.wantBody, string(body)); diff != "" {
 				t.Errorf("Encode() body mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestJSONClientCodec_Decode(t *testing.T) {
+	t.Parallel()
+
+	type testStruct struct {
+		Foo string `json:"foo"`
+	}
+
+	testCases := map[string]struct {
+		input   string
+		into    any
+		wantVal any
+		wantErr bool
+	}{
+		"decodes valid json": {
+			input:   `{"foo":"bar"}`,
+			into:    &testStruct{},
+			wantVal: &testStruct{Foo: "bar"},
+		},
+		"returns an error for malformed json": {
+			input:   `{"foo":"bar`,
+			into:    &testStruct{},
+			wantErr: true,
+		},
+		"returns an error for empty input": {
+			input:   "",
+			into:    &testStruct{},
+			wantErr: true,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			codec := httputil.NewJSONClientCodec()
+
+			err := codec.Decode(strings.NewReader(tc.input), tc.into)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("Decode() error = %v, wantErr %v", err, tc.wantErr)
+			}
+
+			if !tc.wantErr {
+				if diff := cmp.Diff(tc.wantVal, tc.into); diff != "" {
+					t.Errorf("Decode() mismatch (-want +got):\n%s", diff)
+				}
 			}
 		})
 	}
@@ -328,8 +378,7 @@ func TestHTMLServerCodec_Decode(t *testing.T) {
 			inspectErr: func(t *testing.T, err error) {
 				t.Helper()
 
-				var decodeErr *form.InvalidDecoderError
-				if !errors.As(err, &decodeErr) {
+				if _, ok := errors.AsType[*form.InvalidDecoderError](err); !ok {
 					t.Errorf("expected *form.InvalidDecoderError, got %v", err)
 				}
 			},
@@ -479,8 +528,8 @@ func TestHTMLServerCodec_Encode(t *testing.T) {
 
 		err := codec.Encode(httptest.NewRecorder(), http.StatusOK, "not a template")
 
-		var typeErr *httputil.EncodeTypeError
-		if !errors.As(err, &typeErr) {
+		typeErr, ok := errors.AsType[*httputil.EncodeTypeError](err)
+		if !ok {
 			t.Fatalf("expected EncodeTypeError, got %v", err)
 		}
 

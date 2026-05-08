@@ -55,7 +55,7 @@ func (e *ParamConversionError) Error() string {
 	return fmt.Sprintf("failed to convert parameter %q to %s: %v", e.ParamName, e.TargetType, e.Err)
 }
 
-// Unwrap allows ParamConversionError to be used with errors.Is and errors.As.
+// Unwrap allows ParamConversionError to be used with errors.Is and errors.AsType.
 func (e *ParamConversionError) Unwrap() error {
 	return e.Err
 }

@@ -1,6 +1,6 @@
 module github.com/nickbryan/httputil
 
-go 1.26.0
+go 1.26
 
 require (
 	github.com/go-playground/form/v4 v4.3.0

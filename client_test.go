@@ -1,707 +1,132 @@
 package httputil_test
 
 import (
-	"bytes"
-	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/nickbryan/httputil"
+	"github.com/nickbryan/slogutil"
 )
 
-var (
-	httpMethods = []string{
-		http.MethodGet,
-		http.MethodPost,
-		http.MethodPut,
-		http.MethodPatch,
-		http.MethodDelete,
-	}
-	successCodes = []int{
-		// 200 range.
-		http.StatusOK,
-		http.StatusCreated,
-		http.StatusAccepted,
-		http.StatusNonAuthoritativeInfo,
-		http.StatusNoContent,
-		http.StatusResetContent,
-		http.StatusPartialContent,
-		http.StatusMultiStatus,
-		http.StatusAlreadyReported,
-		http.StatusIMUsed,
-	}
-	errorCodes = []int{
-		// 400 range.
-		http.StatusBadRequest,
-		http.StatusUnauthorized,
-		http.StatusPaymentRequired,
-		http.StatusForbidden,
-		http.StatusNotFound,
-		http.StatusMethodNotAllowed,
-		http.StatusNotAcceptable,
-		http.StatusProxyAuthRequired,
-		http.StatusRequestTimeout,
-		http.StatusConflict,
-		http.StatusGone,
-		http.StatusLengthRequired,
-		http.StatusPreconditionFailed,
-		http.StatusRequestEntityTooLarge,
-		http.StatusRequestURITooLong,
-		http.StatusUnsupportedMediaType,
-		http.StatusRequestedRangeNotSatisfiable,
-		http.StatusExpectationFailed,
-		http.StatusTeapot,
-		http.StatusMisdirectedRequest,
-		http.StatusUnprocessableEntity,
-		http.StatusLocked,
-		http.StatusFailedDependency,
-		http.StatusTooEarly,
-		http.StatusUpgradeRequired,
-		http.StatusPreconditionRequired,
-		http.StatusTooManyRequests,
-		http.StatusRequestHeaderFieldsTooLarge,
-		http.StatusUnavailableForLegalReasons,
-		// 500 range.
-		http.StatusInternalServerError,
-		http.StatusNotImplemented,
-		http.StatusBadGateway,
-		http.StatusServiceUnavailable,
-		http.StatusGatewayTimeout,
-		http.StatusHTTPVersionNotSupported,
-		http.StatusVariantAlsoNegotiates,
-		http.StatusInsufficientStorage,
-		http.StatusLoopDetected,
-		http.StatusNotExtended,
-		http.StatusNetworkAuthenticationRequired,
-	}
-)
-
-func TestClient(t *testing.T) {
+func TestClient_Do(t *testing.T) {
 	t.Parallel()
 
-	t.Run("handles a successful response from the server", func(t *testing.T) {
-		t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	t.Cleanup(server.Close)
 
-		type testData struct {
-			method string
-			code   int
-		}
+	logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+	client := httputil.NewClient(logger)
 
-		testCases := make([]testData, 0, len(successCodes)*len(httpMethods))
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/test", http.NoBody)
+	if err != nil {
+		t.Fatalf("creating request: %v", err)
+	}
 
-		for _, method := range httpMethods {
-			for _, code := range successCodes {
-				testCases = append(testCases, testData{method: method, code: code})
-			}
-		}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
-		for _, testCase := range testCases {
-			t.Run(testCase.method+" "+strconv.Itoa(testCase.code), func(t *testing.T) {
-				t.Parallel()
-
-				client := newSuccessServerClient(t)
-
-				resp, err := callClientMethod(t, client, testCase.method, httputil.WithRequestParam("code", strconv.Itoa(testCase.code)))
-				if err != nil {
-					t.Fatalf("unexpected error from client call: %s", err.Error())
-				}
-
-				t.Cleanup(func() {
-					if err := resp.Body.Close(); err != nil {
-						t.Errorf("closing response body: %s", err)
-					}
-				})
-
-				if resp.StatusCode != testCase.code {
-					t.Errorf("unexpected status code, want: %d, got: %d", testCase.code, resp.StatusCode)
-				}
-
-				if testCase.code == http.StatusNoContent {
-					return
-				}
-
-				var got struct {
-					Status string `json:"status"`
-				}
-
-				if err = json.NewDecoder(resp.Body).Decode(&got); err != nil {
-					t.Errorf("unexpected error decoding response for status %d: %s", testCase.code, err.Error())
-				}
-
-				if got.Status != strconv.Itoa(testCase.code) {
-					t.Errorf("unexpected status in decoded response, want: %d, got: %s", testCase.code, got.Status)
-				}
-			})
+	t.Cleanup(func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("closing response body: %s", err)
 		}
 	})
 
-	t.Run("handles an unsuccessful response from the server", func(t *testing.T) {
-		t.Parallel()
+	if resp.StatusCode != http.StatusTeapot {
+		t.Errorf("expected status %d, got %d", http.StatusTeapot, resp.StatusCode)
+	}
+}
 
-		type testData struct {
-			method string
-			code   int
-		}
+func TestClient_BasePath(t *testing.T) {
+	t.Parallel()
 
-		testCases := make([]testData, 0, len(errorCodes)*len(httpMethods))
+	logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
 
-		for _, method := range httpMethods {
-			for _, code := range errorCodes {
-				testCases = append(testCases, testData{method: method, code: code})
-			}
-		}
+	testCases := map[string]struct {
+		basePath string
+		want     string
+	}{
+		"returns empty string when not set": {
+			basePath: "",
+			want:     "",
+		},
+		"returns base path as configured": {
+			basePath: "https://example.com/api",
+			want:     "https://example.com/api",
+		},
+		"trims trailing slash": {
+			basePath: "https://example.com/api/",
+			want:     "https://example.com/api",
+		},
+	}
 
-		for _, testCase := range testCases {
-			t.Run(testCase.method+" "+strconv.Itoa(testCase.code), func(t *testing.T) {
-				t.Parallel()
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-				client := newErrServerClient(t)
-
-				resp, err := callClientMethod(t, client, testCase.method, httputil.WithRequestParam("code", strconv.Itoa(testCase.code)))
-				if err != nil {
-					t.Fatalf("unexpected error from client call: %s", err.Error())
-				}
-
-				t.Cleanup(func() {
-					if err := resp.Body.Close(); err != nil {
-						t.Errorf("closing response body: %s", err)
-					}
-				})
-
-				if resp.StatusCode != testCase.code {
-					t.Errorf("unexpected status code, want: %d, got: %d", testCase.code, resp.StatusCode)
-				}
-			})
-		}
-	})
-
-	t.Run("returns an error when building the request fails", func(t *testing.T) {
-		t.Parallel()
-
-		// Setting ":" as the base path will cause the client to fail to build and parse
-		// the request URL with "missing protocol scheme".
-		client := httputil.NewClient(httputil.WithClientBasePath(":"))
-
-		for _, method := range httpMethods {
-			t.Run(method, func(t *testing.T) {
-				t.Parallel()
-
-				_, err := callClientMethod(t, client, method) //nolint:bodyclose // Error path, no body.
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-
-				message := "building request url: "
-				if !strings.Contains(err.Error(), message) {
-					t.Fatalf("expected error message to contain %q, got: %q", message, err.Error())
-				}
-			})
-		}
-	})
-
-	t.Run("sends a request with an io.Reader as the body to the server", func(t *testing.T) {
-		t.Parallel()
-
-		client := newBodyAwareServerClient(t)
-
-		for _, method := range httpMethods {
-			t.Run(method, func(t *testing.T) {
-				t.Parallel()
-
-				// GET and DELETE methods do not have a request body.
-				if method == http.MethodGet || method == http.MethodDelete {
-					return
-				}
-
-				resp, err := callClientMethodWithBody(t, client, method, bytes.NewBufferString("hello world"))
-				if err != nil {
-					t.Fatalf("unexpected error from client call: %s", err.Error())
-				}
-
-				t.Cleanup(func() {
-					if err := resp.Body.Close(); err != nil {
-						t.Errorf("closing response body: %s", err)
-					}
-				})
-
-				if resp.StatusCode != http.StatusOK {
-					t.Errorf("unexpected status code, want: %d, got: %d", http.StatusOK, resp.StatusCode)
-				}
-
-				type response struct {
-					Content string `json:"content"`
-				}
-
-				var got response
-
-				err = json.NewDecoder(resp.Body).Decode(&got)
-				if err != nil {
-					t.Fatalf("failed to decode response: %s", err.Error())
-				}
-
-				if got.Content != "hello world" {
-					t.Errorf("unexpected content, want: %q, got: %q", "hello world", got.Content)
-				}
-			})
-		}
-	})
-
-	t.Run("defaults Content-Type header to codec content type when body is present and not set by caller", func(t *testing.T) {
-		t.Parallel()
-
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if got := r.Header.Get("Content-Type"); got != "application/json; charset=utf-8" {
-				t.Errorf("expected Content-Type to be application/json; charset=utf-8, got: %s", got)
-			}
-
-			w.WriteHeader(http.StatusOK)
-		}))
-		t.Cleanup(server.Close)
-
-		client := httputil.NewClient(httputil.WithClientBasePath(server.URL))
-
-		type request struct {
-			Message string `json:"message"`
-		}
-
-		resp, err := client.Post(t.Context(), "/", request{Message: "hello"})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		t.Cleanup(func() {
-			if err := resp.Body.Close(); err != nil {
-				t.Errorf("closing response body: %s", err)
+			client := httputil.NewClient(logger, httputil.WithClientBasePath(tc.basePath))
+			if got := client.BasePath(); got != tc.want {
+				t.Errorf("BasePath() = %q, want %q", got, tc.want)
 			}
 		})
-	})
+	}
+}
 
-	t.Run("does not set Content-Type when there is no body", func(t *testing.T) {
+func TestClient_Codec(t *testing.T) {
+	t.Parallel()
+
+	t.Run("defaults to JSONClientCodec", func(t *testing.T) {
 		t.Parallel()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if got := r.Header.Get("Content-Type"); got != "" {
-				t.Errorf("expected Content-Type to be empty, got: %s", got)
-			}
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+		client := httputil.NewClient(logger)
 
-			w.WriteHeader(http.StatusOK)
-		}))
-		t.Cleanup(server.Close)
-
-		client := httputil.NewClient(httputil.WithClientBasePath(server.URL))
-
-		resp, err := client.Get(t.Context(), "/")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		t.Cleanup(func() {
-			if err := resp.Body.Close(); err != nil {
-				t.Errorf("closing response body: %s", err)
-			}
-		})
-	})
-
-	t.Run("allows caller to override Content-Type header", func(t *testing.T) {
-		t.Parallel()
-
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if got := r.Header.Get("Content-Type"); got != "text/plain" {
-				t.Errorf("expected Content-Type to be text/plain, got: %s", got)
-			}
-
-			w.WriteHeader(http.StatusOK)
-		}))
-		t.Cleanup(server.Close)
-
-		client := httputil.NewClient(httputil.WithClientBasePath(server.URL))
-
-		resp, err := client.Post(
-			t.Context(), "/", bytes.NewBufferString("hello"),
-			httputil.WithRequestHeader("Content-Type", "text/plain"),
-		)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		t.Cleanup(func() {
-			if err := resp.Body.Close(); err != nil {
-				t.Errorf("closing response body: %s", err)
-			}
-		})
-	})
-
-	t.Run("sends a request with an encoded body to the server", func(t *testing.T) {
-		t.Parallel()
-
-		client := newBodyAwareServerClient(t)
-
-		for _, method := range httpMethods {
-			t.Run(method, func(t *testing.T) {
-				t.Parallel()
-
-				// GET and DELETE methods do not have a request body.
-				if method == http.MethodGet || method == http.MethodDelete {
-					return
-				}
-
-				type request struct {
-					Message string `json:"message"`
-				}
-
-				resp, err := callClientMethodWithBody(t, client, method, request{Message: "hello world"})
-				if err != nil {
-					t.Fatalf("unexpected error from client call: %s", err.Error())
-				}
-
-				t.Cleanup(func() {
-					if err := resp.Body.Close(); err != nil {
-						t.Errorf("closing response body: %s", err)
-					}
-				})
-
-				if resp.StatusCode != http.StatusOK {
-					t.Errorf("unexpected status code, want: %d, got: %d", http.StatusOK, resp.StatusCode)
-				}
-
-				type response struct {
-					Content string `json:"content"`
-				}
-
-				var got response
-
-				err = json.NewDecoder(resp.Body).Decode(&got)
-				if err != nil {
-					t.Fatalf("failed to decode response: %s", err.Error())
-				}
-
-				if got.Content != `{"message":"hello world"}` {
-					t.Errorf("unexpected content, want: %q, got: %q", `{"message":"hello world"}`, got.Content)
-				}
-			})
+		if client.Codec().ContentType() != "application/json; charset=utf-8" {
+			t.Errorf("expected default codec content type to be application/json; charset=utf-8, got: %s", client.Codec().ContentType())
 		}
 	})
 
-	t.Run("returns an error when encoding fails", func(t *testing.T) {
+	t.Run("uses custom codec when set", func(t *testing.T) {
 		t.Parallel()
 
-		client := newSuccessServerClient(t, httputil.WithClientEncoder(fakeEncoder{
-			contentType: "application/json",
-			encode: func(any) (io.Reader, error) {
-				return nil, errors.New("failed to encode")
-			},
-		}))
+		logger, _ := slogutil.NewInMemoryLogger(slog.LevelDebug)
+		custom := &fakeClientCodec{contentType: "application/xml"}
+		client := httputil.NewClient(logger, httputil.WithClientCodec(custom))
 
-		for _, method := range httpMethods {
-			t.Run(method, func(t *testing.T) {
-				t.Parallel()
-
-				// GET and DELETE methods do not have a request body.
-				if method == http.MethodGet || method == http.MethodDelete {
-					return
-				}
-
-				type request struct {
-					Message string `json:"message"`
-				}
-
-				resp, err := callClientMethodWithBody(t, client, method, request{Message: "hello world"}) //nolint:bodyclose // Error path, no body.
-				if resp != nil {
-					t.Error("expected nil response, got non-nil")
-				}
-
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-
-				message := "encoding request body: failed to encode"
-				if !strings.Contains(err.Error(), message) {
-					t.Fatalf("expected error message to contain %q, got: %q", message, err.Error())
-				}
-			})
+		if client.Codec().ContentType() != "application/xml" {
+			t.Errorf("expected codec content type to be application/xml, got: %s", client.Codec().ContentType())
 		}
-	})
-
-	t.Run("returns an error when executing the request fails", func(t *testing.T) {
-		t.Parallel()
-
-		server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
-		server.Close()
-
-		client := httputil.NewClient(httputil.WithClientBasePath(server.URL))
-
-		for _, method := range httpMethods {
-			t.Run(method, func(t *testing.T) {
-				t.Parallel()
-
-				_, err := callClientMethod(t, client, method) //nolint:bodyclose // Error path, no body.
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-
-				message := "executing request: "
-				if !strings.Contains(err.Error(), message) {
-					t.Fatalf("expected error message to contain %q, got: %q", message, err.Error())
-				}
-			})
-		}
-	})
-
-	t.Run("WithRequestHeader", func(t *testing.T) {
-		t.Parallel()
-
-		headerKey := "X-Test-Header"
-		headerValue := "test-value"
-
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Header.Get(headerKey) != headerValue {
-				t.Errorf("expected header %s to be %s, got %s", headerKey, headerValue, r.Header.Get(headerKey))
-			}
-
-			w.WriteHeader(http.StatusOK)
-		}))
-		t.Cleanup(server.Close)
-
-		client := httputil.NewClient(httputil.WithClientBasePath(server.URL))
-
-		resp, err := client.Get(t.Context(), "/", httputil.WithRequestHeader(headerKey, headerValue))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		t.Cleanup(func() {
-			if err := resp.Body.Close(); err != nil {
-				t.Errorf("closing response body: %s", err)
-			}
-		})
-	})
-
-	t.Run("WithRequestHeaders", func(t *testing.T) {
-		t.Parallel()
-
-		headers := map[string]string{
-			"X-Test-Header-1": "value-1",
-			"X-Test-Header-2": "value-2",
-		}
-
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			for k, v := range headers {
-				if r.Header.Get(k) != v {
-					t.Errorf("expected header %s to be %s, got %s", k, v, r.Header.Get(k))
-				}
-			}
-
-			w.WriteHeader(http.StatusOK)
-		}))
-		t.Cleanup(server.Close)
-
-		client := httputil.NewClient(httputil.WithClientBasePath(server.URL))
-
-		resp, err := client.Get(t.Context(), "/", httputil.WithRequestHeaders(headers))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		t.Cleanup(func() {
-			if err := resp.Body.Close(); err != nil {
-				t.Errorf("closing response body: %s", err)
-			}
-		})
-	})
-
-	t.Run("WithRequestParam", func(t *testing.T) {
-		t.Parallel()
-
-		paramKey := "param1"
-		paramValue := "value1"
-
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Query().Get(paramKey) != paramValue {
-				t.Errorf("expected query parameter %s to be %s, got %s", paramKey, paramValue, r.URL.Query().Get(paramKey))
-			}
-
-			w.WriteHeader(http.StatusOK)
-		}))
-		t.Cleanup(server.Close)
-
-		client := httputil.NewClient(httputil.WithClientBasePath(server.URL))
-
-		resp, err := client.Get(t.Context(), "/", httputil.WithRequestParam(paramKey, paramValue))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		t.Cleanup(func() {
-			if err := resp.Body.Close(); err != nil {
-				t.Errorf("closing response body: %s", err)
-			}
-		})
-	})
-
-	t.Run("WithRequestParams", func(t *testing.T) {
-		t.Parallel()
-
-		params := map[string]string{
-			"param1": "value1",
-			"param2": "value2",
-		}
-
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			for k, v := range params {
-				if r.URL.Query().Get(k) != v {
-					t.Errorf("expected query parameter %s to be %s, got %s", k, v, r.URL.Query().Get(k))
-				}
-			}
-
-			w.WriteHeader(http.StatusOK)
-		}))
-		t.Cleanup(server.Close)
-
-		client := httputil.NewClient(httputil.WithClientBasePath(server.URL))
-
-		resp, err := client.Get(t.Context(), "/", httputil.WithRequestParams(params))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		t.Cleanup(func() {
-			if err := resp.Body.Close(); err != nil {
-				t.Errorf("closing response body: %s", err)
-			}
-		})
 	})
 }
 
-type fakeEncoder struct {
+type fakeClientCodec struct {
 	contentType string
 	encode      func(any) (io.Reader, error)
+	decode      func(io.Reader, any) error
 }
 
-func (f fakeEncoder) ContentType() string {
+func (f *fakeClientCodec) ContentType() string {
 	return f.contentType
 }
 
-func (f fakeEncoder) Encode(data any) (io.Reader, error) {
-	return f.encode(data)
-}
-
-func callClientMethod(t *testing.T, client *httputil.Client, method string, opts ...httputil.RequestOption) (*http.Response, error) {
-	t.Helper()
-
-	switch method {
-	case http.MethodGet:
-		return client.Get(t.Context(), "/", opts...)
-	case http.MethodPost:
-		return client.Post(t.Context(), "/", nil, opts...)
-	case http.MethodPut:
-		return client.Put(t.Context(), "/", nil, opts...)
-	case http.MethodPatch:
-		return client.Patch(t.Context(), "/", nil, opts...)
-	case http.MethodDelete:
-		return client.Delete(t.Context(), "/", opts...)
-	default:
-		t.Fatalf("unexpected method %s calling client", method)
-		return nil, nil // Unreachable.
+func (f *fakeClientCodec) Encode(data any) (io.Reader, error) {
+	if f.encode != nil {
+		return f.encode(data)
 	}
+
+	return nil, nil
 }
 
-func callClientMethodWithBody(t *testing.T, client *httputil.Client, method string, body any, opts ...httputil.RequestOption) (*http.Response, error) {
-	t.Helper()
-
-	switch method {
-	case http.MethodPost:
-		return client.Post(t.Context(), "/", body, opts...)
-	case http.MethodPut:
-		return client.Put(t.Context(), "/", body, opts...)
-	case http.MethodPatch:
-		return client.Patch(t.Context(), "/", body, opts...)
-	default:
-		t.Fatalf("unexpected method %s calling client with body", method)
-		return nil, nil // Unreachable.
+func (f *fakeClientCodec) Decode(r io.Reader, into any) error {
+	if f.decode != nil {
+		return f.decode(r, into)
 	}
-}
 
-func newSuccessServerClient(t *testing.T, opts ...httputil.ClientOption) *httputil.Client {
-	t.Helper()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		responseCode, err := strconv.Atoi(r.URL.Query().Get("code"))
-		if err != nil {
-			t.Fatalf("unexpected error parsing response code: %s", err.Error())
-		}
-
-		w.WriteHeader(responseCode)
-
-		if responseCode != http.StatusNoContent {
-			_, err = fmt.Fprintf(w, `{"status":"%d"}`, responseCode)
-			if err != nil {
-				t.Fatalf("unexpected error writing response: %s", err.Error())
-			}
-		}
-	}))
-
-	t.Cleanup(server.Close)
-
-	return httputil.NewClient(append([]httputil.ClientOption{httputil.WithClientBasePath(server.URL)}, opts...)...)
-}
-
-func newErrServerClient(t *testing.T, opts ...httputil.ClientOption) *httputil.Client {
-	t.Helper()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		responseCode, err := strconv.Atoi(r.URL.Query().Get("code"))
-		if err != nil {
-			t.Fatalf("unexpected error parsing response code: %s", err.Error())
-		}
-
-		w.WriteHeader(responseCode)
-	}))
-
-	t.Cleanup(server.Close)
-
-	return httputil.NewClient(append([]httputil.ClientOption{httputil.WithClientBasePath(server.URL)}, opts...)...)
-}
-
-func newBodyAwareServerClient(t *testing.T) *httputil.Client {
-	t.Helper()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		content, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatalf("unexpected error reading request body: %s", err.Error())
-		}
-
-		if len(content) == 0 {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-
-		response := &struct {
-			Content string `json:"content"`
-		}{
-			Content: string(content),
-		}
-
-		jsonResponse, err := json.Marshal(response)
-		if err != nil {
-			t.Fatalf("unexpected error marshaling response: %s", err.Error())
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-
-		_, err = w.Write(jsonResponse)
-		if err != nil {
-			t.Fatalf("unexpected error writing response: %s", err.Error())
-		}
-	}))
-
-	t.Cleanup(server.Close)
-
-	return httputil.NewClient(httputil.WithClientBasePath(server.URL))
+	return nil
 }

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -91,13 +92,15 @@ func (s *Server) Register(endpoints ...Endpoint) {
 func (s *Server) Serve(ctx context.Context) {
 	awaitSignalCtx, cancelAwaitSignal := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
-	go func() {
+	var wg sync.WaitGroup
+
+	wg.Go(func() {
 		defer cancelAwaitSignal()
 
 		if err := s.Listener.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.logger.ErrorContext(ctx, "Server failed to listen and serve", slog.Any("error", err))
 		}
-	}()
+	})
 
 	s.logger.InfoContext(ctx, "Server started", slog.String("address", s.address))
 	<-awaitSignalCtx.Done()
@@ -115,6 +118,8 @@ func (s *Server) Serve(ctx context.Context) {
 	if err := s.Listener.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck // False positive.
 		s.logger.ErrorContext(ctx, "Server failed to shutdown gracefully", slog.Any("error", err))
 	}
+
+	wg.Wait()
 
 	s.logger.InfoContext(ctx, "Server shutdown")
 }

@@ -16,41 +16,50 @@ import (
 	"github.com/nickbryan/httputil/problem"
 )
 
-// ClientEncoder is an interface for encoding HTTP request bodies for the
-// client. It provides methods for encoding request data and advertising the
-// Content-Type media type. Response decoding is left to the caller, since the
-// appropriate strategy typically depends on the response status code.
-type ClientEncoder interface {
-	// ContentType returns the Content-Type header value for the client encoder.
+// ClientCodec is an interface for encoding and decoding HTTP request and
+// response bodies for the client. ContentType is used for both Content-Type
+// and Accept headers.
+type ClientCodec interface {
+	// ContentType returns the media type for Content-Type and Accept headers.
 	ContentType() string
 	// Encode encodes the given data into a new io.Reader.
 	Encode(data any) (io.Reader, error)
+	// Decode decodes the data from r into the value pointed to by into.
+	Decode(r io.Reader, into any) error
 }
 
-// JSONClientEncoder encodes HTTP request bodies as JSON for the client.
-type JSONClientEncoder struct{}
+// JSONClientCodec encodes and decodes HTTP bodies as JSON for the client.
+type JSONClientCodec struct{}
 
-// Ensure JSONClientEncoder implements ClientEncoder.
-var _ ClientEncoder = JSONClientEncoder{}
+var _ ClientCodec = JSONClientCodec{}
 
-// NewJSONClientEncoder creates a new JSONClientEncoder instance.
-func NewJSONClientEncoder() JSONClientEncoder {
-	return JSONClientEncoder{}
+// NewJSONClientCodec creates a new JSONClientCodec instance.
+func NewJSONClientCodec() JSONClientCodec {
+	return JSONClientCodec{}
 }
 
 // ContentType returns the Content-Type header value for JSON requests.
-func (c JSONClientEncoder) ContentType() string {
+func (c JSONClientCodec) ContentType() string {
 	return "application/json; charset=utf-8"
 }
 
 // Encode encodes the given data into a new io.Reader.
-func (c JSONClientEncoder) Encode(data any) (io.Reader, error) {
+func (c JSONClientCodec) Encode(data any) (io.Reader, error) {
 	b, err := json.Marshal(data)
 	if err != nil {
 		return nil, fmt.Errorf("encoding request body as JSON: %w", err)
 	}
 
 	return bytes.NewReader(b), nil
+}
+
+// Decode decodes JSON from r into the value pointed to by into.
+func (c JSONClientCodec) Decode(r io.Reader, into any) error {
+	if err := json.NewDecoder(r).Decode(into); err != nil {
+		return fmt.Errorf("decoding response body as JSON: %w", err)
+	}
+
+	return nil
 }
 
 // ServerCodec is an interface for encoding and decoding HTTP requests and responses.
